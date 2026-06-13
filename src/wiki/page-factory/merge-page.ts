@@ -138,7 +138,7 @@ export async function mergePage(
     const mergePrompt = pageType === 'entity' ? PROMPTS.mergeEntityPage : PROMPTS.mergeConceptPage;
 
     const prompt = mergePrompt
-      .replace('{{existing_body}}', existingBody)
+      .replace('{{existing_body}}', existingBody.slice(0, 6000)) // local patch 10a
       .replace('{{new_source}}', sourceFile.basename)
       .replace('{{entity_summary}}', info.summary)
       .replace('{{concept_summary}}', info.summary)
@@ -211,7 +211,7 @@ export async function appendToReviewedPage(
 
     // 2. Minimal LLM check for genuinely new content.
     const prompt = PROMPTS.appendToReviewedPage
-      .replace('{{existing_body}}', existingBody)
+      .replace('{{existing_body}}', existingBody.slice(0, 12000)) // local patch 10b
       .replace('{{new_source}}', sourceFile.basename)
       .replace('{{entity_summary}}', info.summary)
       .replace('{{key_details}}', firstQuotesForPrompt(info))

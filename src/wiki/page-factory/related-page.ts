@@ -99,7 +99,7 @@ export async function updateRelatedPage(
 
   const prompt = PROMPTS.updateRelatedPage
     .replace('{{page_name}}', pageName)
-    .replace('{{existing_body}}', existingBody)
+    .replace('{{existing_body}}', existingBody.slice(0, 6000)) // local patch 10c
     .replace('{{source_basename}}', sourceFile.basename)
     .replace('{{new_info}}', JSON.stringify(newInfo))
     .replace('{{constraints}}', UNIVERSAL_LINK_CONSTRAINTS);
