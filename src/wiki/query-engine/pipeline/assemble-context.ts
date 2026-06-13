@@ -56,7 +56,7 @@ export function assembleWikiContext(input: AssembleContextInput): string {
 You are a Wiki assistant with access to a structured knowledge base.
 
 Wiki Index:
-${input.indexContent}
+${input.indexContent.slice(0, 40000)}
 
 Relevant Wiki Pages (loaded with full content):
 ${input.pageBodies.length > 0 ? input.pageBodies.join('\n\n---\n\n') : 'No directly relevant pages found in Wiki.'}
