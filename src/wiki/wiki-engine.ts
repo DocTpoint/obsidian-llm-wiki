@@ -17,7 +17,7 @@ import { PROMPTS } from '../prompts';
 import { TEXTS } from '../texts';
 import { getText } from '../core/i18n';
 import { slugify } from '../core/slug';
-import { resolveSourceSlug } from '../core/source-slug';
+import { sourceBaseSlug } from '../core/source-slug';
 import { parseFrontmatter, upsertFrontmatterField, mergeFrontmatterArrayField, extractBody } from '../core/frontmatter';
 import { setGenerationComplete } from '../core/incomplete-page-cleaner';
 import { hashBody, checkContentRequirements } from '../core/source-requirements';
@@ -559,10 +559,16 @@ export class WikiEngine {
       this.onProgress?.(`[${step}/${totalSteps}] Creating summary...`);
       await this.apiDelay();
 
-      // Issue #155: derive the source slug (<basename>-<path fingerprint>) ONCE,
-      // before any page is written, so the summary page, entity/concept backlinks,
-      // and related pages all reference the same canonical [[sources/<slug>]].
-      const sourceSlug = resolveSourceSlug(file.path, { preserveCase });
+      // Derive the source slug ONCE, before any page is written, so the summary
+      // page, entity/concept backlinks, and related pages all reference the same
+      // canonical [[sources/<slug>]]. In v1.23.0 this is the single slug-generation
+      // site — page-factory consumes the passed-in sourceSlug, so this one call
+      // governs every emitted [[sources/…]] link.
+      // LOCAL PATCH: plain basename slug (sourceBaseSlug), NOT #155's
+      // <basename>_<fingerprint>. This vault is flat with unique note basenames, so
+      // the fingerprint adds only visual noise + inconsistency with pre-#155 source
+      // pages. resolveSourceSlug + its tests stay intact (unused).
+      const sourceSlug = sourceBaseSlug(file.path, preserveCase);
 
       // Stage 2: Summary Page Generation
       const summaryStart = Date.now();
