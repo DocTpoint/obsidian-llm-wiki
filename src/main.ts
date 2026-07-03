@@ -657,8 +657,14 @@ export default class LLMWikiPlugin extends Plugin {
       // sources in the folder are picked up too. The ingest gate is the final
       // arbiter of type/empty/duplicate.
       const allowedExts: readonly string[] = COMPATIBLE_SOURCE_EXTENSIONS;
+      // Folder-boundary guard: match only true descendants of the picked
+      // folder. A bare startsWith(folder.path) also matches sibling folders
+      // that share a name prefix (e.g. picking "Notizen" would sweep in
+      // "Notizen-temp"), so anchor on a trailing slash. Root has an empty
+      // prefix (every path is a descendant).
+      const folderPrefix = folder.isRoot() ? '' : `${folder.path}/`;
       const files = this.app.vault.getFiles()
-        .filter(f => f.path.startsWith(folder.path) && allowedExts.includes(f.extension.toLowerCase()));
+        .filter(f => f.path.startsWith(folderPrefix) && allowedExts.includes(f.extension.toLowerCase()));
 
       if (files.length === 0) {
         const msg = TEXTS[this.settings.language].selectFolderNoMdFiles.replace('{path}', folder.path);
