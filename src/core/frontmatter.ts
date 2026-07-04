@@ -484,9 +484,14 @@ export function mergeFrontmatter(
   const existingSources = Array.isArray(fm.sources) ? fm.sources : [];
   const sourceSet = new Set<string>();
   for (const s of existingSources) {
-    sourceSet.add(normalizeSourcePath(String(s)));
+    // Skip empty entries: a bare `sources:` line parses to [''] (the create
+    // path's stamp hits this after enforce strips a model-written block), which
+    // would otherwise emit a stray `[[]]` link that the #125 normalizer has to
+    // clean up downstream.
+    const n = normalizeSourcePath(String(s));
+    if (n) sourceSet.add(n);
   }
-  sourceSet.add(newSourcePath);
+  if (newSourcePath) sourceSet.add(newSourcePath);
   const mergedSources = Array.from(sourceSet).map(s => `[[${s}]]`);
 
   const created = fm.created || new Date().toISOString().split('T')[0];
