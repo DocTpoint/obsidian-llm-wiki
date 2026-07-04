@@ -472,7 +472,19 @@ export class PageFactory {
         conversationLabel: `Conversation: ${sourceFile.basename}`,
       }
     );
-    await this.ctx.createOrUpdateFile(path, mentionsInjectedContent);
+    // Issue #155 / provenance (LOCAL PATCH): stamp the canonical source into
+    // frontmatter programmatically, mirroring mergePage/updateRelatedPage. The
+    // generate prompt only passes the source as a {{source_file}} hint and trusts
+    // the (weak, local) model to write `sources:` — it usually doesn't, leaving a
+    // source-of-truth wiki without provenance. Applied AFTER mentions injection
+    // (orthogonal: this touches frontmatter, injection touches the body). The
+    // Mentions citation still points to the origin note (#244 design intent);
+    // this only fills the `sources:` frontmatter field. mergeFrontmatter dedups
+    // against any source the model did emit, so it is idempotent.
+    const stampSource = sourceSlug ? `sources/${sourceSlug}` : sourceFile.path;
+    const { frontmatter, body } = mergeFrontmatter(mentionsInjectedContent, stampSource);
+    const stampedContent = frontmatter ? `${frontmatter}\n\n${body}` : mentionsInjectedContent;
+    await this.ctx.createOrUpdateFile(path, stampedContent);
     return path;
     } catch (error) {
       throw contextualizeError(error, info.name, pageType);
