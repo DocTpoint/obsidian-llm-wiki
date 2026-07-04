@@ -26,7 +26,7 @@ import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { canonicalizeSectionHeaders } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
-import { parseFrontmatter, enforceFrontmatterConstraints } from '../../core/frontmatter';
+import { parseFrontmatter, enforceFrontmatterConstraints, mergeFrontmatter } from '../../core/frontmatter';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { applySectionLabels, appendTagVocabularyToPrompt, getSectionLabels } from '../system-prompts';
 import { resolvePagePath, buildPagesListForPrompt, type PathResolutionContext } from './path-resolution';
@@ -234,7 +234,19 @@ export async function createNewPage(
         conversationLabel: `Conversation: ${sourceFile.basename}`,
       },
     );
-    await ctx.createOrUpdateFile(path, mentionsInjectedContent);
+    // Issue #155 / provenance (LOCAL PATCH): stamp the canonical source into
+    // frontmatter programmatically, mirroring mergePage/updateRelatedPage. The
+    // generate prompt only passes the source as a {{source_file}} hint and trusts
+    // the (weak, local) model to write `sources:` — it usually doesn't, leaving a
+    // source-of-truth wiki without provenance. Applied AFTER mentions injection
+    // (orthogonal: this touches frontmatter, injection touches the body). The
+    // Mentions citation still points to the origin note (#244 design intent);
+    // this only fills the `sources:` frontmatter field. mergeFrontmatter dedups
+    // against any source the model did emit, so it is idempotent.
+    const stampSource = sourceSlug ? `sources/${sourceSlug}` : sourceFile.path;
+    const { frontmatter, body } = mergeFrontmatter(mentionsInjectedContent, stampSource);
+    const stampedContent = frontmatter ? `${frontmatter}\n\n${body}` : mentionsInjectedContent;
+    await ctx.createOrUpdateFile(path, stampedContent);
     return path;
   } catch (error) {
     throw contextualizeError(error, info.name, pageType);
