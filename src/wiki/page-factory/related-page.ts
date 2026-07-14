@@ -20,9 +20,12 @@ import { TOKENS_PAGE_GENERATION } from '../../constants';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { mergeFrontmatter, parseFrontmatter } from '../../core/frontmatter';
+import { stripMentionsSection } from '../../core/mentions-parser';
+import { getSectionLabels } from '../system-prompts';
 import { getExistingWikiPages } from '../lint/get-existing-pages';
 import { UNIVERSAL_LINK_CONSTRAINTS } from '../prompts/constraints';
 import { appendToReviewedPage, type MergeContext } from './merge-page';
+import { assembleFinalContent } from './mentions-integration';
 
 /**
  * Minimal context contract required by `updateRelatedPage`. Mirrors the real
@@ -97,9 +100,18 @@ export async function updateRelatedPage(
     return true;
   }
 
+  // The Mentions section is programmatic since #244 and must never be
+  // LLM-rewritten. Strip it from the prompt body so the model cannot drift its
+  // format, and so the context cap below budgets prose rather than quotes. It is
+  // re-attached deterministically by assembleFinalContent.
+  const promptBody = stripMentionsSection(
+    existingBody,
+    getSectionLabels(ctx.settings).mentions_in_source,
+  );
+
   const prompt = PROMPTS.updateRelatedPage
     .replace('{{page_name}}', pageName)
-    .replace('{{existing_body}}', existingBody.slice(0, 6000)) // local patch 10c
+    .replace('{{existing_body}}', promptBody.slice(0, 6000)) // local patch 10c
     .replace('{{source_basename}}', sourceFile.basename)
     .replace('{{new_info}}', JSON.stringify(newInfo))
     .replace('{{constraints}}', UNIVERSAL_LINK_CONSTRAINTS);
@@ -117,8 +129,16 @@ export async function updateRelatedPage(
 
   const cleanedBody = cleanMarkdownResponse(updatedBody);
 
-  // 2. Assemble: programmatic frontmatter + LLM body.
-  const finalContent = `${frontmatter}\n\n${cleanedBody}`;
-  await ctx.createOrUpdateFile(page.path, finalContent);
+  // 2. Assemble: programmatic frontmatter + LLM body + Mentions section.
+  // #267 follow-up: route through assembleFinalContent exactly as mergePage
+  // does. Without it the LLM's rewrite IS the final body, so any accumulated
+  // Mentions the model fails to reproduce are destroyed — the same non-lossy
+  // guarantee #267 established on the merge path never covered this one.
+  // `existingBody` (not promptBody) is passed so the accumulated mentions are
+  // recovered from the unstripped page.
+  await ctx.createOrUpdateFile(
+    page.path,
+    await assembleFinalContent(ctx, frontmatter, cleanedBody, newInfo, sourceFile, existingBody),
+  );
   return true;
 }
