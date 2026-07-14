@@ -193,7 +193,11 @@ describe('WikiEngine.createOrUpdateFile — NFC/NFD path resolution (#173 Sympto
 
     await h.engine.createOrUpdateFile('wiki/sources/new.md', 'fresh content');
 
-    expect(h.files.get('wiki/sources/new.md')).toBe('fresh content');
+    // toContain, not toBe: markPageComplete() is a fire-and-forget re-write that
+    // stamps `generation_complete` afterwards, so strict equality here only held
+    // as long as that deferred write happened to lose the microtask race. The
+    // sibling test above already uses toContain for the same reason.
+    expect(h.files.get('wiki/sources/new.md')).toContain('fresh content');
     // A new file creation should not trigger vaultMarkdownScans either.
     expect(h.stats.vaultMarkdownScans).toBe(0);
   });

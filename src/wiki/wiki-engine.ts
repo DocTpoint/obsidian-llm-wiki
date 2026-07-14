@@ -30,6 +30,8 @@ import type { SourceRejection } from '../core/source-requirements';
 import { formatRateLimitNotice } from '../core/rate-limit';
 import { extractSourceTags } from '../core/arrays';
 import { cleanMarkdownResponse } from '../core/markdown';
+// local patch 11 — write-level audit trail
+import { AuditEntry, buildAuditEntry, formatAuditLine, summarizePage } from './write-audit';
 import { SchemaManager, SchemaTask } from '../schema/schema-manager';
 import {
   buildSystemPrompt,
@@ -130,6 +132,8 @@ export class WikiEngine {
   private onFileWrite: ((path: string) => void) | null;
   private onProgress: ((message: string) => void) | null;
   private onDone: ((report: IngestReport) => void) | null;
+  /** local patch 11: serialises write-audit appends so they cannot interleave. */
+  private auditQueue: Promise<void> = Promise.resolve();
   /**
    * #164: invoked when an interactive ingest hits a duplicate. Returns true to
    * re-ingest anyway, false to skip. Wired by main.ts to a confirmation modal;
@@ -1297,7 +1301,84 @@ export class WikiEngine {
     return path;
   }
 
+  // --- local patch 11: write-level audit (see wiki/write-audit.ts) -----------
+  // createOrUpdateFile is the single write gate, so wrapping it once covers every
+  // page write: creates, all three merge routes, related-page, aliases, lints.
+  // The body below is left untouched (now createOrUpdateFileInner) so the patch
+  // stays a thin shell around upstream code and survives rebases cleanly.
   async createOrUpdateFile(path: string, content: string): Promise<void> {
+    if (!this.isInWikiContentFolder(path, this.settings.wikiFolder)) {
+      return this.createOrUpdateFileInner(path, content);
+    }
+
+    const label = getSectionLabels(this.settings).mentions_in_source;
+    let priorContent: string | null = null;
+    try {
+      priorContent = await this.readForAudit(path);
+    } catch (e) {
+      console.warn('write-audit: pre-read failed, recording as absent:', path, e);
+    }
+    const before = summarizePage(priorContent, label);
+
+    await this.createOrUpdateFileInner(path, content);
+
+    // Record without awaiting: the audit may not reorder the writes it watches.
+    // markPageComplete() is a deliberate fire-and-forget re-write, and holding
+    // createOrUpdateFile open for a log append would shift when that lands.
+    // The queue keeps appends strictly ordered so two writes cannot interleave
+    // and shear a line, and a broken tripwire can never break the real write.
+    try {
+      const entry = buildAuditEntry(path, before, summarizePage(content, label));
+      this.auditQueue = this.auditQueue
+        .then(() => this.recordAuditEntry(entry, priorContent))
+        .catch(e => console.warn('write-audit: failed to record write:', path, e));
+    } catch (e) {
+      console.warn('write-audit: failed to build audit entry:', path, e);
+    }
+  }
+
+  /** Pre-write read for the audit. Deliberately cheap: getAbstractFileByPath,
+   *  falling back only to the parent-directory listing that resolves NFC/NFD.
+   *  It must never reach tryReadFile's full getMarkdownFiles() scan — that would
+   *  put a whole-vault scan in front of every single page write. */
+  private async readForAudit(path: string): Promise<string | null> {
+    const direct = this.app.vault.getAbstractFileByPath(path);
+    const file = direct instanceof TFile ? direct : this.resolveFileInVault(path);
+    return file ? await this.app.vault.read(file) : null;
+  }
+
+  /** Append one JSONL fact line; on suspected loss also park the pre-write file.
+   *  Both land under wiki/schema/ with non-markdown extensions so Obsidian does
+   *  not index them and no .md-based script picks them up. */
+  private async recordAuditEntry(entry: AuditEntry, priorContent: string | null): Promise<void> {
+    const dir = `${this.settings.wikiFolder}/schema`;
+    const adapter = this.app.vault.adapter;
+    if (!adapter?.append) return; // no adapter (e.g. test harness) — nothing to record
+
+    // append() on a missing file is not reliably a create, and a tripwire that
+    // silently records nothing is worse than none at all. Seed the file first.
+    const logPath = normalizePath(`${dir}/write-audit.jsonl`);
+    const line = formatAuditLine(entry);
+    if (await adapter.exists(logPath)) {
+      await adapter.append(logPath, line);
+    } else {
+      await adapter.write(logPath, line);
+    }
+
+    if (entry.losses.length === 0 || priorContent === null) return;
+
+    // A pre-batch snapshot cannot restore a page that was created AND damaged
+    // inside the same batch — the good version never existed on disk before the
+    // run. So when a write looks lossy, keep the exact bytes we are overwriting.
+    console.warn(`write-audit: possible loss on ${entry.path}: ${entry.losses.join(', ')}`);
+    const lostDir = normalizePath(`${dir}/write-audit-lost`);
+    if (!(await adapter.exists(lostDir))) await adapter.mkdir(lostDir);
+    const stamp = entry.ts.replace(/[:.]/g, '-');
+    const slug = entry.path.replace(/[^\w.-]+/g, '_');
+    await adapter.write(normalizePath(`${lostDir}/${stamp}__${slug}.txt`), priorContent);
+  }
+
+  private async createOrUpdateFileInner(path: string, content: string): Promise<void> {
     console.debug('createOrUpdateFile:', path);
 
     // Central pollution detection: strip folder-prefix duplication from wiki-links
