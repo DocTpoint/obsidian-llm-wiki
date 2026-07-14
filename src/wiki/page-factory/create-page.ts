@@ -41,7 +41,7 @@ export interface CreatePageContext extends PathResolutionContext {
   settings: LLMWikiSettings;
   getClient(): LLMClient | null;
   buildSystemPrompt(mode: 'full' | 'compact' | 'merge' | 'entity' | 'concept'): Promise<string>;
-  createOrUpdateFile(path: string, content: string): Promise<void>;
+  createOrUpdateFile(path: string, content: string, origin?: string): Promise<void>;
   tryReadFile(path: string): Promise<string | null>;
 }
 
@@ -246,7 +246,7 @@ export async function createNewPage(
     const stampSource = sourceSlug ? `sources/${sourceSlug}` : sourceFile.path;
     const { frontmatter, body } = mergeFrontmatter(mentionsInjectedContent, stampSource);
     const stampedContent = frontmatter ? `${frontmatter}\n\n${body}` : mentionsInjectedContent;
-    await ctx.createOrUpdateFile(path, stampedContent);
+    await ctx.createOrUpdateFile(path, stampedContent, 'createNewPage');
     return path;
   } catch (error) {
     throw contextualizeError(error, info.name, pageType);

@@ -106,17 +106,31 @@ export function detectLosses(before: PageFacts, after: PageFacts): string[] {
 export interface AuditEntry {
   ts: string;
   path: string;
+  /** create vs update is derived from what was actually on disk, not from what
+   *  the caller believed — which is also the correct fix for upstream #290
+   *  (the ingest log labels merges as creates). */
   op: 'create' | 'update';
+  /** Which code path wrote this, e.g. 'mergePage:llm-body-rewrite'. Passed
+   *  explicitly from the call site rather than sniffed from a stack trace:
+   *  mergePage and updateRelatedPage each write from two different routes, and
+   *  a diagnostic must not itself rest on a brittle, minifier-dependent guess. */
+  origin: string;
   before: PageFacts;
   after: PageFacts;
   losses: string[];
 }
 
-export function buildAuditEntry(path: string, before: PageFacts, after: PageFacts): AuditEntry {
+export function buildAuditEntry(
+  path: string,
+  before: PageFacts,
+  after: PageFacts,
+  origin: string = 'unknown'
+): AuditEntry {
   return {
     ts: new Date().toISOString(),
     path,
     op: before.exists ? 'update' : 'create',
+    origin,
     before,
     after,
     losses: detectLosses(before, after),

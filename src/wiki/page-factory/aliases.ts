@@ -22,7 +22,7 @@ import { parseFrontmatter } from '../../core/frontmatter';
  */
 export interface AliasesContext {
   tryReadFile: (path: string) => Promise<string | null>;
-  createOrUpdateFile: (path: string, content: string) => Promise<void>;
+  createOrUpdateFile: (path: string, content: string, origin?: string) => Promise<void>;
 }
 
 /**
@@ -76,6 +76,6 @@ export async function appendAliases(
   }
 
   const newContent = `---${newFm}\n---${body}`;
-  await ctx.createOrUpdateFile(pagePath, newContent);
+  await ctx.createOrUpdateFile(pagePath, newContent, 'appendAliases');
   console.debug(`appendAliases: added ${toAdd.join(', ')} to ${pagePath}`);
 }

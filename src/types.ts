@@ -557,7 +557,7 @@ export interface EngineContext {
   app: App;
   settings: LLMWikiSettings;
   getClient: () => LLMClient | null;
-  createOrUpdateFile: (path: string, content: string) => Promise<void>;
+  createOrUpdateFile: (path: string, content: string, origin?: string) => Promise<void>;
   tryReadFile: (path: string) => Promise<string | null>;
   deleteFile: (path: string) => Promise<void>;
   buildSystemPrompt: (task: string) => Promise<string | undefined>;
