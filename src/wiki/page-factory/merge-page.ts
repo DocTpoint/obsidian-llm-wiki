@@ -61,7 +61,7 @@ export interface MergeContext {
   settings: LLMWikiSettings;
   getClient(): LLMClient | null;
   buildSystemPrompt(mode: 'full' | 'compact' | 'merge'): Promise<string>;
-  createOrUpdateFile(path: string, content: string): Promise<void>;
+  createOrUpdateFile(path: string, content: string, origin?: string): Promise<void>;
   tryReadFile(path: string): Promise<string | null>;
 }
 
@@ -177,6 +177,7 @@ export async function mergePage(
       await ctx.createOrUpdateFile(
         path,
         await assembleFinalContent(ctx, frontmatter, bodyToWrite, info, sourceFile, existingBody),
+        'mergePage:skip-or-complementary',
       );
       return path;
     }
@@ -251,6 +252,7 @@ export async function mergePage(
         sourceFile,
         existingBody,
       ),
+      'mergePage:llm-body-rewrite',
     );
     return path;
   } catch (error) {
@@ -334,7 +336,7 @@ export async function appendToReviewedPage(
       },
     );
     const finalContent = `${frontmatter}\n\n${cleanedContentWithMentions}`;
-    await ctx.createOrUpdateFile(path, finalContent);
+    await ctx.createOrUpdateFile(path, finalContent, 'appendToReviewedPage');
     return path;
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

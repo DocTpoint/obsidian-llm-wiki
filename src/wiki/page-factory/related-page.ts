@@ -47,7 +47,7 @@ export interface RelatedPageContext extends MergeContext {
   settings: LLMWikiSettings;
   getClient(): LLMClient | null;
   buildSystemPrompt(mode: 'full' | 'compact' | 'merge' | 'related'): Promise<string>;
-  createOrUpdateFile(path: string, content: string): Promise<void>;
+  createOrUpdateFile(path: string, content: string, origin?: string): Promise<void>;
 }
 
 /**
@@ -95,7 +95,7 @@ export async function updateRelatedPage(
     analysis.entities.find(e => e.name === pageName) ||
     analysis.concepts.find(c => c.name === pageName);
   if (!newInfo) {
-    await ctx.createOrUpdateFile(page.path, `${frontmatter}\n\n${existingBody}`);
+    await ctx.createOrUpdateFile(page.path, `${frontmatter}\n\n${existingBody}`, 'updateRelatedPage:frontmatter-only');
     return true;
   }
 
@@ -170,6 +170,7 @@ export async function updateRelatedPage(
   await ctx.createOrUpdateFile(
     page.path,
     await assembleFinalContent(ctx, frontmatter, guardedBody, newInfo, sourceFile, existingBody),
+    'updateRelatedPage:llm-body-rewrite',
   );
   return true;
 }

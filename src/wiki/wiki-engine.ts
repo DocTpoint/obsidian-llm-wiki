@@ -197,7 +197,7 @@ export class WikiEngine {
       app: this.app,
       settings: this.settings,
       getClient: () => this.getLLMClient(),
-      createOrUpdateFile: (p, c) => this.createOrUpdateFile(p, c),
+      createOrUpdateFile: (p, c, origin) => this.createOrUpdateFile(p, c, origin),
       deleteFile: p => this.deleteFile(p),
       tryReadFile: p => this.tryReadFile(p),
       buildSystemPrompt: task =>
@@ -1306,7 +1306,7 @@ export class WikiEngine {
   // page write: creates, all three merge routes, related-page, aliases, lints.
   // The body below is left untouched (now createOrUpdateFileInner) so the patch
   // stays a thin shell around upstream code and survives rebases cleanly.
-  async createOrUpdateFile(path: string, content: string): Promise<void> {
+  async createOrUpdateFile(path: string, content: string, origin?: string): Promise<void> {
     if (!this.isInWikiContentFolder(path, this.settings.wikiFolder)) {
       return this.createOrUpdateFileInner(path, content);
     }
@@ -1328,7 +1328,7 @@ export class WikiEngine {
     // The queue keeps appends strictly ordered so two writes cannot interleave
     // and shear a line, and a broken tripwire can never break the real write.
     try {
-      const entry = buildAuditEntry(path, before, summarizePage(content, label));
+      const entry = buildAuditEntry(path, before, summarizePage(content, label), origin);
       this.auditQueue = this.auditQueue
         .then(() => this.recordAuditEntry(entry, priorContent))
         .catch(e => console.warn('write-audit: failed to record write:', path, e));

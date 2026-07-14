@@ -155,6 +155,24 @@ describe('audit entry', () => {
     expect(buildAuditEntry('wiki/concepts/A.md', present, present).op).toBe('update');
   });
 
+  it('records which code path wrote, so a loss can be pinned to a route', () => {
+    const before = summarizePage(page({ body: 'Lange Beschreibung mit Substanz.' }), LABEL);
+    const after = summarizePage(page({ body: 'Kurz.' }), LABEL);
+    const entry = buildAuditEntry(
+      'wiki/entities/Butyrat.md',
+      before,
+      after,
+      'mergePage:llm-body-rewrite'
+    );
+    expect(entry.origin).toBe('mergePage:llm-body-rewrite');
+    expect(entry.losses).toContain('body_shrank');
+  });
+
+  it('falls back to "unknown" rather than dropping the field', () => {
+    const facts = summarizePage(page({}), LABEL);
+    expect(buildAuditEntry('wiki/entities/A.md', facts, facts).origin).toBe('unknown');
+  });
+
   it('serialises to one parseable JSON object per line', () => {
     const before = summarizePage(page({ mentions: ['Zitat A', 'Zitat B'] }), LABEL);
     const after = summarizePage(page({ mentions: ['Zitat A'] }), LABEL);
