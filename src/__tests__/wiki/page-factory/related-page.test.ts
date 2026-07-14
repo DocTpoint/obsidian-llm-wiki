@@ -269,6 +269,27 @@ describe('updateRelatedPage — Mentions are never LLM-owned (#267 follow-up)', 
     expect(written).toContain('a fresh quote from the new source');
   });
 
+  it('canonicalizes a garbled section label in the LLM rewrite (#241 parity)', async () => {
+    const ctx = makeCtx({
+      pageContent: PAGE_WITH_MENTIONS,
+      // One edit away from the canonical `Mentions in Source` label. Uncanonicalized,
+      // the injector would not recognize it, append a second section, and leave this
+      // one behind as an orphan that Tier-B retrieval can no longer see.
+      llmResponse: '## Description\nRewritten.\n\n## Mentions in Sourse\n\n- stale',
+    });
+
+    await updateRelatedPage(
+      ctx,
+      PAGE_TITLE,
+      analysisWithMentions(),
+      { path: 'sources/new.md', basename: 'new' },
+    );
+
+    const written = ctx.written.get(PAGE_PATH)!;
+    expect(written).not.toContain('Mentions in Sourse');
+    expect(written.match(/^## Mentions in Source$/gm)).toHaveLength(1);
+  });
+
   it('does not feed the Mentions section into the rewrite prompt', async () => {
     let seenPrompt = '';
     const ctx = makeCtx({ pageContent: PAGE_WITH_MENTIONS });

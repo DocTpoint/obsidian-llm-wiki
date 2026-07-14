@@ -21,6 +21,8 @@ import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { mergeFrontmatter, parseFrontmatter } from '../../core/frontmatter';
 import { stripMentionsSection } from '../../core/mentions-parser';
+import { canonicalizeSectionHeaders } from '../../core/section-header-canonicalizer';
+import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
 import { getSectionLabels } from '../system-prompts';
 import { getExistingWikiPages } from '../lint/get-existing-pages';
 import { UNIVERSAL_LINK_CONSTRAINTS } from '../prompts/constraints';
@@ -100,14 +102,13 @@ export async function updateRelatedPage(
     return true;
   }
 
+  const labels = getSectionLabels(ctx.settings);
+
   // The Mentions section is programmatic since #244 and must never be
   // LLM-rewritten. Strip it from the prompt body so the model cannot drift its
   // format, and so the context cap below budgets prose rather than quotes. It is
   // re-attached deterministically by assembleFinalContent.
-  const promptBody = stripMentionsSection(
-    existingBody,
-    getSectionLabels(ctx.settings).mentions_in_source,
-  );
+  const promptBody = stripMentionsSection(existingBody, labels.mentions_in_source);
 
   const prompt = PROMPTS.updateRelatedPage
     .replace('{{page_name}}', pageName)
@@ -129,6 +130,21 @@ export async function updateRelatedPage(
 
   const cleanedBody = cleanMarkdownResponse(updatedBody);
 
+  // The related path was the only write path that wrote raw LLM output: unlike
+  // createNewPage and mergePage it ran neither the header canonicalizer (#241)
+  // nor the related-link prefix corrector (#187). So a drifted `## …` heading
+  // survived here, and a `sources/`-mis-prefixed link in a Related section was
+  // never re-typed — both already solved deterministically for the other paths.
+  const canonicalizedBody = canonicalizeSectionHeaders(cleanedBody, Object.values(labels));
+  const correctedBody = correctRelatedLinkPrefixes(
+    canonicalizedBody,
+    newInfo.related_entities,
+    newInfo.related_concepts,
+    labels.related_entities,
+    labels.related_concepts,
+    ctx.settings.slugCase === 'preserve',
+  );
+
   // 2. Assemble: programmatic frontmatter + LLM body + Mentions section.
   // #267 follow-up: route through assembleFinalContent exactly as mergePage
   // does. Without it the LLM's rewrite IS the final body, so any accumulated
@@ -138,7 +154,7 @@ export async function updateRelatedPage(
   // recovered from the unstripped page.
   await ctx.createOrUpdateFile(
     page.path,
-    await assembleFinalContent(ctx, frontmatter, cleanedBody, newInfo, sourceFile, existingBody),
+    await assembleFinalContent(ctx, frontmatter, correctedBody, newInfo, sourceFile, existingBody),
   );
   return true;
 }
