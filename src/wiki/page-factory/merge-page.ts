@@ -38,6 +38,7 @@ import { cleanMarkdownResponse } from '../../core/markdown';
 import {
   canonicalizeSectionHeaders,
   preserveExistingSections,
+  stripUnknownSections,
 } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
 import { mergeFrontmatter } from '../../core/frontmatter';
@@ -171,8 +172,9 @@ export async function mergePage(
     // 3. Assemble final content (re-assert related-link types deterministically).
     const labels = getSectionLabels(ctx.settings);
     const canonicalizedBody = canonicalizeSectionHeaders(cleanedBody, Object.values(labels));
+    const prunedBody = stripUnknownSections(canonicalizedBody, Object.values(labels));
     const correctedBody = correctRelatedLinkPrefixes(
-      canonicalizedBody,
+      prunedBody,
       info.related_entities,
       info.related_concepts,
       labels.related_entities,
