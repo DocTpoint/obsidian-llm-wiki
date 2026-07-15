@@ -180,7 +180,7 @@ describe('audit entry', () => {
 
     expect(line.endsWith('\n')).toBe(true);
     expect(line.trimEnd().includes('\n')).toBe(false);
-    const parsed = JSON.parse(line);
+    const parsed = JSON.parse(line) as { path: string; op: string; losses: string[] };
     expect(parsed.path).toBe('wiki/concepts/NF-κB.md');
     expect(parsed.op).toBe('update');
     expect(parsed.losses).toContain('mentions_lost');
