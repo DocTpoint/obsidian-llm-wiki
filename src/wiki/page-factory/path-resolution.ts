@@ -49,7 +49,7 @@ export interface PathResolutionContext extends AliasesContext {
   app: unknown;
   settings: import('../../types').LLMWikiSettings;
   getClient(): { createMessage: (...args: unknown[]) => Promise<string> } | null;
-  buildSystemPrompt(mode: 'full' | 'compact' | 'merge'): Promise<string>;
+  buildSystemPrompt(mode: 'full' | 'compact' | 'merge' | 'index'): Promise<string>;
 }
 
 /**
@@ -149,7 +149,11 @@ export async function resolvePagePath(
     const response = await client.createMessage({
       model: resolveModelForTask(ctx.settings, 'ingest'),
       max_tokens: TOKENS_DEDUP_RESOLUTION,
-      system: await ctx.buildSystemPrompt('full'),
+      // Slim selector: the dedup decision is same-type and the matching
+      // criteria are fully stated in the user prompt — only the Wiki
+      // Structure section is load-bearing here. 'full' (~8.5K chars of
+      // templates/naming/maintenance) added pure prefill cost per call.
+      system: await ctx.buildSystemPrompt('index'),
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
       ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
