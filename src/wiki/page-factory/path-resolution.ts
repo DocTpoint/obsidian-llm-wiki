@@ -17,15 +17,64 @@
 //     fires; optionally appends includePaths that aren't already in the
 //     list.
 
-import { WIKI_SUBFOLDERS, TOKENS_DEDUP_RESOLUTION } from '../../constants';
+import { WIKI_SUBFOLDERS, TOKENS_DEDUP_RESOLUTION, DEDUP_CANDIDATE_TOP_K } from '../../constants';
 import { slugify } from '../../core/slug';
 import { ConflictResolver } from '../../core/conflict-resolver';
+import { localKeywordMatch } from '../../core/index-search';
 import { getExistingWikiPages } from '../lint/get-existing-pages';
 import { PROMPTS } from '../../prompts';
 import { parseJsonResponse } from '../../core/json';
 import { normalizeLLMPath } from '../../core/prompt-builders';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { appendAliases, type AliasesContext } from './aliases';
+
+/** Page shape consumed by the dedup candidate pre-filter. */
+export interface DedupCandidatePage {
+  path: string;
+  title: string;
+  aliases?: string[];
+}
+
+/**
+ * Pre-filter the same-type page list before it is rendered into the
+ * semantic dedup prompt. The full list grows with the vault and made the
+ * call prefill-bound (~40K prompt tokens for a 16-token answer), so only
+ * the top-K lexically ranked candidates are kept.
+ *
+ * Recall guard (binding): the fallback to the FULL list is gated on the
+ * candidate's NAME alone, not on the ranked result. Summary tokens are
+ * ranking signal only — incidental substrings ("in" ⊂ "institute") make
+ * the ranked list non-empty for almost any query on a large vault, so a
+ * ranked-list-empty check would never fire and the translation/initialism
+ * case ("MIT" vs "Massachusetts Institute of Technology", "Tsinghua
+ * University" vs "清华大学") would silently lose its true duplicate. A
+ * missed duplicate becomes a duplicate page, so that rare case pays the
+ * old full-list cost instead of risking correctness.
+ *
+ * The name is additionally matched with hyphens/underscores split so
+ * compound candidates share tokens with reordered variants
+ * ("Diabetes-mellitus-Typ-2" ↔ "Typ-2-Diabetes").
+ */
+export function selectDedupCandidates(
+  name: string,
+  summary: string,
+  sameTypePages: DedupCandidatePage[],
+): DedupCandidatePage[] {
+  const normalized = sameTypePages.map(p => ({
+    path: p.path,
+    title: p.title,
+    aliases: p.aliases ?? [],
+  }));
+  const nameQuery = `${name} ${name.split(/[-_]+/).join(' ')}`;
+  const nameHits = localKeywordMatch(nameQuery, normalized);
+  if (nameHits.length === 0) return sameTypePages;
+  const ranked = localKeywordMatch(`${nameQuery} ${summary.substring(0, 300)}`, normalized);
+  const byPath = new Map(sameTypePages.map(p => [p.path, p]));
+  return ranked
+    .slice(0, DEDUP_CANDIDATE_TOP_K)
+    .map(r => byPath.get(r.path))
+    .filter((p): p is DedupCandidatePage => p !== undefined);
+}
 
 /** Mirrors the subset of PageCreationResult we return. */
 export interface ResolvedPathResult {
@@ -126,7 +175,7 @@ export async function resolvePagePath(
 
     if (sameTypePages.length === 0) return { path: slugPath };
 
-    const pagesList = sameTypePages
+    const pagesList = selectDedupCandidates(name, summary, sameTypePages)
       .map(p => {
         const aliasBlock = p.aliases?.length
           ? `\n  aliases: ${p.aliases.join(', ')}`

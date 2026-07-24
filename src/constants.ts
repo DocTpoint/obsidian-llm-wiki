@@ -169,6 +169,16 @@ export const TOKENS_CONVERSATION_PAGE = 8000;
 export const TOKENS_DEDUP_RESOLUTION = 1000;
 
 /**
+ * Max candidate pages shown to the LLM in the semantic dedup prompt.
+ * The full same-type list grows with the vault (~77K chars at ~1285
+ * entities) and the call is prefill-bound; the top-K keyword pre-filter
+ * keeps the prompt flat. When the candidate's name shares no token with
+ * any page (translations, initialisms) the full list is sent instead —
+ * recall over cost. Raise K rather than weaken that fallback.
+ */
+export const DEDUP_CANDIDATE_TOP_K = 30;
+
+/**
  * v1.24.0 #216 — max tokens for the merge triage pre-flight classification.
  *
  * v1.24.0 Tier-2 (commit ab23bc0 + amend): the triage output now includes
