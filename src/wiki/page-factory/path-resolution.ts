@@ -119,7 +119,14 @@ export async function resolvePagePath(
         // Purge polluted entries from LLM input (L2)
         const bn = p.title || '';
         return !/^(entities|concepts|sources)([^\s\-_a-zA-Z0-9])/.test(bn);
-      });
+      })
+      // Append-only ordering (ctime ascending): pages created during a run
+      // join the rendered list at the END, so consecutive dedup calls keep a
+      // byte-identical prefix and a local KV prefix cache can reuse it.
+      // Alphabetical or vault-iteration order inserts new pages mid-list and
+      // re-pays the prefill from the insertion point. Stable sort: pages
+      // without ctime keep their relative order.
+      .sort((a, b) => (a.ctime ?? 0) - (b.ctime ?? 0));
 
     // Same-type slug/alias match is handled above by ConflictResolver.
     // Remaining path: LLM-based semantic dedup for pages that don't match by slug/alias.

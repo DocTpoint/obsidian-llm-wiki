@@ -110,15 +110,22 @@ export const INGESTION_PROMPTS = {
 
   // Semantic entity resolution: when slug-based matching fails, use LLM to determine
   // whether a newly extracted entity/concept is semantically equivalent to an existing page.
+  //
+  // Layout constraint: the {{existing_pages}} list MUST stay before the
+  // per-call candidate block. The list is the invariant bulk of the prompt;
+  // with it first, consecutive dedup calls share a byte-identical prefix and
+  // a local KV prefix cache collapses the prefill (~46K tokens) to the short
+  // variable suffix. Candidate-first ordering limits the shared prefix to
+  // ~200 chars and forfeits the cache entirely.
   resolveEntityDedup: `You are an entity resolution engine. Given a newly extracted entity/concept and a list of existing wiki pages, determine if it is semantically equivalent to any existing page.
+
+**Existing {{page_type}} pages:**
+{{existing_pages}}
 
 **New entity/concept:**
 - Name: {{entity_name}}
 - Type: {{entity_type}}
 - Summary: {{entity_summary}}
-
-**Existing {{page_type}} pages:**
-{{existing_pages}}
 
 **Task:** Determine whether the new entity/concept is semantically the SAME as any existing page. Consider:
 - Translations between languages (e.g. "清华大学" = "Tsinghua University")
