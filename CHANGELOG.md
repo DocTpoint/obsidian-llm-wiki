@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.9] - 2026-07-25
+
+### Changed
+
+- **Re-publish of v1.25.8 PATCH Hotfix.** During the v1.25.8 release flow the GitHub release record was inadvertently deleted while Obsidian's automated community plugin review bot was mid-review, causing the bot to fail the v1.25.8 submission (review is one-shot and cannot be re-triggered for an already-attempted version). v1.25.9 carries the **exact same code as v1.25.8** (no functional changes) and is the version Obsidian's bot will now review on resubmission. See the [v1.25.8 release notes](https://github.com/green-dalii/obsidian-llm-wiki/releases/tag/1.25.8) for the full description.
+
+### Fixed
+
+- `versions.json` had a trailing comma after the last entry (`"0.2.0": "0.15.0",` at line 108), which makes the file invalid JSON per RFC 8259. Strict JSON parsers (Node V24, Python's `json`) reject it; tolerant parsers (older Node) silently accept. The comma was introduced in commit `c572c27` (`chore: bump version to 1.25.8`) — the same release flow that triggered the v1.25.8 Obsidian review failure. Removed the trailing comma.
+
+---
+
 ## [1.25.8] - 2026-07-25
 
 ### Fixed

@@ -2,9 +2,12 @@
 
 > Feature planning and improvement proposals
 
-**Version:** 1.25.8 PATCH (RELEASED 2026-07-25). | **Updated:** 2026-07-25
+**Version:** 1.25.9 PATCH (re-publish of 1.25.8). | **Updated:** 2026-07-25
 
 ## Current Status
+
+**v1.25.9 — RELEASED 2026-07-25.** Re-publish PATCH:
+- **PR (this release)** (self): Re-publish v1.25.8 as v1.25.9. During the v1.25.8 release flow the GitHub release record was inadvertently deleted while Obsidian's automated community plugin review bot was mid-review, causing the bot to fail the v1.25.8 submission (review is one-shot and cannot be re-triggered for an already-attempted version). v1.25.9 carries the exact same code as v1.25.8 (no functional changes) and is the version Obsidian's bot will now review on resubmission. **Also includes** a fix for `versions.json` trailing-comma JSON syntax error introduced in commit `c572c27` (1.25.8 bump). 0/0 tests affected.
 
 **v1.25.8 — RELEASED 2026-07-25.** Hotfix PATCH scope:
 - **PR #353** (self): `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only on `hide()`). Fixes v1.25.7 PATCH regression where switching LLM Provider (e.g. Deepseek → MiniMax) made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header". Singleton `this.llmClient` rebuilt by `initializeLLMClient()` after `commitTempSettings` was still reading SecretStorage's previous provider's key (the in-memory typed key never got flushed). Two root causes inside `commitTempSettings`: (1) only `hide()` called `flushApiKey()` — Test Connection / Language Save paths skipped it. (2) `testLLMConnection`'s fire-and-forget `void this.saveSettings()` would have persisted the typed apiKey as plaintext on flush-failure even after our rollback; added an explicit `saveSettings()` after rollback. 7 new tests (+6 commit-flush regression cases against the real `LLMWikiSettingTab.commitTempSettings` / `flushApiKey` via `Object.create(prototype)` + 1 mock signature update). **Bot 0/0 preserved.** 2572 tests / 193 files.
@@ -20,6 +23,7 @@ Historic compositions (v1.25.7 and earlier) live in [CHANGELOG.md](./CHANGELOG.m
 ## Version Timeline
 | Version | Date | Headline |
 |---------|------|----------|
+| **1.25.9** | 2026-07-25 | PATCH: Re-publish v1.25.8 to recover from a release-engineering incident where the v1.25.8 GitHub release record was inadvertently deleted while Obsidian's automated community plugin review bot was mid-review. No code changes vs v1.25.8. Also fixes `versions.json` trailing-comma JSON syntax error introduced in v1.25.8 bump commit |
 | **1.25.8** | 2026-07-25 | PATCH Hotfix: `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only `hide()`). Fixes v1.25.7 regression where provider switching made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header". +7 tests (6 against real `LLMWikiSettingTab.commitTempSettings` via `Object.create(prototype)` + 1 mock signature update). Bot 0/0 preserved. 2572 tests / 193 files |
 | **1.25.7** | 2026-07-25 | PATCH: API key switching bug fix (regression since v1.25.3 #182, PR #346) + DocTpoint dedup perf PRs #344+#345. Cache-stable prompt layout (54s→1.2s repeat) + slim dedup + top-K candidate pre-filter (660K→372K prompt tokens, −44%). 19 new tests since v1.25.6. Bot 0/0 preserved. 2566 tests / 192 files |
 | **1.25.6** | 2026-07-24 | PATCH: Eliminated 14 `@typescript-eslint/no-unsafe-*` Bot warnings via `createRequire(__filename)` over bare `require('node:http')`. **Bot 0/0 first time.** 2535 tests |
