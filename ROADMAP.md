@@ -2,34 +2,25 @@
 
 > Feature planning and improvement proposals
 
-**Version:** 1.25.7 PATCH (RELEASED 2026-07-25). | **Updated:** 2026-07-25
+**Version:** 1.25.8 PATCH (RELEASED 2026-07-25). | **Updated:** 2026-07-25
 
 ## Current Status
 
-**v1.25.7 — RELEASED 2026-07-25.** PATCH scope:
-- **PR #344** (DocTpoint): cache-stable prompt layout — invariant list first + ctime ascending sort. Cold 54s → repeat 1.2s on Gemma-4-26B MoE LM Studio. 2805p field wall-clock 1836s → 784s (2.34×).
-- **PR #345** (DocTpoint): slim dedup + top-K candidate pre-filter + 'index' schema selector. Field prompt tokens 660K → 372K (−44%). 8 recall fixtures pin 100% recall over canonical pairs.
-- **PR #346** (self): API key switching bug fix (regression since v1.25.3 #182) — new `resolveInitialApiKey` helper + `pendingKey` parameter on `resolveProviderApiKey`; threaded through Fetch Models / Test Connection / `createLLMClient`. Codex Provider fully isolated. 11 new tests.
-- 19 new tests since v1.25.6 (+12 from DocTpoint +7 from API key fix). **Bot 0/0 preserved.** 2566 tests / 192 files.
+**v1.25.8 — RELEASED 2026-07-25.** Hotfix PATCH scope:
+- **PR #353** (self): `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only on `hide()`). Fixes v1.25.7 PATCH regression where switching LLM Provider (e.g. Deepseek → MiniMax) made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header". Singleton `this.llmClient` rebuilt by `initializeLLMClient()` after `commitTempSettings` was still reading SecretStorage's previous provider's key (the in-memory typed key never got flushed). Two root causes inside `commitTempSettings`: (1) only `hide()` called `flushApiKey()` — Test Connection / Language Save paths skipped it. (2) `testLLMConnection`'s fire-and-forget `void this.saveSettings()` would have persisted the typed apiKey as plaintext on flush-failure even after our rollback; added an explicit `saveSettings()` after rollback. 7 new tests (+6 commit-flush regression cases against the real `LLMWikiSettingTab.commitTempSettings` / `flushApiKey` via `Object.create(prototype)` + 1 mock signature update). **Bot 0/0 preserved.** 2572 tests / 193 files.
 
-**v1.25.7 PATCH deferred items** (moved to v1.26.0 MINOR — out of PATCH scope to avoid over-inflation):
-- **P0-1 fix-runners parallelization** — 5串行 fix phases → `Promise.allSettled` × concurrency (model: `runAliasCompletion`)
-- **P1-1 analysis content-hash cache** — `.obsidian/plugins/karpathywiki/cache/lint-analysis.json`, LRU 50 entries
-- **P1-2 smart-skip controller** — programmatic-empty + cache-double-hit → skip both LLM phases
+## Next: v1.26.0 MINOR (after v1.25.8 ships)
 
-Full archived plan: [[project_v1.25.7_lint_perf_plan]]. Out of scope (v1.26.0 MINOR): embedding/RAG Tier 2 预筛 — 🚫 **永久禁用** per [[feedback_no_rag_embedding_perf]].
+Theme: Kimi Files API + non-routine PDF providers (PR4, AkaSakana contribution) + wiki-engine.ts decomposition (3rd-party audit P1, 2026-07-19) + #220 source-revision awareness Tier 0+1 + #328 Schema Phase 2/3 + DocTpoint open issues (#330/#312/#306 follow-up). Also carries over the v1.25.7 PATCH deferred items: **P0-1 fix-runners parallelization**, **P1-1 analysis content-hash cache**, **P1-2 smart-skip controller**.
 
-## Next: v1.26.0 MINOR (after v1.25.7 ships)
-
-Theme: Kimi Files API + non-routine PDF providers (PR4, AkaSakana contribution) + wiki-engine.ts decomposition (3rd-party audit P1, 2026-07-19) + #220 source-revision awareness Tier 0+1 + #328 Schema Phase 2/3 + DocTpoint open issues (#330/#312/#306 follow-up).
-
-Historic compositions (v1.25.6 and earlier) live in [CHANGELOG.md](./CHANGELOG.md) — kept brief here.
+Historic compositions (v1.25.7 and earlier) live in [CHANGELOG.md](./CHANGELOG.md) — kept brief here.
 
 ---
 
 ## Version Timeline
 | Version | Date | Headline |
 |---------|------|----------|
+| **1.25.8** | 2026-07-25 | PATCH Hotfix: `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only `hide()`). Fixes v1.25.7 regression where provider switching made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header". +7 tests (6 against real `LLMWikiSettingTab.commitTempSettings` via `Object.create(prototype)` + 1 mock signature update). Bot 0/0 preserved. 2572 tests / 193 files |
 | **1.25.7** | 2026-07-25 | PATCH: API key switching bug fix (regression since v1.25.3 #182, PR #346) + DocTpoint dedup perf PRs #344+#345. Cache-stable prompt layout (54s→1.2s repeat) + slim dedup + top-K candidate pre-filter (660K→372K prompt tokens, −44%). 19 new tests since v1.25.6. Bot 0/0 preserved. 2566 tests / 192 files |
 | **1.25.6** | 2026-07-24 | PATCH: Eliminated 14 `@typescript-eslint/no-unsafe-*` Bot warnings via `createRequire(__filename)` over bare `require('node:http')`. **Bot 0/0 first time.** 2535 tests |
 | **1.25.5** | 2026-07-24 | PATCH: P0 Bot compliance (Platform.isDesktop guard + getSettingDefinitions stub + eslint.config.mjs cleanup) — pathway toward 0/0 |
