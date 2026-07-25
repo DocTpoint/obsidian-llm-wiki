@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.7] - 2026-07-25 (in flight)
+
+> **Status:** PRs #344 + #345 merged to main @ `7ef237a` 2026-07-25 02:04Z. Remaining PATCH scope (fix-runners parallelization, analysis cache, smart-skip controller) ships as the v1.25.7 release commit. This entry will be finalized at release.
+
+### Fixed
+
+- **API key self-restore when switching LLM providers (regression since v1.25.3 #182).** When a user changed the Provider dropdown in Settings, any key typed into the API Key input was silently overwritten on every `tab.display()` re-render with the stale SecretStorage value left over from the previously-active provider. Fetch Models and Test Connection used the same stale key. Two independent fixes:
+  1. New `resolveInitialApiKey(tempSettings, secretStorage)` helper in `provider-api-key-resolver.ts` is called from `provider-section.ts` to paint the API Key input — precedence is `tempSettings.apiKey` (in-memory buffer) > SecretStorage > `''`. The previous `load() ?? tempSettings.apiKey` never fell back because SecretStorage always has the last-flushed key (never null), so the user's pending edit was clobbered on every re-render.
+  2. `resolveProviderApiKey` gained an optional `pendingKey?: string` 3rd parameter — when non-empty, it wins over both SecretStorage and `settings.apiKey`. Threaded through `testLLMConnection(pendingApiKey?)`, `createLLMClient(settings, ..., secretStorage?, pendingApiKey?)`, `createLLMClientFromSettings{,Sync}(settings, pendingApiKey?)`, and the 2 Settings-UI call sites (`model-section.ts` for Fetch Models, `test-connection-section.ts` for Test Connection). Codex Provider remains fully isolated (separate `karpathywiki-openai-codex` SecretStorage slot; `isCodex` UI branch never renders the regular API Key input).
+  **Single-secretId design preserved:** switching providers still overwrites the same `karpathywiki-provider-api-key` slot on tab close (no per-provider slots); the fix honors the in-memory typed key until then. 11 new tests (8 `resolveProviderApiKey` precedence cases + 7 `resolveInitialApiKey` cases + 2 end-to-end integration assertions).
+
+### Performance
+
+- **Dedup prompt cache-stable layout (PR #344 by @DocTpoint).** Two coordinated changes: (1) `resolveEntityDedup` prompt: invariant `{{existing_pages}}` list rendered FIRST, per-call candidate block LAST — local KV prefix cache now reuses the shared prefix across consecutive calls (cold 54s → repeat 1.2s on Gemma-4-26B MoE LM Studio, 520-630 tok/s prefill). (2) `getExistingWikiPages` exposes `ctime`; same-type list sorted by `ctime ascending` so newly-created pages join the rendered list at the end, keeping byte-identical prefix stability for prefix cache invalidation. Recall-neutral by construction (same candidate set, same matching criteria, only ordered differently); decision-neutrality pinned by smoke fixtures.
+- **Slim semantic dedup prompt (PR #345 by @DocTpoint).** Two coordinated changes: (1) `buildSystemPrompt('full')` → `buildSystemPrompt('index')` in the dedup call (Wiki Structure only, ~0.7K chars instead of ~7.7K — saves ~2,500 prompt tokens per call). (2) New `selectDedupCandidates(name, summary, sameTypePages)` pure function ranks same-type list with the existing zero-token `localKeywordMatch` and keeps top `DEDUP_CANDIDATE_TOP_K = 30` candidates. Field measurement on 2805-page German medical vault: prompt tokens 660K → 372K = **−44%**. 8 recall fixtures pin 100% recall over both lexical and fallback branches (incl. CJK translation and acronym cases) — recall gate's contract: "raise K or widen fallback, never lower the bar".
+
+### Tests
+
+- 2566 tests passing (192 files). +19 tests since v1.25.6: 3 dedup-prompt-order fixtures (layout + ctime ordering), 9 dedup-candidate-selection fixtures (4 lexical, 4 fallback, 1 token-collapse proof), and 7 API-key switching regression tests (`resolveInitialApiKey` precedence + `resolveProviderApiKey` `pendingKey` precedence).
+
+---
+
 ## [1.25.3] - 2026-07-23
 
 ### Security
