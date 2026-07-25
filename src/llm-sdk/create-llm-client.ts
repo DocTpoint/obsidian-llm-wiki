@@ -107,7 +107,10 @@ function createBedrockClient(
  * Async factory used by callers that can await (Test Connection,
  * settings change handlers, ingestion init).
  */
-export async function createLLMClientFromSettings(settings: ProviderSettings): Promise<LLMClient> {
+export async function createLLMClientFromSettings(
+  settings: ProviderSettings,
+  pendingApiKey?: string,
+): Promise<LLMClient> {
   const { OpenAISdkClient } = await import('./openai-sdk-client');
   const { AnthropicSdkClient } = await import('./anthropic-sdk-client');
   const { OpenAICompatSdkClient } = await import('./openai-compat-sdk-client');
@@ -117,9 +120,13 @@ export async function createLLMClientFromSettings(settings: ProviderSettings): P
   // v1.25.3 #182: read the key through the resolver so SecretStorage is
   // preferred over the (now-empty) settings.apiKey. Falls back to the
   // legacy plaintext for un-migrated installs and tests.
+  // v1.25.7 PATCH: forward the optional pendingApiKey (tab.tempSettings.apiKey
+  // in the Test Connection flow) so the freshly-typed key wins over the
+  // stale SecretStorage value. Production callers pass undefined.
   const apiKey = resolveProviderApiKey(
     { apiKey: settings.apiKey, providerApiKeySecretId: settings.providerApiKeySecretId },
     settings.secretStorage ?? null,
+    pendingApiKey,
   );
   const baseUrl = settings.baseUrl?.trim() || undefined;
 
@@ -214,7 +221,10 @@ export async function preloadLLMClientModules(): Promise<void> {
  * If not preloaded, throws — this signals a bug in the plugin init
  * order, not a runtime config issue.
  */
-export function createLLMClientFromSettingsSync(settings: ProviderSettings): LLMClient {
+export function createLLMClientFromSettingsSync(
+  settings: ProviderSettings,
+  pendingApiKey?: string,
+): LLMClient {
   if (!preloadedModules) {
     throw new Error(
       '[v1.23.0 LLM migration] SDK modules not preloaded. ' +
@@ -227,9 +237,13 @@ export function createLLMClientFromSettingsSync(settings: ProviderSettings): LLM
   // v1.25.3 #182: read the key through the resolver so SecretStorage is
   // preferred over the (now-empty) settings.apiKey. Falls back to the
   // legacy plaintext for un-migrated installs and tests.
+  // v1.25.7 PATCH: forward the optional pendingApiKey (tab.tempSettings.apiKey
+  // in the Test Connection flow) so the freshly-typed key wins over the
+  // stale SecretStorage value. Production callers pass undefined.
   const apiKey = resolveProviderApiKey(
     { apiKey: settings.apiKey, providerApiKeySecretId: settings.providerApiKeySecretId },
     settings.secretStorage ?? null,
+    pendingApiKey,
   );
   const baseUrl = settings.baseUrl?.trim() || undefined;
 

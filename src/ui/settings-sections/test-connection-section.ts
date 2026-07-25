@@ -47,7 +47,12 @@ export function renderTestConnectionSection(tab: LLMWikiSettingTab, containerEl:
         const testSettings = { ...tab.tempSettings };
         const oldSettings = tab.plugin.settings;
         applySettings(testSettings);
-        const result = await tab.plugin.testLLMConnection();
+        // v1.25.7 PATCH: forward the in-memory typed key so testLLMConnection
+        // honors it via the resolver's pendingKey parameter (bypassing the
+        // stale SecretStorage value). See connection-commands.ts for the
+        // matching signature change. Production callers (initializeLLMClient
+        // etc.) pass undefined.
+        const result = await tab.plugin.testLLMConnection(testSettings.apiKey);
         tab.tempSettings.llmReady = result.success;
         if (!result.success) {
           // Restore live settings on test failure - do not persist broken config.

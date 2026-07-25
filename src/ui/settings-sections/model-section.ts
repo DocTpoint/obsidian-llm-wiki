@@ -61,9 +61,15 @@ export function renderModelSection(tab: LLMWikiSettingTab, containerEl: HTMLElem
           // v1.25.3 #182: resolve the effective API key from SecretStorage
           // so Fetch Models works post-migration (tempSettings.apiKey is
           // normally '' — the plaintext was moved to OS keychain).
+          // v1.25.7 PATCH: Fetch Models is invoked from the Settings UI
+          // where `tempSettings.apiKey` IS the in-memory typed buffer.
+          // Pass it as `pendingKey` so the resolver honors a freshly-typed
+          // key (e.g. just switched provider + typed new key) instead of
+          // silently falling back to the stale SecretStorage value.
           const effectiveApiKey = resolveProviderApiKey(
             { apiKey: tempSettings.apiKey, providerApiKeySecretId: tempSettings.providerApiKeySecretId },
             tab.plugin.app.secretStorage,
+            tempSettings.apiKey,
           );
           const apiKey = isOllama ? 'ollama' : effectiveApiKey;
           const baseUrl = tempSettings.baseUrl?.trim() || providerConfig?.baseUrl || undefined;

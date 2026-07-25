@@ -51,4 +51,56 @@ describe('resolveProviderApiKey (#182)', () => {
     };
     expect(resolveProviderApiKey({ ...SETTINGS, apiKey: 'sk-fallback' }, broken)).toBe('sk-fallback');
   });
+
+  // Bug fix (#v1.25.7): pendingKey wins over SecretStorage so a freshly-typed
+  // key in the Settings UI is honored immediately by Fetch Models / Test
+  // Connection, instead of being silently overridden by the stale
+  // SecretStorage value from the previously-active provider.
+  describe('pendingKey (in-memory typed buffer)', () => {
+    it('returns trimmed pendingKey when non-empty, ignoring SecretStorage', () => {
+      expect(
+        resolveProviderApiKey(SETTINGS, backendWith('sk-stale-from-old-provider'), '  sk-new-typed  '),
+      ).toBe('sk-new-typed');
+    });
+
+    it('returns trimmed pendingKey when non-empty, ignoring settings.apiKey', () => {
+      expect(
+        resolveProviderApiKey(
+          { ...SETTINGS, apiKey: 'sk-legacy-plaintext' },
+          backendWith('sk-stale-from-old-provider'),
+          'sk-new-typed',
+        ),
+      ).toBe('sk-new-typed');
+    });
+
+    it('falls through to SecretStorage when pendingKey is undefined', () => {
+      expect(resolveProviderApiKey(SETTINGS, backendWith('sk-stored'), undefined)).toBe('sk-stored');
+    });
+
+    it('falls through to SecretStorage when pendingKey is empty string', () => {
+      expect(resolveProviderApiKey(SETTINGS, backendWith('sk-stored'), '')).toBe('sk-stored');
+    });
+
+    it('falls through to SecretStorage when pendingKey is whitespace-only', () => {
+      expect(resolveProviderApiKey(SETTINGS, backendWith('sk-stored'), '   ')).toBe('sk-stored');
+    });
+
+    it('falls through to settings.apiKey when pendingKey is empty and SecretStorage is empty', () => {
+      expect(
+        resolveProviderApiKey({ ...SETTINGS, apiKey: 'sk-legacy' }, backendWith(), ''),
+      ).toBe('sk-legacy');
+    });
+
+    it('returns empty string when all three sources are empty', () => {
+      expect(resolveProviderApiKey(SETTINGS, backendWith(), undefined)).toBe('');
+    });
+
+    it('survives SecretStorage.getSecret throw with non-empty pendingKey', () => {
+      const broken: ProviderSecretStorage = {
+        getSecret: () => { throw new Error('keychain locked'); },
+        setSecret: () => {},
+      };
+      expect(resolveProviderApiKey(SETTINGS, broken, 'sk-typed')).toBe('sk-typed');
+    });
+  });
 });

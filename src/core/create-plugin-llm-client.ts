@@ -27,6 +27,10 @@ export function createLLMClient(
   // Pass `plugin.app.secretStorage` from production code; tests that
   // don't have one can omit it (resolver falls back to settings.apiKey).
   secretStorage?: ProviderSecretStorage | null,
+  // v1.25.7 PATCH: forward the in-memory typed key (tab.tempSettings.apiKey
+  // in the Test Connection flow) so the freshly-typed key wins over the
+  // stale SecretStorage value. Production callers pass undefined.
+  pendingApiKey?: string,
 ): LLMClient {
   const client: LLMClient = createLLMClientFromSettingsSync({
     provider: settings.provider,
@@ -37,7 +41,7 @@ export function createLLMClient(
     codexAuth,
     codexVersion,
     codexQuotaMessage: getText(settings.language, 'codexAuthQuota'),
-  });
+  }, pendingApiKey);
 
   return wrapWithAdvancedSettings(client, {
     maxTokensPerCall: settings.maxTokensPerCall,

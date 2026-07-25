@@ -49,7 +49,7 @@ export interface ConnectionCommandsHost {
 
 /** Method signatures merged into LLMWikiPlugin via interface augmentation. */
 export interface ConnectionCommandsMethods {
-  testLLMConnection(): Promise<{ success: boolean; message: string }>;
+  testLLMConnection(pendingApiKey?: string): Promise<{ success: boolean; message: string }>;
   requireLLMReady(): boolean;
   isWikiInitialized(): Promise<boolean>;
 }
@@ -57,15 +57,21 @@ export interface ConnectionCommandsMethods {
 export const connectionCommands = {
   async testLLMConnection(
     this: ConnectionCommandsHost,
+    pendingApiKey?: string,
   ): Promise<{ success: boolean; message: string }> {
     const t = TEXTS[this.settings.language] || TEXTS.en;
 
     if (this.settings.provider === 'openai-codex' && this.codexAuthManager?.hasCredential() !== true) {
       return { success: false, message: t.codexAuthRequired };
     }
+    // v1.25.7 PATCH: accept an optional pendingApiKey so the Test
+    // Connection button can forward the in-memory typed key from
+    // tab.tempSettings.apiKey, bypassing the stale SecretStorage value.
+    // Production callers (initializeLLMClient etc.) pass undefined.
     if (providerRequiresApiKey(this.settings.provider) && !resolveProviderApiKey(
       { apiKey: this.settings.apiKey, providerApiKeySecretId: this.settings.providerApiKeySecretId },
       this.app.secretStorage,
+      pendingApiKey,
     )) {
       return { success: false, message: t.errorNoApiKey || 'API Key is not configured' };
     }
@@ -80,7 +86,7 @@ export const connectionCommands = {
     console.debug('[testLLMConnection] probe plan:', probePlan.map(p => `${p.label}=${p.model}`).join(', '));
 
     try {
-      const testClient = createLLMClient(this.settings, this.codexAuthManager ?? undefined, this.manifest.version, this.app.secretStorage);
+      const testClient = createLLMClient(this.settings, this.codexAuthManager ?? undefined, this.manifest.version, this.app.secretStorage, pendingApiKey);
 
       for (const probe of probePlan) {
         const attempted = new Set<string>();
