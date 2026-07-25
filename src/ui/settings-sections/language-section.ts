@@ -53,12 +53,12 @@ export function renderLanguageSection(tab: LLMWikiSettingTab, containerEl: HTMLE
     .addButton(button => button
       .setButtonText(tab.getText('saveButton'))
       .setCta()
-      .onClick(() => {
-        void (async () => {
-          tab.commitTempSettings();
-          await tab.plugin.saveSettings();
-          new Notice(tab.getText('savedNotice'), NOTICE_SHORT);
-        })();
+      .onClick(async () => {
+        // v1.25.8: skip saveSettings on flush failure so a typed key
+        // survives in tempSettings for retry (matches hide()).
+        if (!tab.commitTempSettings()) return;
+        await tab.plugin.saveSettings();
+        new Notice(tab.getText('savedNotice'), NOTICE_SHORT);
       }));
 
   // 2. Wiki Output Language: heading + dropdown + optional custom input.

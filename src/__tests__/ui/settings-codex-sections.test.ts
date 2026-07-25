@@ -84,7 +84,7 @@ describe('Codex settings section integration', () => {
     tab.plugin.wikiEngine = { updateSettings: vi.fn() } as never;
     tab.plugin.testLLMConnection = vi.fn(async () => { tab.plugin.settings.llmReady = true; return { success: true, message: 'ok' }; });
     tab.plugin.saveSettings = vi.fn(async () => { persisted.push(tab.plugin.settings.llmReady); });
-    tab.commitTempSettings = vi.fn(() => { tab.plugin.settings = { ...tab.tempSettings }; });
+    tab.commitTempSettings = vi.fn((): boolean => { tab.plugin.settings = { ...tab.tempSettings }; return true; });
     tab.syncCodexModelsFromPlugin = vi.fn();
     renderTestConnectionSection(tab, {} as HTMLElement);
     await buttonClicks[0]();
