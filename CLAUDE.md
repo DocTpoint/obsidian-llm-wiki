@@ -1,10 +1,10 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-07-25 (main @ `0e66f60`; v1.25.7 PATCH SHIPPED — API key switching bug fix + lint-perf)
+**Last Updated:** 2026-07-25 (main @ `f32d02d`; v1.25.8 PATCH SHIPPED — SecretStorage flush on every commit)
 
 ---
 
-## Current Phase: v1.25.7 PATCH SHIPPED 2026-07-25. main @ `0e66f60`. Three PRs merged into one release: PR #344 (DocTpoint, cache-stable prompt layout — cold 54s → repeat 1.2s on Gemma-4-26B MoE), PR #345 (DocTpoint, slim dedup + top-K pre-filter + 'index' schema selector — field prompt tokens 660K → 372K, −44%), PR #346 (self, API key switching bug fix — regression since v1.25.3 #182; new `resolveInitialApiKey` helper + `pendingKey` parameter on `resolveProviderApiKey`). 19 new tests (+12 DocTpoint +7 self). Bot: **0 errors / 0 warnings** (v1.25.6 invariant intact). 2566 tests / 192 files.
+## Current Phase: v1.25.8 PATCH SHIPPED 2026-07-25. main @ `f32d02d`. Hotfix PR #353: `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only on `hide()`), so Test Connection / Language Save / hide() all keep the canonical store in sync. Fixes the v1.25.7 PATCH regression where switching LLM Provider (e.g. Deepseek → MiniMax) made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header" (singleton `this.llmClient` rebuilt from SecretStorage after `commitTempSettings` still held the previous provider's key). 7 new tests (+6 commit-flush regression cases via real `LLMWikiSettingTab` prototype + 1 mock signature update in `settings-codex-sections.test.ts`). Bot: **0 errors / 0 warnings** preserved. 2572 tests / 193 files.
 
 **Deferred from v1.25.7 PATCH** (moved to v1.26.0 MINOR to avoid scope over-inflation): P0-1 fix-runners parallelization, P1-1 analysis content-hash cache, P1-2 smart-skip controller. Detailed plan archived in [[project_v1.25.7_lint_perf_plan]]. **🚫 Embedding/RAG/vector index for lint perf: 永久禁止** — see [[feedback_no_rag_embedding_perf]].
 

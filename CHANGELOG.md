@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.8] - 2026-07-25
+
+### Fixed
+
+- **Test Connection / Language Save / hide() now all flush SecretStorage, not only hide() (v1.25.7 PATCH regression).** When a user switched from Deepseek to MiniMax or OpenRouter via the Settings tab, Fetch Models and Test Connection worked (v1.25.7 PATCH added a `pendingKey` tier to `resolveProviderApiKey` for those flows), but Lint/Query/Ingest failed with 401 "Please carry the API secret key in the 'Authorization' field". Root cause: `commitTempSettings()` wiped the in-memory `tempSettings.apiKey` buffer without flushing to Obsidian SecretStorage — only `hide()` (tab close) did. Test Connection / Language Save / other non-hide() commit paths left SecretStorage holding the **previous provider's key**. The singleton `this.llmClient` rebuilt by `initializeLLMClient()` read the stale key, so subsequent business calls sent the wrong Authorization header.
+
+### Changed
+
+- `commitTempSettings()` now internally calls `flushApiKey()` before wiping + spreading to `plugin.settings`. Returns `boolean`: `false` on SecretStorage IO failure so the caller skips `saveSettings()` (typed key survives for retry, v1.25.4 #339 invariant). Two non-hide() callers (test-connection-section success path, language-section Save button) consume the return the same way.
+- Flush-failure branch in test-connection-section: also rolls back `applySettings(oldSettings)` and **persists** it — `testLLMConnection` fires a fire-and-forget `void this.saveSettings()` that captures the typed apiKey as a plaintext reference. Without the explicit overwrite, the pending `saveData()` would persist the typed key into `data.json`, violating the v1.25.3 #182 "no plaintext in data.json" invariant.
+
+## Tests
+
+- 2572 tests passing (193 files). +7 tests and −58 net LOC since v1.25.7: 6 new tests in `settings-commit-flush-api-key.test.ts` exercise the real `LLMWikiSettingTab.commitTempSettings` / `flushApiKey` methods via prototypal construction (no function-mirror — see project [[feedback-tdd-standard]]). 1 mock signature update in `settings-codex-sections.test.ts`.
+
+---
+
 ## [1.25.7] - 2026-07-25
 
 ### Fixed
