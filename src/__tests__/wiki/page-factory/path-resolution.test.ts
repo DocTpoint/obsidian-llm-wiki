@@ -127,6 +127,27 @@ describe('resolvePagePath — LLM semantic dedup fallback', () => {
     expect(result.path).toBe('wiki/entities/Novel.md');
   });
 
+  it('passes the slim "index" schema selector to buildSystemPrompt', async () => {
+    // The dedup question is a same-type yes/no match; the matching criteria
+    // live in the user prompt. Only "Wiki Structure" is needed from the
+    // schema — templates/naming/granularity are ballast for this call.
+    let seenMode: string | undefined;
+    const ctx = makeCtx({
+      mockVault: {
+        getMarkdownFiles: () => [{ path: 'wiki/entities/Other.md', basename: 'Other' }],
+      },
+      client: {
+        createMessage: async () => JSON.stringify({ match: false }),
+      },
+    });
+    ctx.buildSystemPrompt = async (mode: string): Promise<string> => {
+      seenMode = mode;
+      return 'system';
+    };
+    await resolvePagePath(ctx, 'Novel', 'entity', 'desc');
+    expect(seenMode).toBe('index');
+  });
+
   it('returns slug path when LLM throws (defensive fallback)', async () => {
     const ctx = makeCtx({
       mockVault: {

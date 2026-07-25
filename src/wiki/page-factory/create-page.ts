@@ -40,7 +40,7 @@ import { isConversationSource, contextualizeError } from './contextualize';
 export interface CreatePageContext extends PathResolutionContext {
   settings: LLMWikiSettings;
   getClient(): LLMClient | null;
-  buildSystemPrompt(mode: 'full' | 'compact' | 'merge' | 'entity' | 'concept'): Promise<string>;
+  buildSystemPrompt(mode: 'full' | 'compact' | 'merge' | 'entity' | 'concept' | 'index'): Promise<string>;
   createOrUpdateFile(path: string, content: string): Promise<void>;
   tryReadFile(path: string): Promise<string | null>;
 }
