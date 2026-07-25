@@ -1,12 +1,12 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-07-25 (main @ `7ef237a`; v1.25.7 lint-perf in flight — DocTpoint PRs #344/#345 merged)
+**Last Updated:** 2026-07-25 (main @ `0e66f60`; v1.25.7 PATCH SHIPPED — API key switching bug fix + lint-perf)
 
 ---
 
-## Current Phase: v1.25.7 PATCH (lint-perf, in progress). main @ `7ef237a`. DocTpoint PRs #344 (cache-stable prompt layout) and #345 (slim dedup + top-K pre-filter) merged 2026-07-25 02:04Z with `--merge` — author's commits preserved, no cherry-pick. 12 new tests (recall fixtures + layout fixtures). Bot: **0 errors / 0 warnings** (v1.25.6 invariant intact).
+## Current Phase: v1.25.7 PATCH SHIPPED 2026-07-25. main @ `0e66f60`. Three PRs merged into one release: PR #344 (DocTpoint, cache-stable prompt layout — cold 54s → repeat 1.2s on Gemma-4-26B MoE), PR #345 (DocTpoint, slim dedup + top-K pre-filter + 'index' schema selector — field prompt tokens 660K → 372K, −44%), PR #346 (self, API key switching bug fix — regression since v1.25.3 #182; new `resolveInitialApiKey` helper + `pendingKey` parameter on `resolveProviderApiKey`). 19 new tests (+12 DocTpoint +7 self). Bot: **0 errors / 0 warnings** (v1.25.6 invariant intact). 2566 tests / 192 files.
 
-**Remaining v1.25.7 scope:** P0-1 fix-runners parallelization, P1-1 analysis content-hash cache, P1-2 smart-skip controller (programmatic-empty + cache-double-hit). Detailed plan archived in [[project_v1.25.7_lint_perf_plan]]. **🚫 Embedding/RAG/vector index for lint perf: 永久禁止** — see [[feedback_no_rag_embedding_perf]].
+**Deferred from v1.25.7 PATCH** (moved to v1.26.0 MINOR to avoid scope over-inflation): P0-1 fix-runners parallelization, P1-1 analysis content-hash cache, P1-2 smart-skip controller. Detailed plan archived in [[project_v1.25.7_lint_perf_plan]]. **🚫 Embedding/RAG/vector index for lint perf: 永久禁止** — see [[feedback_no_rag_embedding_perf]].
 
 **v1.25.1 PATCH (2026-07-20, 11 commits, ~80 files, 2274 tests):**
 

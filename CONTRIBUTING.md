@@ -196,7 +196,7 @@ src/
 │   ├── tag-chip-input.ts
 │   └── schema-diff-modal.ts
 ├── texts/               # i18n (10 languages: EN/ZH/ZH-Hant/JA/KO/DE/FR/ES/PT/IT)
-└── __tests__/           # Unit tests (vitest, 2547 tests across 191 files; v1.25.7 PATCH in flight 2026-07-25, +12 from DocTpoint PR #344+#345 dedup perf)
+└── __tests__/           # Unit tests (vitest, 2566 tests across 192 files; v1.25.7 PATCH SHIPPED 2026-07-25, +19: 12 DocTpoint dedup perf + 7 API key switching bug fix regression)
 ```
 
 ## Internationalization
