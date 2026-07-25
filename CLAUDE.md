@@ -1,10 +1,12 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-07-24 (v1.25.6 PATCH RELEASED — Obsidian Bot 0/0 first time, lessons codified)
+**Last Updated:** 2026-07-25 (main @ `7ef237a`; v1.25.7 lint-perf in flight — DocTpoint PRs #344/#345 merged)
 
 ---
 
-## Current Phase: v1.25.6 PATCH RELEASED (2026-07-24). Obsidian Bot: **0 errors / 0 warnings** for the first time. v1.25.4/5/6 saga: v1.25.4 inline-disable 反模式 → v1.25.5 Platform.isDesktop guard + getSettingDefinitions stub → v1.25.6 createRequire(__filename) 消除 no-unsafe-* 传播。三次教训已写进 §"Bot compliance invariant" (under Key Design Decisions). v1.26.0 MINOR following.
+## Current Phase: v1.25.7 PATCH (lint-perf, in progress). main @ `7ef237a`. DocTpoint PRs #344 (cache-stable prompt layout) and #345 (slim dedup + top-K pre-filter) merged 2026-07-25 02:04Z with `--merge` — author's commits preserved, no cherry-pick. 12 new tests (recall fixtures + layout fixtures). Bot: **0 errors / 0 warnings** (v1.25.6 invariant intact).
+
+**Remaining v1.25.7 scope:** P0-1 fix-runners parallelization, P1-1 analysis content-hash cache, P1-2 smart-skip controller (programmatic-empty + cache-double-hit). Detailed plan archived in [[project_v1.25.7_lint_perf_plan]]. **🚫 Embedding/RAG/vector index for lint perf: 永久禁止** — see [[feedback_no_rag_embedding_perf]].
 
 **v1.25.1 PATCH (2026-07-20, 11 commits, ~80 files, 2274 tests):**
 
@@ -76,12 +78,6 @@ Full composition + execution plan: [ROADMAP.md](./ROADMAP.md)
 ### Withdrawn / non-issues (kept for archaeology)
 
 - **Windows: `Connection test failed: TypeError: Failed to construct 'Headers'`** — withdrawn 2026-07-10 (user input error: non-ASCII chars in API key field; not a plugin/AI-SDK bug). AI-SDK 5.0.53 has a Windows guard but our `provider-utils@4.0.35` (bundled by `ai@^6.0.214`) does not include the fix; not worth patching given root cause is user-side.
-
----
-
-## 📁 Project Structure
-
-> This section has moved to **[CONTRIBUTING.md](./CONTRIBUTING.md#project-structure)** — it is a contributor-facing reference (your IDEs display the file tree natively) and keeping it in CLAUDE.md was creating a stale copy that drifted from reality. The CONTRIBUTING.md version is maintained alongside code changes.
 
 ---
 
@@ -384,7 +380,7 @@ English, conventional commits. `feat:` `fix:` `docs:` `refactor:` `test:` `chore
 
 ### Auto-close issues via commit message
 
-When a commit resolves tracked Issues, append `Closes #N` (or `Fixes #N` / `Resolves #N`) at the end of the commit body. This triggers GitHub to auto-close the issue when the commit hits the default branch.
+Append `Closes #N` (or `Fixes #N`) at the end of the commit body so GitHub auto-closes when the commit hits the default branch. **NEVER** use `gh issue close` or the GitHub UI to close issues manually — let the commit message do it.
 
 ```bash
 git commit -m "fix: batch P0 fixes
@@ -395,41 +391,16 @@ git commit -m "fix: batch P0 fixes
 Closes #94, #96, #99"
 ```
 
-**NEVER** use `gh issue close` or the GitHub UI to close issues manually — let the commit message do it. This keeps the git history → issue link intact and avoids premature closure before the code reaches default branch.
-
 ### Commit author identity + co-authorship
 
-The Claude Code sandbox uses a placeholder git identity (`Claude Code <claude@anthropic.com>`) that **must not** be the commit author on this project. Every commit attributed to "Claude Code" inflates the GitHub contributor graph with a non-human identity and obscures the actual maintainer trail.
+Canonical maintainer: `green-dalii <654534332@qq.com>` (verified against GitHub user `green-dalii`). Some older commits were authored as `Greener-Dalii` (capitalized, used by GitHub UI on merge). All NEW commits — including `--amend` and squash — MUST use the lowercase canonical form.
 
-**Canonical maintainer identity (verified against GitHub user `green-dalii`):**
+**Rules (canonical source: [[feedback_co_authored_by_format]]):**
 
-```
-name:  green-dalii
-email: 654534332@qq.com
-```
-
-Some older commits on `main` were authored as `Greener-Dalii` (capitalized, used by the GitHub UI on merge operations). All NEW commits — including `--amend` and squash operations — MUST use the lowercase canonical form `green-dalii`. Do not retroactively rewrite history unless the user explicitly asks.
-
-**Rules (added 2026-07-06 after manual test feedback):**
-
-1. **Commit author** MUST be the maintainer:
-   ```bash
-   git -c user.name="green-dalii" -c user.email="654534332@qq.com" commit --amend --no-edit
-   ```
-   Or set it once per session before any commits:
-   ```bash
-   git config user.name "green-dalii"
-   git config user.email "654534332@qq.com"
-   ```
-2. **Every commit MUST list the maintainer as `Co-authored-by`** (in addition to the AI model):
-   ```
-   Co-authored-by: green-dalii <654534332@qq.com>
-   Co-authored-by: Claude Code <noreply@anthropic.com>
-   ```
-   **Format rule**: the AI `Co-authored-by` line MUST be exactly `Claude Code <noreply@anthropic.com>`. Do **NOT** include the specific model name (e.g. `Opus 4.8`), version number, or context-window size (e.g. `1M context`) — these are ad copy that pollutes git history and goes stale when the model is upgraded. (2026-07-15 rule.)
-3. **NEVER** amend/squash a commit in a way that drops the `Co-authored-by: green-dalii` trailer — re-add it after every `git commit --amend`.
-4. The `Co-Authored-By` line must NOT be wrapped in a code block or in any way obfuscated — GitHub reads it as a literal trailer.
-5. When the session ends or you notice a missing co-author on any recent commit, **stop and fix it before continuing** — do not let the oversight propagate to the PR.
+1. **Commit author** MUST be the maintainer (`git config user.name "green-dalii" && git config user.email "654534332@qq.com"`)
+2. **Every commit MUST list the maintainer as `Co-authored-by`** + AI model trailer. AI trailer MUST be exactly `Claude Code <noreply@anthropic.com>` — **no model name, version, or context-window size** (these go stale and pollute git history).
+3. **NEVER** amend/squash away the `Co-authored-by: green-dalii` trailer — re-add it after every `--amend`.
+4. If you notice a missing co-author on a recent commit, **stop and fix it before continuing** — do not let the oversight propagate to the PR.
 
 ## 🧪 Development Quality Closure (TDD + Planning)
 
@@ -486,9 +457,7 @@ it('debug', () => {
 
 ## ✅ Pre-Release Checklist
 
-Use the `obsidian-plugin-release` skill for the full workflow (Steps 1-8). Gate 1 (lint + tsc + test + build + css-lint) must all pass before any commit.
-
----
+Use the `obsidian-plugin-release` skill for the full workflow (Steps 1-8). Gate 1 (lint + tsc + test + build + css-lint) must all pass before any commit. Six-Gate detail: [[feedback_six_gate_framework]]. Pre-release-specific hardening (lockfile regen, CI consistency, AI-SDK drift): [[feedback_build_verification_root_cause]]. Doc review sweep: `doc-review` skill (PASS/WARN/FAIL verdict).
 
 ## ⚠️ Development Protocol: Plan First, Then Execute
 
@@ -500,11 +469,11 @@ Use the `obsidian-plugin-release` skill for the full workflow (Steps 1-8). Gate 
 
 **Exceptions** (no prior approval needed): trivial one-line fixes, running lint/test/build, reading files, documenting existing code.
 
-**Why**: The user is the domain expert on product vision. The AI has tooling capability but lacks product context. Propose, don't dispose.
+**Why**: The user is the domain expert on product vision. The AI has tooling capability but lacks product context. Propose, don't dispose. Full protocol: [[feedback_development_protocol]].
 
 ## 🧪 TDD: Write Tests First
 
-For any new function or behavior change: write a failing test first, then write the implementation, then refactor. When modifying untested core code, add at least one test for the path you're changing. See TDD Standard above.
+For any new function or behavior change: write a failing test first, then write the implementation, then refactor. When modifying untested core code, add at least one test for the path you're changing. Full standard with shell-test anti-pattern + 真实 vault 原则: [[feedback_tdd_standard]].
 
 ---
 
@@ -514,7 +483,7 @@ For any new function or behavior change: write a failing test first, then write 
 
 | File | Responsibility | What belongs | What does NOT belong |
 |------|---------------|--------------|---------------------|
-| **CLAUDE.md** | Dev standards + current phase | Six-Gate / TDD / Git workflow / current state (v1.22.6 released + v1.23.0 in flight) | Old release histories, project structure tree, full version timeline |
+| **CLAUDE.md** | Dev standards + current phase | Six-Gate / TDD / Git workflow / current state | Old release histories, project structure tree, full version timeline |
 | **ROADMAP.md** | Planning | Next Milestone / Version Timeline (condensed) / Deferred & Backlog | Per-version detail (use CHANGELOG) |
 | **CHANGELOG.md** | History (Keep a Changelog) | Per-version Added/Changed/Fixed/Removed — ancient versions are pre-aggregated, **do not re-merge** | Forward-looking plans, dev standards |
 | **CONTRIBUTING.md** | Contributor guide | Project structure tree, architecture, Mermaid, dev setup | User docs, design philosophy |
@@ -523,7 +492,7 @@ For any new function or behavior change: write a failing test first, then write 
 
 **Cross-reference format:** `[section](./OTHER.md#anchor)` — keep one canonical source, link to it.
 
-**i18n rule:** User-facing strings (settings descriptions, error messages, READMEs) = user language, not implementation language. "Close the model's reasoning output" ✅ / "Disable thinking in 3-tier dialect fallback chain" ❌. See [[feedback-d8-welcome-no-hardcoded-i18n]] + v1.23.0 doc lessons.
+**i18n rule:** User-facing strings (settings descriptions, error messages, READMEs) = user language, not implementation language. "Close the model's reasoning output" ✅ / "Disable thinking in 3-tier dialect fallback chain" ❌. See [[feedback-d8-welcome-no-hardcoded-i18n]] + [[feedback_v1_23_0_doc_and_process_lessons]].
 
 **CHANGELOG rule:** Already aggregated per Keep a Changelog spec. Ancient versions (v1.6.x / 0.2.x) are pre-aggregated — do NOT re-merge. "Optimization" that deletes historical version info is a regression, not improvement. Verify with `grep -c "^## \[" CHANGELOG.md` before assuming it needs work.
 

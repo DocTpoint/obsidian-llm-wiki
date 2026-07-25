@@ -64,14 +64,14 @@ describe('OpenAI Codex plugin lifecycle', () => {
     const plugin = pluginWith(manager);
     plugin.initializeLLMClient();
     expect(plugin.llmClient).not.toBeNull();
-    expect(createLLMClientFromSettingsSync).toHaveBeenCalledWith(expect.objectContaining({ provider: 'openai-codex', codexAuth: manager, codexQuotaMessage: 'ChatGPT Codex allowance reached. Wait for the displayed reset period and try again.' }));
+    expect(createLLMClientFromSettingsSync).toHaveBeenCalledWith(expect.objectContaining({ provider: 'openai-codex', codexAuth: manager, codexQuotaMessage: 'ChatGPT Codex allowance reached. Wait for the displayed reset period and try again.' }), undefined);
   });
   it('injects the selected locale quota message into the Codex client', () => {
     const manager = new CodexAuthManager({ store: memoryCredentialStore(freshCredential()) });
     const plugin = pluginWith(manager);
     plugin.settings.language = 'zh';
     plugin.initializeLLMClient();
-    expect(createLLMClientFromSettingsSync).toHaveBeenCalledWith(expect.objectContaining({ codexQuotaMessage: 'ChatGPT Codex 额度已用尽。请等待显示的重置时间后重试。' }));
+    expect(createLLMClientFromSettingsSync).toHaveBeenCalledWith(expect.objectContaining({ codexQuotaMessage: 'ChatGPT Codex 额度已用尽。请等待显示的重置时间后重试。' }), undefined);
   });
   it('migrates legacy readiness from SecretStorage without an API key', async () => {
     const values = new Map<string, string>([['karpathywiki-openai-codex', JSON.stringify(freshCredential())]]);

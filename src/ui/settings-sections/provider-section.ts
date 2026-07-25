@@ -36,7 +36,7 @@ import { PREDEFINED_PROVIDERS } from '../../types';
 import { BEDROCK_REGIONS, BEDROCK_DEFAULT_REGION, NATIVE_PDF_PROVIDER_IDS, MAX_BATCH_DELAY_MS } from '../../constants';
 import { renderRangeSlider } from '../settings-helpers';
 import { getCodexAuthUiState } from '../openai-codex-auth-controls';
-import { ProviderSecretStore } from '../../llm-sdk/provider-secret-store';
+import { resolveInitialApiKey } from '../../llm-sdk/provider-api-key-resolver';
 
 export function renderProviderSection(tab: LLMWikiSettingTab, containerEl: HTMLElement): void {
   const { tempSettings } = tab;
@@ -106,11 +106,26 @@ export function renderProviderSection(tab: LLMWikiSettingTab, containerEl: HTMLE
     // so a user typing 30 characters does NOT trigger 30 OS keychain
     // writes — only the final value is persisted. This preserves the
     // pre-PR2 in-memory-edit-then-flush-on-save UX.
+    //
+    // v1.25.7 PATCH: respect the in-memory buffer (tempSettings.apiKey)
+    // as the FIRST source of truth. Without this precedence swap, the
+    // pending edit typed after a provider switch gets silently overwritten
+    // by the OLD SecretStorage value on every tab.display() re-render
+    // (e.g. when switching providers via the dropdown above, or after
+    // Fetch Models / Test Connection triggers display()). The previous
+    // behavior used `?? tempSettings.apiKey` as a fallback, but `??`
+    // only triggers when load() returns null — SecretStorage always has
+    // the last-flushed key, so the fallback never ran and the user's
+    // pending edit was clobbered.
     new Setting(containerEl)
       .setName(tab.getText('apiKeyName'))
       .setDesc(tab.getText('apiKeyDesc'))
       .addText(text => {
-        const initial = (new ProviderSecretStore(tab.plugin.app.secretStorage, tempSettings.providerApiKeySecretId).load() ?? tempSettings.apiKey).trim();
+        // v1.25.7 PATCH: delegate to resolveInitialApiKey so the input
+        // honors the in-memory tempSettings.apiKey buffer across re-renders
+        // instead of clobbering the user's pending edit with the stale
+        // SecretStorage value left over from the previously-active provider.
+        const initial = resolveInitialApiKey(tempSettings, tab.plugin.app.secretStorage);
         text.setPlaceholder(tab.getText('apiKeyPlaceholder'))
           .setValue(initial)
           .onChange((value) => {
