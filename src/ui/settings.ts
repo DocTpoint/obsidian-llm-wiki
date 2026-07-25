@@ -57,28 +57,21 @@ export class LLMWikiSettingTab extends PluginSettingTab {
   // Called by hide() (auto-save) and the explicit Save button. Adding
   // a new probe-mutated field only requires extending this one helper,
   // not every save site.
-  public commitTempSettings(): void {
-    // v1.25.3 #182: never write the plaintext apiKey into data.json.
-    // The canonical value lives in Obsidian SecretStorage (OS keychain);
-    // tempSettings.apiKey is an in-memory buffer that may hold a pending
-    // value the user typed. Zero it before the merge so saveData() never
-    // persists it. The SecretStorage flush happens in flushApiKey()
-    // (called by hide() before commitTempSettings), but guard here
-    // catches any caller that invokes commitTempSettings outside hide()
-    // (language-section Save button, test-connection-section auto-save).
+  /**
+   * Flush the typed apiKey into SecretStorage, then merge
+   * `tempSettings` → `plugin.settings`. Returns false if the flush
+   * failed (caller must skip saveSettings so the typed key survives
+   * for retry — see flushApiKey for failure semantics).
+   */
+  public commitTempSettings(): boolean {
+    // Flush before wipe — see flushApiKey for failure semantics.
+    const flushSucceeded = this.flushApiKey();
+    if (!flushSucceeded) return false;
+    // Defensive: flushApiKey already clears tempSettings.apiKey on
+    // success. Belt-and-suspenders so a future caller bypassing
+    // flushApiKey can't reintroduce the v1.25.3 #182 plaintext leak.
     this.tempSettings.apiKey = '';
-    // v1.24.1 PATCH Phase 5.5.0 hotfix fix: belt-and-suspenders cascade.
-    // setFieldValue already triggers cascadeUnifiedModelChange on a
-    // dropdown/text-input edit, but there are at least 3 other write
-    // sites that mutate tempSettings.model directly (provider change →
-    // '', fetch-models auto-pick → availableModels[0], bedrock region
-    // change → ''). To guarantee unified-model edits always clear stale
-    // per-task overrides, re-run the cascade here at commit time if
-    // the unified model is non-empty.
-    //
-    // Safety: idempotent (the cascade itself skips fields already at ''),
-    // and the whitespace check matches setFieldValue's gate, so an
-    // explicit blank-edit never triggers a per-task reset.
+    // Cascade guard — see cascadeUnifiedModelChange for rationale.
     if (this.tempSettings.model.trim()) {
       this.cascadeUnifiedModelChange();
     }
@@ -87,27 +80,17 @@ export class LLMWikiSettingTab extends PluginSettingTab {
       watchedFolders: [...(this.tempSettings.watchedFolders || [])],
       thinkingControlCache: this.plugin.settings.thinkingControlCache,
     };
+    return true;
   }
 
   // Auto-save when user navigates away from settings tab
   hide(): void {
     const hasChanges = JSON.stringify(this.tempSettings) !== JSON.stringify(this.plugin.settings);
     if (hasChanges) {
-      // v1.25.3 #182: flush the in-memory apiKey edit to Obsidian
-      // SecretStorage BEFORE the data.json commit so the post-commit
-      // plugin.settings reflects the new state. This runs once per
-      // tab close — not per keystroke.
-      //
-      // v1.25.4 #339: when flushApiKey fails (Windows 10 Credential
-      // Manager locked etc.) we MUST NOT proceed to commitTempSettings,
-      // otherwise the unconditional `tempSettings.apiKey = ''` on
-      // commitTempSettings line 59 will wipe the user's freshly-typed
-      // key — re-creating the original #339 failure mode after the
-      // user retries. Skip the commit when flush fails and surface the
-      // Notice (already done in flushApiKey) so the user can edit+retry.
-      const flushSucceeded = this.flushApiKey();
-      if (!flushSucceeded) return;
-      this.commitTempSettings();
+      // commitTempSettings owns the flush; skip saveSettings on failure
+      // so the typed apiKey survives for retry (v1.25.4 #339 invariant).
+      const commitSucceeded = this.commitTempSettings();
+      if (!commitSucceeded) return;
       void this.plugin.saveSettings();
       console.debug('Settings auto-saved on tab close');
     }

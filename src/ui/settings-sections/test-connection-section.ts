@@ -54,6 +54,16 @@ export function renderTestConnectionSection(tab: LLMWikiSettingTab, containerEl:
         // etc.) pass undefined.
         const result = await tab.plugin.testLLMConnection(testSettings.apiKey);
         tab.tempSettings.llmReady = result.success;
+
+        // Reset UI button + notice at one place (v1.25.8 simplify pass —
+        // previously duplicated in flush-failure early-return).
+        const resetUi = (): void => {
+          button.setButtonText(tab.getText('testButton'));
+          button.setDisabled(false);
+          tab.display();
+          new Notice(result.message, result.success ? NOTICE_NORMAL : NOTICE_ERROR);
+        };
+
         if (!result.success) {
           // Restore live settings on test failure - do not persist broken config.
           if (testSettings.provider === 'openai-codex') {
@@ -62,21 +72,41 @@ export function renderTestConnectionSection(tab: LLMWikiSettingTab, containerEl:
           }
           applySettings(oldSettings);
           await tab.plugin.saveSettings();
-        } else {
-          tab.tempSettings.thinkingControlCache = tab.plugin.settings.thinkingControlCache;
-          if (tab.plugin.settings.provider === 'openai-codex') {
-            tab.syncCodexModelsFromPlugin();
-            tab.tempSettings.model = tab.plugin.settings.model;
-            tab.tempSettings.ingestModel = tab.plugin.settings.ingestModel;
-            tab.tempSettings.lintModel = tab.plugin.settings.lintModel;
-            tab.tempSettings.queryModel = tab.plugin.settings.queryModel;
-          }
-          tab.commitTempSettings();
-          await tab.plugin.saveSettings();
+          resetUi();
+          return;
         }
-        button.setButtonText(tab.getText('testButton'));
-        button.setDisabled(false);
-        tab.display();
-        new Notice(result.message, result.success ? NOTICE_NORMAL : NOTICE_ERROR);
+
+        // Success path: sync testLLMConnection's mutated fields, then commit.
+        tab.tempSettings.thinkingControlCache = tab.plugin.settings.thinkingControlCache;
+        if (tab.plugin.settings.provider === 'openai-codex') {
+          tab.syncCodexModelsFromPlugin();
+          tab.tempSettings.model = tab.plugin.settings.model;
+          tab.tempSettings.ingestModel = tab.plugin.settings.ingestModel;
+          tab.tempSettings.lintModel = tab.plugin.settings.lintModel;
+          tab.tempSettings.queryModel = tab.plugin.settings.queryModel;
+        }
+        // v1.25.8 HOTFIX: commitTempSettings internally flushes
+        // SecretStorage. On flush failure roll back plugin.settings to
+        // oldSettings so a later saveData() can't persist the typed
+        // apiKey as plaintext (v1.25.3 #182 invariant). flushApiKey
+        // already surfaced the apiKeyMigrationFailedNotice.
+        const commitSucceeded = tab.commitTempSettings();
+        if (!commitSucceeded) {
+          // Roll back plugin.settings AND persist it: testLLMConnection
+          // already fired a fire-and-forget `void this.saveSettings()`
+          // (line 128) that captured `testSettings.apiKey` as a plaintext
+          // reference. Without an explicit overwrite, the async saveData
+          // could persist the typed key into data.json as plaintext,
+          // violating the v1.25.3 #182 invariant. flushApiKey already
+          // surfaced the apiKeyMigrationFailedNotice.
+          applySettings(oldSettings);
+          await tab.plugin.saveSettings();
+          button.setButtonText(tab.getText('testButton'));
+          button.setDisabled(false);
+          tab.display();
+          return;
+        }
+        await tab.plugin.saveSettings();
+        resetUi();
       }));
 }
