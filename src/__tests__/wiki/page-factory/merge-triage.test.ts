@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   classifyMergeNeed,
   buildNewInfoSummary,
+  isSourceOwnPageLemma,
   type MergeTriageContext,
 } from '../../../wiki/page-factory/merge-triage';
 import { createMockEntity } from '../../__support__/factories';
@@ -182,5 +183,131 @@ describe('classifyMergeNeed — client precondition', () => {
     await expect(
       classifyMergeNeed(ctx, createMockEntity({ name: 'X' }), 'entity', { path: 'p.md', basename: 'p.md' }, '# x'),
     ).rejects.toThrow(/LLM client not initialized/);
+  });
+});
+// Issue #312 part 2 — the deterministic half of the fix. Pure string
+// comparison: no LLM, no IO. The predicate answers "is this source the page's
+// subject", which the triage prompt never asks.
+describe('isSourceOwnPageLemma — deterministic ownership', () => {
+  const ctx = { sourceTitle: 'Silent Inflammation', summary: 's', sourcePath: 'Notes/Silent Inflammation.md' };
+
+  it('matches across the space/dash spelling difference between note and page', () => {
+    expect(isSourceOwnPageLemma({
+      pageName: 'Silent-Inflammation',
+      sourceBasename: 'Silent Inflammation',
+      sourceContext: ctx,
+    })).toBe(true);
+  });
+
+  it('matches on the analyzer source title when the file name differs', () => {
+    expect(isSourceOwnPageLemma({
+      pageName: 'Silent-Inflammation',
+      sourceBasename: '2026-03-11 notes',
+      sourceContext: ctx,
+    })).toBe(true);
+  });
+
+  it('matches on a curated note alias', () => {
+    expect(isSourceOwnPageLemma({
+      pageName: 'Chronische-Inflammation',
+      sourceBasename: 'Silent Inflammation',
+      sourceContext: { ...ctx, noteAliases: ['Chronische Inflammation'] },
+    })).toBe(true);
+  });
+
+  it('matches on one of the page aliases', () => {
+    expect(isSourceOwnPageLemma({
+      pageName: 'CoQ10',
+      pageAliases: ['Coenzym Q10'],
+      sourceBasename: 'Coenzym-Q10',
+      sourceContext: { sourceTitle: 'Coenzym Q10', summary: 's', sourcePath: 'n.md' },
+    })).toBe(true);
+  });
+
+  it('does not match a source that merely mentions the page', () => {
+    expect(isSourceOwnPageLemma({
+      pageName: 'Silent-Inflammation',
+      sourceBasename: 'Omega-3',
+      sourceContext: { sourceTitle: 'Omega-3', summary: 's', sourcePath: 'n.md' },
+    })).toBe(false);
+  });
+
+  it('never fires without a source context, even on an exact name match', () => {
+    expect(isSourceOwnPageLemma({
+      pageName: 'Silent-Inflammation',
+      sourceBasename: 'Silent Inflammation',
+    })).toBe(false);
+  });
+
+  it('returns false for an empty page name instead of matching everything', () => {
+    expect(isSourceOwnPageLemma({
+      pageName: '   ',
+      sourceBasename: 'Silent Inflammation',
+      sourceContext: ctx,
+    })).toBe(false);
+  });
+});
+
+// Issue #312 part 1 — the source-level summary plus the question that makes it
+// usable. Both are placeholder-rendered, so a caller without an ingest
+// upstream gets the prompt it got before, character for character.
+describe('classifyMergeNeed — source context in the triage prompt (#312)', () => {
+  const CONTEXT = {
+    sourceTitle: 'Silent Inflammation',
+    summary: 'A note on low-grade chronic inflammation and its markers.',
+    sourcePath: 'Notes/Silent Inflammation.md',
+  };
+
+  async function renderPrompt(sourceContext?: typeof CONTEXT): Promise<string> {
+    let seen = '';
+    const ctx = makeCtx({
+      createMessage: async (...a: unknown[]) => {
+        const req = a[0] as { messages: Array<{ content: string }> };
+        seen = req.messages[0].content;
+        return JSON.stringify({ strategy: 'skip', reason: 'r' });
+      },
+    });
+    await classifyMergeNeed(
+      ctx,
+      createMockEntity({ name: 'Silent Inflammation' }),
+      'entity',
+      { path: 'Notes/Silent Inflammation.md', basename: 'Silent Inflammation' },
+      '## Description\nExisting.',
+      sourceContext,
+    );
+    return seen;
+  }
+
+  it('adds the source summary under its own label, distinct from the item summary', async () => {
+    const prompt = await renderPrompt(CONTEXT);
+    expect(prompt).toContain('Source summary: A note on low-grade chronic inflammation');
+    // The item-level `Summary:` from buildNewInfoSummary is still there and is
+    // a different line — the collision the fix set out to avoid.
+    expect(prompt).toMatch(/^Summary: /m);
+    expect(prompt.match(/Source summary:/g)).toHaveLength(1);
+  });
+
+  it('asks whether the source is the page subject, not only whether the info is new', async () => {
+    const prompt = await renderPrompt(CONTEXT);
+    expect(prompt).toContain('primarily ABOUT this page or only mentions it in passing');
+  });
+
+  it('does not repeat the source name that {{new_info}} already carries', async () => {
+    const prompt = await renderPrompt(CONTEXT);
+    expect(prompt.match(/Silent Inflammation/g)?.length).toBeGreaterThan(0);
+    expect(prompt).not.toContain('Source being merged:');
+  });
+
+  it('renders the pre-change prompt exactly when no context is supplied', async () => {
+    const prompt = await renderPrompt(undefined);
+    expect(prompt).not.toContain('Source summary:');
+    expect(prompt).not.toContain('primarily ABOUT this page');
+    // No placeholder survives, and no blank line drifts in where the block
+    // would have gone: `{{new_info}}` is still followed directly by the
+    // sections header.
+    expect(prompt).not.toMatch(/\{\{\w+\}\}/);
+    expect(prompt).toMatch(/\n\n\*\*Available sections/);
+    // An empty placeholder must not leave a blank line behind anywhere.
+    expect(prompt).not.toContain('\n\n\n');
   });
 });

@@ -36,7 +36,7 @@ export const MERGE_PROMPTS = {
 {{existing_content}}
 
 **New Information from Source File:**
-{{new_info}}
+{{new_info}}{{source_context}}
 
 **Available sections in the existing page (target_section MUST be one of these exact names):**
 {{section_labels}}
@@ -69,7 +69,7 @@ Output JSON format (ONLY this object, no other text):
 
 Rules:
 - Default to "merge" if uncertain — better to rewrite than to silently drop new info.
-- \`target_section\` MUST be exactly one of the available sections list (case-sensitive).
+- \`target_section\` MUST be exactly one of the available sections list (case-sensitive).{{source_ownership_rule}}
 - Output ONLY JSON, nothing else.`,
 
   mergeEntityPage: `You are a Wiki editor performing intelligent content integration. Merge new source information into an existing page following the schema-defined structure.
@@ -181,6 +181,12 @@ If new content exists:
 [Only genuinely new facts, written to match existing style]`,
 
   // Update related page with incremental information from a new source
+  //
+  // The output contract mirrors `appendToReviewedPage`: existing content keeps
+  // its position and new information goes AFTER it. Without an explicit format
+  // block the model routinely emitted the new facts as an opening paragraph,
+  // pushing the page's own definition down — the page reads as if the newest
+  // incidental source were its subject.
   updateRelatedPage: `Existing Wiki page: {{page_name}}
 
 Existing content:
@@ -192,5 +198,14 @@ The new source file ("{{source_basename}}") provides additional information abou
 Update the page by adding the new information without deleting existing content.
 {{constraints}}
 Use wiki-link syntax [[page-name]].
-Output ONLY the updated page BODY content (without frontmatter), no other text.`,
+
+**Output Format:**
+Output ONLY the updated page BODY content (without frontmatter), no other text:
+
+[existing sections, preserved in their current order]
+
+[new information — integrated into the section it belongs to, or appended as a
+final section when it fits none of them]
+
+NEVER place new information above the existing content.`,
 };

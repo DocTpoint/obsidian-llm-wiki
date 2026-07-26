@@ -16,7 +16,8 @@
 //     kept tight to control classify-token cost.
 
 import { TFile } from 'obsidian';
-import type { EntityInfo, ConceptInfo, LLMWikiSettings } from '../../types';
+import type { EntityInfo, ConceptInfo, LLMWikiSettings, SourceContext } from '../../types';
+import { slugKeys } from '../../core/slug';
 import { PROMPTS } from '../../prompts';
 import { parseJsonResponse } from '../../core/json';
 import { TOKENS_MERGE_TRIAGE } from '../../constants';
@@ -74,6 +75,7 @@ export async function classifyMergeNeed(
   pageType: 'entity' | 'concept',
   sourceFile: TFile | { path: string; basename: string },
   existingContent: string,
+  sourceContext?: SourceContext,
 ): Promise<MergeTriageResult> {
   const client = ctx.getClient();
   if (!client) throw new Error('LLM client not initialized');
@@ -89,6 +91,8 @@ export async function classifyMergeNeed(
     .replace('{{page_type}}', pageType)
     .replace('{{existing_content}}', existingContent)
     .replace('{{new_info}}', buildNewInfoSummary(info, sourceFile))
+    .replace('{{source_context}}', renderSourceContextBlock(sourceContext))
+    .replace('{{source_ownership_rule}}', renderSourceOwnershipRule(sourceContext))
     .replace('{{section_labels}}', `- ${sectionLabelsList}`);
 
   // Issue #328 Phase 1 follow-up: removed appendTagVocabularyToPrompt wrapper
@@ -148,6 +152,76 @@ export async function classifyMergeNeed(
   }
 
   return { strategy, items, reason };
+}
+
+/**
+ * Issue #312 part 1 — the source-level summary, rendered into the triage
+ * prompt. Empty when no context is available, which leaves the rendered prompt
+ * byte-identical to the previous one (the placeholder carries its own leading
+ * newlines so nothing drifts).
+ *
+ * The label is `Source summary:` and not `Summary:` on purpose: `{{new_info}}`
+ * already carries `Summary:` for the extracted ITEM. Two lines with the same
+ * label and different scopes would be worse than the missing field.
+ *
+ * The source name is not repeated here — `buildNewInfoSummary` already writes
+ * `Source: <basename>` into `{{new_info}}`.
+ */
+export function renderSourceContextBlock(sourceContext?: SourceContext): string {
+  const summary = sourceContext?.summary?.trim();
+  if (!summary) return '';
+  return `\n\n**What the source document as a whole is about:**\nSource summary: ${summary}`;
+}
+
+/**
+ * Issue #312 part 1 — the question the prompt never asked. Adding the summary
+ * alone supplies context to a prompt whose four strategies are all keyed to
+ * novelty; without this rule the model has the fact and no reason to use it.
+ *
+ * Rendered only alongside the summary: asking whether a source is the page's
+ * subject, without saying what the source is about, is not answerable.
+ */
+export function renderSourceOwnershipRule(sourceContext?: SourceContext): string {
+  if (!renderSourceContextBlock(sourceContext)) return '';
+  return '\n- Consider whether this source is primarily ABOUT this page or only mentions it in passing. A source whose subject IS this page carries more weight for the page\'s core description than an incidental mention — prefer "merge" over "skip" for it.';
+}
+
+/**
+ * Issue #312 part 2 — deterministic ownership test, no LLM involved.
+ *
+ * True when the source carries the page's own lemma: its file basename, its
+ * analyzer title, or one of its curated note aliases slug-matches the page
+ * name or one of the page's aliases. That is the case where the source IS the
+ * page's subject rather than a document that mentions it in passing.
+ *
+ * Fires only when `sourceContext` is present, i.e. on the ingest path. Callers
+ * without one (lint) keep their previous behaviour exactly.
+ *
+ * On a corpus whose notes are not lemma-shaped — no note titled like the page
+ * it is about — this never matches and the merge path is unchanged. Inert
+ * rather than harmful is the intended failure mode.
+ */
+export function isSourceOwnPageLemma(params: {
+  pageName: string;
+  pageAliases?: readonly string[];
+  sourceBasename: string;
+  sourceContext?: SourceContext;
+}): boolean {
+  const { pageName, pageAliases = [], sourceBasename, sourceContext } = params;
+  if (!sourceContext) return false;
+
+  const pageKeys = slugKeys(pageName, pageAliases);
+  if (pageKeys.size === 0) return false;
+
+  const sourceKeys = slugKeys(sourceBasename, [
+    sourceContext.sourceTitle,
+    ...(sourceContext.noteAliases ?? []),
+  ]);
+
+  for (const key of sourceKeys) {
+    if (pageKeys.has(key)) return true;
+  }
+  return false;
 }
 
 /**
