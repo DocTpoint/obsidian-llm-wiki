@@ -8,13 +8,13 @@ import { readFileSync, statSync } from 'node:fs';
 import * as nodePath from 'node:path';
 import { normalizePath, TFile, type App } from 'obsidian';
 
-import { WikiEngine } from '../../../obsidian-llm-wiki/src/wiki/wiki-engine';
-import { SchemaManager } from '../../../obsidian-llm-wiki/src/schema/schema-manager';
-import { createLLMClient } from '../../../obsidian-llm-wiki/src/core/create-plugin-llm-client';
-import { preloadLLMClientModules } from '../../../obsidian-llm-wiki/src/llm-sdk/create-llm-client';
-import { applySettingsMigrations } from '../../../obsidian-llm-wiki/src/core/settings-migrations';
-import { allowsEmptyApiKey } from '../../../obsidian-llm-wiki/src/core/local-no-key-provider';
-import type { IngestReport, LLMClient, LLMWikiSettings } from '../../../obsidian-llm-wiki/src/types';
+import { WikiEngine } from '../../../src/wiki/wiki-engine';
+import { SchemaManager } from '../../../src/schema/schema-manager';
+import { createLLMClient } from '../../../src/core/create-plugin-llm-client';
+import { preloadLLMClientModules } from '../../../src/llm-sdk/create-llm-client';
+import { applySettingsMigrations } from '../../../src/core/settings-migrations';
+import { allowsEmptyApiKey } from '../../../src/core/local-no-key-provider';
+import type { IngestReport, LLMClient, LLMWikiSettings } from '../../../src/types';
 
 import { createVaultApp, type VaultWriteRecord } from './vault';
 import { installObsidianGlobals } from './node-globals';
@@ -23,7 +23,7 @@ const PLUGIN_ID = 'karpathywiki';
 const API_KEY_ENV = 'WIKI_API_KEY';
 
 const USAGE = `Usage:
-  node plugin-dev/wiki-ingest-cli/run-ingest.mjs --vault <path> --source <path-in-vault> [--dry-run] [--force]
+  node tools/wiki-ingest-cli/run-ingest.mjs --vault <path> --source <path-in-vault> [--dry-run] [--force]
 
   --vault    Path to the Obsidian vault. Required.
   --source   Source file path relative to the vault. Required.

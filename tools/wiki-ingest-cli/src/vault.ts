@@ -13,7 +13,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import { TAbstractFile, TFile, TFolder, normalizePath } from 'obsidian';
-import { parseFrontmatter } from '../../../obsidian-llm-wiki/src/core/frontmatter';
+import { parseFrontmatter } from '../../../src/core/frontmatter';
 
 export type VaultWriteAction = 'create' | 'update' | 'delete' | 'mkdir';
 
