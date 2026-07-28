@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { LLMWikiSettings } from '../../types';
-import { enforceFrontmatterConstraints, isBlankSource, mergeFrontmatter, parseFrontmatter, preserveFrontmatterReviewTag, serializeFrontmatter, upsertFrontmatterField } from '../../core/frontmatter';
+import { enforceFrontmatterConstraints, isBlankSource, mergeFrontmatter, mergeFrontmatterArrayField, parseFrontmatter, preserveFrontmatterReviewTag, replaceFrontmatterArrayField, serializeFrontmatter, upsertFrontmatterField } from '../../core/frontmatter';
 
 describe('isBlankSource', () => {
   it('is true for empty or whitespace-only content', () => {
@@ -640,5 +640,97 @@ Body`;
     const result = enforceFrontmatterConstraints(content, 'entity', baseSettings);
     expect(result).toMatch(/\ntags:\s*(\n|$)/);
     expect(result).not.toContain('tags: [other]');
+  });
+});
+
+// v1.25.10 PATCH Issue #356 — preserve unknown top-level frontmatter fields
+// on re-touch (data-loss bug). User-authored metadata like `redirect_to:`,
+// `parent_org:`, `source_url:` must survive every merge/replace writer.
+describe('frontmatter passthrough — Issue #356', () => {
+  it('mergeFrontmatterArrayField preserves an unknown scalar field', () => {
+    // Repro from borthwick's report: a hand-written `redirect_to:` is stripped
+    // when the merge path rewrites the page after a re-touch.
+    const content = `---
+type: concept
+tags: [original]
+redirect_to: "wiki/canonical/page.md"
+parent_org: Acme
+---
+
+# Body`;
+    const result = mergeFrontmatterArrayField(content, 'tags', ['added']);
+    expect(result).toContain('redirect_to: "wiki/canonical/page.md"');
+    expect(result).toContain('parent_org: Acme');
+    // The known fields still update.
+    expect(result).toContain('added');
+    expect(result).not.toContain('tags: [original]');
+  });
+
+  it('replaceFrontmatterArrayField preserves an unknown scalar field', () => {
+    const content = `---
+type: entity
+tags: [x]
+parent_org: Globex
+source_url: https://example.com/spec
+---
+
+# Body`;
+    const result = replaceFrontmatterArrayField(content, 'tags', ['y', 'z']);
+    expect(result).toContain('parent_org: Globex');
+    expect(result).toContain('source_url: https://example.com/spec');
+    expect(result).toContain('y');
+    expect(result).toContain('z');
+  });
+
+  it('mergeFrontmatterArrayField on a page with only canonical fields is byte-identical to v1.25.9', () => {
+    // Backward-compat: when no unknown fields exist, the writer must not
+    // invent a `---\n---` line just to "have a passthrough section".
+    const content = `---
+type: concept
+tags: [a]
+aliases: ["x"]
+---
+
+# Body`;
+    const before = parseFrontmatter(content);
+    const result = mergeFrontmatterArrayField(content, 'tags', ['b']);
+    const after = parseFrontmatter(result);
+    expect(Object.keys(before!).sort()).toEqual(Object.keys(after!).sort());
+  });
+
+  it('mergeFrontmatterArrayField preserves the body verbatim when adding aliases', () => {
+    const content = `---
+type: concept
+redirect_to: "[[somewhere]]"
+---
+
+# Heading
+
+Body content with **formatting** and a list:
+- one
+- two`;
+    const result = mergeFrontmatterArrayField(content, 'aliases', ['alt']);
+    expect(result).toContain('# Heading');
+    expect(result).toContain('Body content with **formatting**');
+    expect(result).toContain('- one');
+    expect(result).toContain('- two');
+    expect(result).toContain('redirect_to: "[[somewhere]]"');
+  });
+
+  it('mergeFrontmatterArrayField preserves an unknown list field (YAML block form)', () => {
+    // More complex shape: a user-authored list under a non-canonical key.
+    const content = `---
+type: concept
+tags: [a]
+related_links:
+  - "[[Foo]]"
+  - "[[Bar]]"
+---
+
+# Body`;
+    const result = mergeFrontmatterArrayField(content, 'tags', ['b']);
+    expect(result).toContain('related_links:');
+    expect(result).toContain('  - "[[Foo]]"');
+    expect(result).toContain('  - "[[Bar]]"');
   });
 });

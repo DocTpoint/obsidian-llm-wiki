@@ -169,6 +169,62 @@ export function upsertFrontmatterField(content: string, key: string, value: stri
 }
 
 /**
+ * v1.25.10 PATCH Issue #356 — extract lines of frontmatter that belong to
+ * fields our canonical writer does NOT know about (e.g. user-authored
+ * `redirect_to:`, `parent_org:`, `source_url:`). These are passed verbatim
+ * to `serializeFrontmatter(..., { passthroughLines })` so that re-touching a
+ * page never strips fields the plugin does not own.
+ *
+ * The line-level extraction is deliberately conservative: we walk the raw
+ * frontmatter text (already bracketed by `---\n...\n---`) and keep any line
+ * (and any indented continuation lines belonging to a list/sequence under
+ * the unknown key) whose top-level key is not in the known set.
+ *
+ * Pure function, no IO. Suitable for unit testing.
+ */
+const KNOWN_FRONTMATTER_KEYS = new Set([
+  'type', 'created', 'updated', 'sources', 'tags', 'reviewed', 'aliases',
+]);
+
+/**
+ * Read the existing frontmatter block from `content` and extract the
+ * passthrough lines (everything not in `KNOWN_FRONTMATTER_KEYS`). Returns
+ * `[]` when no frontmatter or no unknown fields exist.
+ *
+ * @param content Full file content (may start with `---` or not).
+ */
+export function extractPassthroughLines(content: string): string[] {
+  if (!content.startsWith('---')) return [];
+  const endIdx = content.indexOf('\n---', 3);
+  if (endIdx === -1) return [];
+
+  // fmBody = the lines between the two `---` delimiters, no trailing newline
+  const fmBody = content.substring(3, endIdx).replace(/^\n/, '');
+  const rawLines = fmBody.split('\n');
+
+  const passthrough: string[] = [];
+  let capturing = false;
+  for (const line of rawLines) {
+    if (line === '') continue;
+    const isTopLevel = !/^[ \t]/.test(line);
+    if (isTopLevel) {
+      // Top-level line — does its key belong to the known set?
+      const m = line.match(/^([A-Za-z_][A-Za-z0-9_-]*)\s*:/);
+      const key = m ? m[1] : '';
+      capturing = !!(key && !KNOWN_FRONTMATTER_KEYS.has(key));
+      // Edge case: if the line continues on the same line (e.g.
+      // `redirect_to: "[[X]]"`), the whole single line is the passthrough.
+      if (capturing) passthrough.push(line);
+      continue;
+    }
+    // Indented continuation line — kept only if we are currently capturing
+    // a top-level unknown key (its YAML block sub-items).
+    if (capturing) passthrough.push(line);
+  }
+  return passthrough;
+}
+
+/**
  * v1.24.0: parse-aware merge helper for array-valued frontmatter fields
  * (`aliases`, `tags`, `sources`, ...). Unlike `upsertFrontmatterField` which
  * string-splices the value (and can produce duplicate `aliases:` lines if
@@ -213,11 +269,15 @@ export function mergeFrontmatterArrayField(
 
   // Build a fresh frontmatter block via the canonical writer.
   // Merge keeps everything we knew about, plus the new array.
+  // v1.25.10 PATCH Issue #356: pass through unknown top-level fields
+  // (`redirect_to:`, `parent_org:`, user-authored metadata) so re-touching
+  // a page never silently strips them.
+  const passthroughLines = extractPassthroughLines(content);
   const next: FrontmatterData = {
     ...(fm ?? {}),
     [field]: merged,
   };
-  const fmBlock = serializeFrontmatter(next);
+  const fmBlock = serializeFrontmatter(next, passthroughLines.length > 0 ? { passthroughLines } : {});
 
   // Splice the new block in place of the existing frontmatter.
   if (content.startsWith('---')) {
@@ -250,13 +310,15 @@ export function replaceFrontmatterArrayField(
 
   // Build a fresh frontmatter block. Keep everything we knew, drop the
   // array field (we'll re-emit it with new items).
+  // v1.25.10 PATCH Issue #356: same passthrough semantics as the merge helper.
+  const passthroughLines = extractPassthroughLines(content);
   const next: FrontmatterData = { ...(fm ?? {}) };
   if (newItems.length === 0) {
     delete next[field];
   } else {
     next[field] = [...newItems];
   }
-  const fmBlock = serializeFrontmatter(next);
+  const fmBlock = serializeFrontmatter(next, passthroughLines.length > 0 ? { passthroughLines } : {});
 
   if (content.startsWith('---')) {
     const endIdx = content.indexOf('\n---', 3);
