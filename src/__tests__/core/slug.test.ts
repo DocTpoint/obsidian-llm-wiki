@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSlug, filterRedundantAliases, slugify } from '../../core/slug';
+import { computeSlug, filterRedundantAliases, slugify, slugKeys, turkishCaseFold } from '../../core/slug';
 describe('slugify', () => {
   it('returns "untitled" for empty input', () => {
     expect(slugify('')).toBe('untitled');
@@ -227,5 +227,93 @@ describe('filterRedundantAliases', () => {
     // No third argument — should not throw, must still apply filename + batch dedup.
     const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['Vigilanz']);
     expect(result).toEqual([]);
+  });
+});
+
+// v1.25.10 PATCH Issue #366 — Turkish-aware case folding for slug
+// comparison keys. The default ASCII fold stays untouched; the new
+// path is opt-in via `slugKeys({ turkishFold: true })` so non-Turkish
+// vaults pay nothing.
+describe('turkishCaseFold', () => {
+  it('lowercases ASCII to lowercase ASCII', () => {
+    expect(turkishCaseFold('HELLO')).toBe('hello');
+    expect(turkishCaseFold('World')).toBe('world');
+  });
+
+  it('passes ASCII lowercase through unchanged', () => {
+    expect(turkishCaseFold('hello')).toBe('hello');
+  });
+
+  it('maps İ (capital Turkish I-with-dot) to i', () => {
+    expect(turkishCaseFold('İSTANBUL')).toBe('istanbul');
+  });
+
+  it('leaves ASCII I untouched here (lowercase applied later by computeSlug)', () => {
+    // turkishCaseFold only handles the four Turkish-specific letters
+    // (and the case they carry). ASCII I is left for the downstream
+    // `.toLowerCase()` step — the comparison-key pipeline folds
+    // BEFORE computeSlug, so the lowercase there is what normalises
+    // ASCII. The helper's job is the Turkish-case delta only.
+    expect(turkishCaseFold('ISIM')).toBe('isim');
+  });
+
+  it('lowercases Ş → ş, Ğ → ğ, ASCII I via the lowercase step', () => {
+    // turkishCaseFold handles Ş/Ğ/İ/Ö/Ü/Ç. The Turkish rule for ASCII
+    // I is locale-dependent: standard .toLowerCase() in the host
+    // locale is what we use here (the comparison-key pipeline runs
+    // the fold BEFORE computeSlug, which lowercases ASCII anyway).
+    expect(turkishCaseFold('ŞEHIR')).toBe('şehir');
+    expect(turkishCaseFold('DOĞA')).toBe('doğa');
+  });
+
+  it('passes already-folded Turkish lowercase through unchanged', () => {
+    expect(turkishCaseFold('doğa')).toBe('doğa');
+    expect(turkishCaseFold('ırmak')).toBe('ırmak');
+  });
+
+  it('round-trips ç, ö, ü through plain toLowerCase', () => {
+    expect(turkishCaseFold('ÇAY')).toBe('çay');
+    expect(turkishCaseFold('ÖRNEK')).toBe('örnek');
+    expect(turkishCaseFold('ÜLKE')).toBe('ülke');
+  });
+
+  it('leaves diacritics on Turkish dotted letters untouched (downstream slug strips them)', () => {
+    // The fold is character-class level. Diacritic stripping belongs to
+    // the slug stage (computeSlug). The fold just normalises case.
+    expect(turkishCaseFold('DOĞRU')).toBe('doğru');
+    expect(turkishCaseFold('KÜÇÜK')).toBe('küçük');
+  });
+});
+
+describe('slugKeys with turkishFold (Issue #366)', () => {
+  it('ASCII path: turkishFold=false returns slug exactly as computeSlug does', () => {
+    const keys = slugKeys('Doga Demir', ['doga demir'], { turkishFold: false });
+    // computeSlug lowercases by default — no further fold.
+    expect([...keys]).toEqual(['doga-demir']);
+  });
+
+  it('Turkish path: turkishFold=true unifies casing variants of the same name', () => {
+    // 'Doğa' and 'doğa' both fold + lowercase to the same slug.
+    const a = slugKeys('Doğa', [], { turkishFold: true });
+    const b = slugKeys('doğa', [], { turkishFold: true });
+    expect([...a][0]).toBe([...b][0]);
+    expect([...a][0]).toBe('doğa');
+  });
+
+  it('Turkish path: Ş/ş/G/ğ/ç/ö/ü cross-page dedup', () => {
+    // 'ŞEHIR' and 'şehir' should both yield 'şehir'.
+    const a = slugKeys('ŞEHIR', [], { turkishFold: true });
+    const b = slugKeys('şehir', [], { turkishFold: true });
+    expect([...a][0]).toBe('şehir');
+    expect([...b][0]).toBe('şehir');
+  });
+
+  it('omitting opts preserves the v1.25.9 behaviour (backward-compat)', () => {
+    expect([...slugKeys('Test', ['Test'])]).toEqual(['test']);
+  });
+
+  it('skipping empty / whitespace-only inputs is unchanged', () => {
+    const keys = slugKeys('', ['   ', 'Real'], { turkishFold: true });
+    expect([...keys]).toEqual(['real']);
   });
 });

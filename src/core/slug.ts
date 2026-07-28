@@ -41,19 +41,58 @@ export function computeSlug(text: string, preserveCase = false): string {
   return preserveCase ? finalSlug : finalSlug.toLowerCase();
 }
 
+// v1.25.10 PATCH Issue #366 — Turkish-aware case fold for *comparison*
+// keys.
+//
+// `slugKeys` is used to compare "do these two names denote the same thing"
+// across pages and across the link graph. For Turkish-language vaults a
+// plain `.toLowerCase()` is not enough — `I` and `İ` are different
+// letters in Turkish and `Ş`/`Ğ` are not in the ASCII fold at all.
+//
+// We do NOT change `computeSlug`'s output (the file-naming path) —
+// existing users' filenames stay byte-identical. The fold only affects
+// the comparison keys, so the plugin now recognises a wikilink target
+// that exists under either spelling.
+//
+// Pure function, easily unit-tested. Applies ONLY the four Turkish-
+// specific letters that the standard `.toLowerCase()` mishandles;
+// everything else is left for `computeSlug` to handle.
+export function turkishCaseFold(text: string): string {
+  return text
+    .replace(/İ/g, 'i')
+    .replace(/Ş/g, 'ş')
+    .replace(/Ğ/g, 'ğ')
+    .replace(/Ü/g, 'ü')
+    .replace(/Ö/g, 'ö')
+    .replace(/Ç/g, 'ç')
+    .toLowerCase();
+}
+
 // Issue #312 — comparison keys for "do these two names denote the same thing".
-// Returns the slugified forms of a name plus its aliases in the case-insensitive
-// comparison form (never preserveCase, per the rule above), so a caller can test
-// two naming sets for overlap with a set intersection.
+// Returns the slugified forms of a name plus its aliases in the
+// comparison-key form. The fold strategy is opt-in via the second
+// argument so non-Turkish vaults stay on the cheap ASCII path.
 //
 // Pure and allocation-cheap: the merge path calls it once per page write.
-export function slugKeys(name: string, aliases: readonly string[] = []): Set<string> {
+export function slugKeys(
+  name: string,
+  aliases: readonly string[] = [],
+  opts: { turkishFold?: boolean } = {},
+): Set<string> {
   const keys = new Set<string>();
+  const fold = opts.turkishFold === true;
   for (const raw of [name, ...aliases]) {
     if (typeof raw !== 'string') continue;
     const trimmed = raw.trim();
     if (trimmed.length === 0) continue;
-    keys.add(computeSlug(trimmed));
+    // Fold BEFORE slugifying so that `[[İsim]]` and `[[isim]]` collapse
+    // to the same comparison key inside a Turkish vault. ASCII `I`
+    // lowercase remains `i`, but `İ` is folded to `i` first, so both
+    // inputs land on `isim` via the same `computeSlug` path.
+    const folded = fold ? turkishCaseFold(trimmed) : trimmed;
+    const slugged = computeSlug(folded);
+    if (slugged.length === 0) continue;
+    keys.add(slugged);
   }
   return keys;
 }
