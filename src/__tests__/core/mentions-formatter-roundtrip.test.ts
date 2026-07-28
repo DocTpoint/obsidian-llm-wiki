@@ -301,3 +301,46 @@ describe('#289 — legacy grouped-blockquote Mentions sections', () => {
     ]);
   });
 });
+
+// v1.25.10 PATCH Issue #363 — empty `[[|]]` in Mentions section.
+// `formatMentionsSection` mapped structured entries' `source_path`
+// straight from the LLM, so when the model (or the auto-provenance
+// builder) set it to "" the formatter emitted `— [[|]]`. The fix
+// is the same one `computeReingestMentions.normalize()` already
+// applies: fall back to the `sourcePath` argument the function
+// received. With that one-line fix an empty wikilink becomes
+// unrepresentable.
+describe('formatMentionsSection — Issue #363 source_path fallback', () => {
+  it('falls back to sourcePath when structured entry has blank source_path', () => {
+    const sourcePath = 'sources/my-doc.md';
+    const mentions = [
+      { quote: 'verbatim text', source_path: '', source_slug: '', extracted_at: 'now' },
+    ];
+    const result = formatMentionsSection(mentions, sourcePath, 'Mentions in Source');
+    expect(result).not.toContain('[[|]]');
+    expect(result).toContain('[[sources/my-doc|my-doc]]');
+  });
+
+  it('keeps the original (non-empty) source_path when present', () => {
+    const sourcePath = 'sources/fallback.md';
+    const mentions = [
+      { quote: 'q1', source_path: 'sources/explicit.md', source_slug: '', extracted_at: '' },
+    ];
+    const result = formatMentionsSection(mentions, sourcePath, 'Mentions in Source');
+    expect(result).toContain('[[sources/explicit|explicit]]');
+    expect(result).not.toContain('sources/fallback|fallback');
+  });
+
+  it('all-blank structured entries fall back to the section sourcePath on every line', () => {
+    // Repro from the bug report — every quote came out as [[|]]. After the
+    // fix every quote re-anchors to the page's own sourcePath.
+    const sourcePath = 'sources/origin.md';
+    const mentions = [
+      { quote: 'first', source_path: '', source_slug: '', extracted_at: '' },
+      { quote: 'second', source_path: '', source_slug: '', extracted_at: '' },
+    ];
+    const result = formatMentionsSection(mentions, sourcePath, 'Mentions in Source');
+    expect(result.match(/\[\[sources\/origin\|origin\]\]/g)?.length).toBe(2);
+    expect(result).not.toContain('[[|]]');
+  });
+});

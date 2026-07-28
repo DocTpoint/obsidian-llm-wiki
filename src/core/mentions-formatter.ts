@@ -75,6 +75,13 @@ export function formatMentionsSection(
   const structured = isStructured(mentions);
 
   // Normalize to a uniform internal form.
+  // v1.25.10 PATCH Issue #363: structured entries whose `source_path` is
+  // empty (either omitted by the model or set to "" by the auto-provenance
+  // builder) must fall back to the `sourcePath` argument. Without this
+  // fallback `buildBullets` emitted `— [[|]]` which (a) renders as a
+  // nameless graph-view hub, (b) fails the parse regex in parseMentionsSection
+  // and triggers the #267 fail-safe, freezing the page forever. Mirrors the
+  // `computeReingestMentions.normalize()` pre-existing behaviour.
   const entries: Array<{
     quote: string;
     translation?: string;
@@ -84,7 +91,7 @@ export function formatMentionsSection(
     ? (mentions as MentionWithProvenance[]).map(m => ({
         quote: m.quote,
         translation: m.translation,
-        sourcePath: m.source_path,
+        sourcePath: m.source_path || sourcePath,
         extractedAt: m.extracted_at,
       }))
     : (mentions as string[]).map(quote => ({
