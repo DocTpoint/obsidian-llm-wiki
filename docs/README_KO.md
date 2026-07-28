@@ -14,7 +14,7 @@
 
 [공식 사이트](https://llmwiki.greenerai.top/) | [옵시디언 마켓플레이스](https://community.obsidian.md/plugins/karpathywiki) | [블로그](https://llmwiki.greenerai.top/blog/) | [Discussions](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
-📑 [목차](#-목차) • 🚀 [빠른 시작](#-빠른-시작) • ✨ [주요 기능](#-주요-기능) • 🔍 [검색 작동 방식](#-검색-작동-방식) • 🤖 [모델](#-모델) • ❓ [FAQ](#-faq)
+🤔 [이 플러그인이 필요한 이유?](#-이-플러그인이-필요한-이유) | 🚀 [빠른 시작](#-빠른-시작) | ✨ [주요 기능](#-주요-기능) | 🌐 [생태계](#-생태계) | 🔍 [검색 작동 방식](#-검색-작동-방식) | 🤖 [모델](#-모델) | ❓ [FAQ](#-faq)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/H7V1228WMD) ← 이 플러그인이 도움이 되었다면, 커피 한 잔♥️ 사주시거나 별표🌟 하나 부탁드려요↗
 
@@ -26,6 +26,7 @@
 - [🎯 이런 분들께 추천합니다](#-이런-분들께-추천합니다)
 - [🚀 빠른 시작](#-빠른-시작)
 - [✨ 주요 기능](#-주요-기능)
+- [🌐 생태계](#-생태계)
 - [🔍 검색 작동 방식](#-검색-작동-방식)
 - [🤖 모델](#-모델)
 - [❓ FAQ](#-faq)
@@ -253,6 +254,20 @@ Monte Carlo PPR (Fogaras 2005)을 사용합니다 — 3,000개의 랜덤 워크 
 - **ChatGPT Plan (Codex OAuth)** — 실험적, 별도 공급자로 브라우저 또는 기기 코드 로그인 후 적격 Codex 사용 한도를 사용합니다. 사용 가능 여부는 OpenAI Codex 인증 및 사용 한도 정책을 따르며, 플랜 이름으로 보장되지 않습니다. 서드파티 Codex 호환 기능이며, OpenAI 파트너십이나 범용 ChatGPT API가 아닙니다.
 
 > 📖 **전체 선택 표** (클라우드 + 로컬 + PDF OCR + Codex OAuth + 양자화 + 하드웨어 계층) → [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)
+
+---
+
+## 🌐 생태계
+
+이 플러그인은 Obsidian의 다른 도구들과 함께 작동합니다 — 아래 도구들은 모두 코드 변경 없이 `[[wiki-link]]` 그래프와 연동됩니다.
+
+- **🕸️ Obsidian Graph View** — 모든 Wiki 페이지에서 네이티브 그래프를 열 수 있습니다. 모든 `[[wiki-link]]` 가 노드가 되고, 모든 역방향 링크가 엣지가 됩니다. 기본 내장, 추가 번들 크기 0.
+- **✂️ [Obsidian Web Clipper](https://obsidian.md/clipper)** — 공식 브라우저 확장. 기사, 블로그 게시물, Reddit 스레드, Hacker News, 레시피, 연구 논문, YouTube 자막(Interpreter 경유)을 vault 내 임의 폴더에 저장한 다음, 플러그인의 「폴더에서 수집」 명령을 실행하여 엔티티와 개념을 일괄 추출합니다.
+- **📊 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)** — DQL(`LIST FROM "wiki/entities" WHERE contains(tags, "person")`) 또는 JS API로 Wiki를 데이터베이스처럼 쿼리할 수 있습니다. 플러그인은 모든 페이지에 표준 frontmatter(`tags:`, `type:`, `aliases:`)를 작성하므로 Dataview 쿼리는 별도 설정 없이 바로 작동합니다.
+- **🌿 Git** — 어떤 Git 클라이언트로든 vault를 버전 관리하세요. 플러그인은 원본 파일을 절대 다시 작성하지 않으며, `wiki/` 아래에 새 페이지만 생성합니다. 따라서 `git diff` 로 수동 편집과 LLM 생성 콘텐츠를 명확히 구분할 수 있습니다.
+- **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** — Marp frontmatter(`marp: true`)로 임의의 Obsidian 노트를 슬라이드로 변환합니다. Wiki 페이지는 순수 Markdown이므로 추가 변환 없이 슬라이드로 렌더링됩니다.
+- **🖼️ Canvas** — Obsidian의 기본 무한 캔버스. Wiki 카드를 Canvas에 배치하여 vault를 벗어나지 않고 학습 가이드, 마인드 맵, 연구 개요를 `[[wiki-links]]` 로 조립할 수 있습니다.
+- **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** — 로컬 음성 메모 및 회의 캡처(macOS에서 whisper.cpp 사용, 오디오는 기기를 떠나지 않음) 동반 플러그인. 화자 라벨이 붙은 전사 파일과 자체 wiki 허브 페이지를 생성합니다. 본 플러그인과는 독립적이며, 같은 vault를 공유해도 결합이 필요 없습니다.
 
 ---
 

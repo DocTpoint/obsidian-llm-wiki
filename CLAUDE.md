@@ -1,20 +1,26 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-07-27 (v1.25.10 PATCH SCOPE LOCKED + v1.26.0 design anchor created at GH issue [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358). main @ `7e22848` after 2026-07-26 PATCH batch merge (#347/#349/#350/#352 → 2605 tests / 195 files). v1.26.0 design integrates #220 + #285 + #328 + #330 + #348 into one coherent direction with DocTpoint as co-author.)
+**Last Updated:** 2026-07-28 (v1.25.10 PATCH scope expanded 5 → 10 items + DocTpoint Triage role correction. main @ `2d26620` after 2026-07-26 PATCH batch merge (#347/#349/#350/#352 → 2605 tests / 195 files). v1.25.10 PATCH scope locked: 5 from #330/#356 + DocTpoint batch (#363 format+parser, #364 folder boundary) + Guru35 batch (#366 slug migration option d, #367 lint-perf P0-1+P1-1+P1-2 from v1.25.7 deferred, #368 docs+settings hint as `enhancement`). #365 deferred v1.26.0+; PR #357 anchored v1.26.0+.)
 
 ---
 
-## Current Phase: v1.25.10 PATCH scope locked; v1.26.0 MINOR in design phase.
+## Current Phase: v1.25.10 PATCH scope locked at 10 items; v1.26.0 MINOR in design phase.
 
-**v1.25.10 PATCH** (planned, sequential on v1.25.9): four item scope, all derived from [#330](https://github.com/green-dalii/obsidian-llm-wiki/issues/330) + [#356](https://github.com/green-dalii/obsidian-llm-wiki/issues/356) (frontmatter-strip bug):
+**v1.25.10 PATCH** (planned, sequential on v1.25.9): ten-item scope (locked 2026-07-28, expanded from initial 5 after DocTpoint + Guru35 morning batches):
 - admission criterion in Task Requirements (closes DocTpoint §2 "rules stated twice in the same prompt")
 - cross-type dedup candidate visibility (closes §3, #328 Phase 2 pre-condition)
 - `merge` vs `contradictory` route split (closes §4, `src/wiki/page-factory/merge-page.ts:124`)
 - alias hardening (3-char floor + uniqueness, DocTpoint §3 measured 0 side effects)
+- #356 frontmatter-strip (data-loss bug fix)
+- #363 format + parser tolerance (`— [[|]]` parse fail-safe 4.7% frozen pages; DocTpoint contributes parser side)
+- #364 folder ingest boundary (data-safety 1-line)
+- #366 slug derivation unification (Turkish char folding; migration story option (d) — two-phase alias+opt-in repair)
+- #367 lint-perf — fold forward v1.25.7 deferred P0-1 fix-runners parallelization + P1-1 analysis content-hash cache + P1-2 smart-skip controller (strict scope lock: only these 3 sub-items; no embedding/RAG)
+- #368 schema docs clarification + settings UI hint (relabeled `bug` → `enhancement`; root cause is docs/semantic mismatch, NOT enforcement bug)
 
-**v1.26.0 MINOR** (in design, anchor [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358)): 8-item committed scope + 4-item research track + 5 open design questions. DocTpoint co-author on `docs/v1.26.0-design.md` (Triage role granted 2026-07-27, label + issue close authority, no push/merge authority).
+**v1.26.0 MINOR** (in design, anchor [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358)): 8-item committed scope + 4-item research track + 5 open design questions. DocTpoint co-author on `docs/v1.26.0-design.md` (granted Write role on personal repo 2026-07-27, label + issue close authority, push authority bounded by branch protection on `main`; see Architect-level contributors below for full role description).
 
-**Companion deferred from v1.25.7 PATCH** (moved to v1.26.0 MINOR to avoid scope over-inflation): P0-1 fix-runners parallelization, P1-1 analysis content-hash cache, P1-2 smart-skip controller. Detailed plan archived in [[project_v1.25.7_lint_perf_plan]]. **🚫 Embedding/RAG/vector index for lint perf: 永久禁止** — see [[feedback_no_rag_embedding_perf]].
+**Companion deferred from v1.25.7 PATCH** (folded INTO v1.25.10 PATCH 2026-07-28 as item #367 — strict scope lock, no scope over-inflation): P0-1 fix-runners parallelization, P1-1 analysis content-hash cache, P1-2 smart-skip controller. Detailed plan archived in [[project_v1.25.7_lint_perf_plan]]; v1.25.10 integration notes in [[project_v1.25.10_patch_scope]] §2. **🚫 Embedding/RAG/vector index for lint perf: 永久禁止** — see [[feedback_no_rag_embedding_perf]].
 
 **v1.25.1 PATCH (2026-07-20, 11 commits, ~80 files, 2274 tests):**
 
@@ -383,12 +389,12 @@ For full release workflow (commit + push + tag + release notes), use the `obsidi
   - **Practical implications:** "self-improving over time" = periodic consolidation pass with LLM judgement on past decisions, NOT a smarter ingest path. The smallest kernel of the Karpathy cycle is Preview-Confirm gate + identity ambiguity record + stable mutation interface, NOT an agent framework refactor.
   - Full rationale: #330 reply comment + #358 tracking issue + [[project_v1_26_0_design]] (when created).
 
-- **Architect-level contributors (added 2026-07-27, applies to v1.26.0+ design work)**:
-  - **Definition.** A contributor who has submitted ≥3 PRs touching core engine files with measurable impact AND authored ≥2 design-level issues that influenced the roadmap. Currently granted to: @DocTpoint (7 issues/PRs in 60 days: #285 typed edges + #328 schema split + #330 ingest critique + #347 source-ownership + #357 source-lemma + #348 source-lemmma derived; 419-note German medical corpus as ongoing stress test).
-  - **Role on GitHub.** `Triage` role (Settings → Collaborators → Add → Role: Triage). This grants: label management on all issues/PRs, issue close/reopen authority, ability to mark duplicates, view on private repo metadata. It does **NOT** grant: direct push to protected branches, merge authority, release-tag authority. Triage role works **inside** the standard PR review workflow (CLAUDE.md §Git Workflow), not around it.
-  - **Why Triage, not Collaborator / Maintain.** Pushing to main is gated by §Git Workflow red line. Merge authority is the maintainer's responsibility under §PR Merge Workflow. Triage is the smallest scope that recognises "this contributor's issues have been driving the roadmap" without bypassing review gates.
-  - **What we expect.** Triage role holders co-write design docs (`docs/v1.Y.Z-design.md`) for the version they shape; review PRs that touch their design surface; flag regressions against their prior contributions. They do NOT speak for the project in user-facing channels or change release scope unilaterally.
-  - **What we don't expect.** Triage is not a path to maintainer. Maintainer promotion is a separate decision triggered by sustained Triage work + user approval, not by accumulating time in role.
+- **Architect-level contributors (added 2026-07-27, corrected 2026-07-28, applies to v1.26.0+ design work)**:
+  - **Definition.** A contributor who has submitted ≥3 PRs touching core engine files with measurable impact AND authored ≥2 design-level issues that influenced the roadmap. Currently granted to: @DocTpoint (DocTpoint's authored count per his #358 reply: 63 issues + 27 PRs, 21 of them merged, first contribution 2026-05-19 — about 70 days; his 6 roadmap-shaping threads: #285 typed edges contributed to + #328 schema split contributed to + #330 ingest critique + #347 source-ownership + #357 source-lemma + #348 source-lemmma derived). **Note:** per F3 audit finding, **#285 and #328 were opened by green-dalii, not by DocTpoint** — DocTpoint contributed to the threads, not authored them.
+  - **Role on GitHub.** **Write** role on the personal repo (`green-dalii/obsidian-llm-wiki`). **Note** (2026-07-28 correction): there is no separately-assignable "Triage-only" role on a personal GitHub repo — the 5 available roles are Read / Triage / Write / Maintain / Admin, and **the Write role includes triage permissions** (push=true, triage=true, pull=true). The "no push to main" invariant is enforced **independently** by branch protection on `main`, not by role assignment. Collaborator role changes must be done via the GitHub UI (Settings → Collaborators → role dropdown) — the API only creates invitations and cannot modify an existing collaborator's role.
+  - **Why Write (not Maintain / Admin).** Pushing to main is gated by §Git Workflow red line (`GH013` rejection); merge authority is the maintainer's responsibility under §PR Merge Workflow. Write is the smallest scope that recognises "this contributor's issues have been driving the roadmap" without bypassing review gates; Maintain / Admin would add merge / release-tag authority we deliberately reserve for the maintainer.
+  - **What we expect.** Write-role holders co-write design docs (`docs/v1.Y.Z-design.md`) for the version they shape; review PRs that touch their design surface; flag regressions against their prior contributions. They do NOT speak for the project in user-facing channels or change release scope unilaterally.
+  - **What we don't expect.** Write is not a path to maintainer. Maintainer promotion is a separate decision triggered by sustained work + user approval, not by accumulating time in role.
 
 ---
 

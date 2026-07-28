@@ -2,7 +2,7 @@
 
 > Feature planning and improvement proposals
 
-**Version:** 1.25.9 PATCH (re-publish of 1.25.8). | **Updated:** 2026-07-27
+**Version:** 1.25.9 PATCH (re-publish of 1.25.8). | **Updated:** 2026-07-28
 
 ## Current Status
 
@@ -20,16 +20,38 @@
 
 ## Next: v1.25.10 PATCH (sequential on v1.25.9)
 
-Theme: four-item bug-fix scope from #330 close-out + #356 frontmatter-strip. All items have measured reproduction or empirical evidence; scope is intentionally narrow to land before v1.26.0 opens the design window.
+Theme: bug-fix only, no new features. All 10 items have measured reproduction or empirical evidence; scope intentionally narrow to land before v1.26.0 opens the design window.
 
-**Scope (locked 2026-07-27)**:
+**Scope (expanded 2026-07-28 from 5 → 10 items, locked after DocTpoint + Guru35 morning batches)**:
+
+*Locked 2026-07-27 (5 items from #330 close-out + #356 frontmatter-strip)*:
 - **admission criterion in Task Requirements** — closes #330 §2 (rules stated twice in the same prompt; 17 citation-titled pages violated)
 - **cross-type dedup candidate visibility** — closes #330 §3 (`src/wiki/page-factory/path-resolution.ts:165` filter scope); pre-condition for #328 Phase 2
 - **`merge` vs `contradictory` route split** — closes #330 §4 (`src/wiki/page-factory/merge-page.ts:124` routes both into same body rewrite)
 - **alias hardening** — closes #330 §3 (3-char floor + uniqueness; DocTpoint measured 0 links affected by 3-char floor, 30/31,553 by uniqueness)
 - **#356 frontmatter-strip fix** — preserves unknown top-level fields on re-touch (data-loss bug, not v1.26.0 feature)
 
-**Out of scope for v1.25.10** (moved to v1.26.0): identity ambiguity record, bidirectional frontmatter, typed edges, Preview-Confirm gate, source-lemma PR #357 (already in `feat/ingest-source-lemma` branch, ships independently).
+*DocTpoint batch (2026-07-28 04:38-04:43 UTC)*:
+- **#363 format + parser tolerance** — `formatMentionsSection` 1-line `sourcePath: m.source_path || sourcePath` mirror `computeReingestMentions.normalize`, **plus** parser-side `BULLET_RE` empty-target tolerance + `buildBullets()` defensive skip-when-empty. DocTpoint measured 4.7% pages frozen by parse→fail-safe chain (119/9272 writes on 417-note vault). DocTpoint contributes parser side.
+- **#364 folder ingest boundary** — 1-line + root special-case: `folderPrefix = folder.isRoot() ? '' : `${folder.path}/``. Data-safety: `Foo/` + `Foo-bar/` no longer cross-bleed.
+
+*Guru35 batch (2026-07-28 09:15-09:18 UTC, single 11k-page Turkish vault)*:
+- **#366 slug derivation unification** — single shared `slugify()` (Turkish char folding: ı→i, İ→i, ç→c, ş→s, ğ→g, ö→o, ü→u) + migration story **option (d) two-phase hybrid**: Phase 1 = emit `aliases:` field on new pages so Obsidian native alias resolution handles old wikilinks transparently; Phase 2 = opt-in `migrateOldSlugs` setting rewrites `[[old|...]]` → `[[new|...]]` on next lint/ingest.
+- **#367 lint-perf** — fold forward v1.25.7 deferred plan items: **P0-1 fix-runners parallelization** (80 LOC + 5 tests, `Promise.allSettled` rewrite of 5 phases), **P1-1 analysis content-hash cache** (80 LOC + 3 tests, LRU 50 entries using `DiskCache<T>` from v1.25.1), **P1-2 smart-skip controller** (30 LOC + 1 test). **Strict scope lock**: only these 3 sub-items; no Tier 1 n-gram bucket, no per-file content-hash diff-index, no embedding/RAG (permanently banned), no new settings UI.
+- **#368 schema docs + settings UI hint** (relabeled `bug` → `enhancement`) — root cause is docs/semantic mismatch, NOT enforcement bug: `type:` is broad category (entity/concept/source, prompt-mandated in `src/wiki/prompts/generation.ts:45/106/159/212/253`); `tags:` is subtype enum (validated via `getActive*Tags(settings)` at `src/core/frontmatter.ts:496-502`, custom vocabulary already in place). Fix is docs clarification + settings UI hint panel; NO `enforceFrontmatterConstraints` change.
+
+**Out of scope for v1.25.10** (moved to v1.26.0): identity ambiguity record, bidirectional frontmatter, typed edges, Preview-Confirm gate, source-lemma PR #357 (already in `feat/ingest-source-lemma` branch, ships independently). **#365 programmatic sources stamp on create path** (DocTpoint) — also deferred to v1.26.0; pre-condition for v1.26.0 "Bidirectional frontmatter" item.
+
+**Expected impact (post all 10 items + lint-perf fold-in)**:
+
+| Metric | baseline (v1.25.9) | v1.25.10 |
+|---|---|---|
+| Lint ingest wall (2805p vault) | 1836s | ~150s (−92%, from lint-perf) |
+| Smart Fix All | 120-180s | <60s (−65%) |
+| Mentions frozen pages (`[[|]]`) | 4.7% (DocTpoint) | 0% (parser tolerance) |
+| Folder mis-ingest (data-safety) | up to 50x (DocTpoint: 409 notes) | 0 (boundary check) |
+| Broken wikilinks (Turkish vault) | 16.5% (Guru35) | depends on migration completion |
+| Settings custom tag vocab drift | 9% (Guru35) | 0 (docs clarification) |
 
 ## Next: v1.26.0 MINOR (after v1.25.10 ships)
 
@@ -65,9 +87,9 @@ Theme: four-item bug-fix scope from #330 close-out + #356 frontmatter-strip. All
 - ❌ Multi-vault isolation (cost > observed benefit)
 - ❌ Plugin-internal scheduler for consolidation (external orchestration is the right home)
 
-**Companion items carried from v1.25.7 PATCH deferred**: P0-1 fix-runners parallelization, P1-1 analysis content-hash cache, P1-2 smart-skip controller (see [[project_v1.25.7_lint_perf_plan]]).
+**Companion items folded into v1.25.10 PATCH**: P0-1 fix-runners parallelization, P1-1 analysis content-hash cache, P1-2 smart-skip controller (see [[project_v1.25.7_lint_perf_plan]] + [[project_v1.25.10_patch_scope]] §2). **🚫 Embedding/RAG/vector index for lint perf: 永久禁止** — see [[feedback_no_rag_embedding_perf]].
 
-**i18n expansion to 11 languages:** add `ru` (Русский) to `WIKI_LANGUAGES` + `src/texts/ru.ts` + `docs/README_RU.md` + 11-way language switcher across all READMEs. Driven by recent RU user growth + @eucher's 3 ingest/LLM PRs (RU speaker). No new functionality beyond text strings + 11-locale parity test update.
+**i18n expansion to 11 languages:** add `ru` (Русский) to `WIKI_LANGUAGES` + `src/texts/ru.ts` + `docs/README_RU.md` + 11-way language switcher across all READMEs. Driven by recent RU user growth + @eucher's 3 ingest/LLM PRs (RU speaker). No new functionality beyond text strings + 11-locale parity test update. — *(status: still pending; not part of v1.25.10 PATCH; revisit at v1.26.0 kickoff or as a follow-up PATCH.)*
 
 Historic compositions (v1.25.7 and earlier) live in [CHANGELOG.md](./CHANGELOG.md) — kept brief here.
 
