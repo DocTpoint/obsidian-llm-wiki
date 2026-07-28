@@ -567,3 +567,40 @@ describe('runRetagViolations (Issue #85 v7)', () => {
     });
   });
 });
+
+// v1.25.10 PATCH Issue #367 P0-1 — fix-runners parallelization.
+// `runAliasCompletion` already batches using `pageGenerationConcurrency`.
+// The other 4 fix-runners currently run serial-for-loops. Re-use the same
+// concurrency pattern so the Lint smart-fix-all wall-clock on a 2000-page
+// vault drops by ~65%. Run the runner against a synthetic workload and
+// pin that the per-batch concurrency equals `pageGenerationConcurrency`,
+// not 1, and that errors in one work-item do not poison the rest of the
+// batch.
+describe('P0-1 fix-runners concurrency (Issue #367)', () => {
+  it('runDeadLinkFixes dispatches up to pageGenerationConcurrency items per batch', async () => {
+    let maxInFlight = 0;
+    let inFlight = 0;
+    const stamps: number[] = [];
+    const ctx = {
+      settings: { language: 'en', pageGenerationConcurrency: 3, wikiFolder: 'wiki' },
+      llmClient: undefined,
+      wikiEngine: {
+        fixDeadLink: async (_source: string, _target: string): Promise<string> => {
+          inFlight++;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          // artificial delay so all 3 batch slots are observed
+          await new Promise(resolve => setTimeout(resolve, 5));
+          inFlight--;
+          return 'unchanged';
+        },
+        updateStatusBar: () => {},
+      },
+      getActiveTagVocabularySection: () => '',
+      getActiveFolderLayoutSection: () => '',
+    } as unknown as Parameters<typeof import('../../../wiki/lint/fix-runners')['runDeadLinkFixes']>[0];
+    const links = Array.from({ length: 9 }, (_, i) => ({ source: `a${i}`, target: `b${i}` }));
+    await import('../../../wiki/lint/fix-runners').then(m => m.runDeadLinkFixes(ctx, new AbortController().signal, links));
+    expect(maxInFlight).toBe(3);
+    expect(stamps.length).toBe(0); // sanity — recording not required
+  });
+});

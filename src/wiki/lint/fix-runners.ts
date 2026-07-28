@@ -210,24 +210,41 @@ export async function runDeadLinkFixes(
   let fixed = 0;
   const results: string[] = [];
   const fixNotice = new Notice('', 0);
+  // v1.25.10 PATCH Issue #367 P0-1 — batch with the same concurrency
+  // setting as the alias runner so the wall-clock on a 2000-page vault
+  // drops roughly by `(n / concurrency)`. Each batch runs the items
+  // through `Promise.allSettled` so a single failure never poisons the
+  // rest. The for-loop shape (vs a flat Promise.all) keeps progress
+  // notices bound to a single batch at a time, matching alias runner.
+  const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
   try {
-    for (let i = 0; i < unique.length; i++) {
+    for (let i = 0; i < unique.length; i += concurrency) {
       checkCancelled(signal);
-      const dl = unique[i];
-      fixNotice.setMessage(t.lintFixProgress.replace('{current}', String(i + 1)).replace('{total}', String(unique.length)).replace('{target}', dl.target));
-      console.debug(`lintFix: dead link ${i + 1}/${unique.length}: ${dl.source} -> ${dl.target}`);
-      try {
+      const batch = unique.slice(i, i + concurrency);
+      const batchStart = i;
+      const batchResults = await Promise.allSettled(batch.map(async (dl, idx) => {
+        const batchIdx = batchStart + idx;
+        fixNotice.setMessage(t.lintFixProgress.replace('{current}', String(batchIdx + 1)).replace('{total}', String(unique.length)).replace('{target}', dl.target));
+        console.debug(`lintFix: dead link ${batchIdx + 1}/${unique.length}: ${dl.source} -> ${dl.target}`);
         const sourcePath = `${ctx.settings.wikiFolder}/${dl.source}.md`;
         const result = await ctx.wikiEngine.fixDeadLink(sourcePath, dl.target);
         console.debug(`Dead link fix: ${dl.source} -> ${dl.target}: ${result}`);
         if (!result.includes(t.lintFixNoAction)) {
-          fixed++;
-          results.push(`- [[${dl.source}]]: \`[[${dl.target}]]\` → ${result}`);
+          return { source: dl.source, target: dl.target, result };
         }
-      } catch (e) {
-        console.error(`Failed to fix dead link: ${dl.source} -> ${dl.target}`, e);
-        const errMsg = e instanceof Error ? e.message : String(e);
-        new Notice(t.lintFixItemFailed.replace('{target}', dl.target).replace('{error}', errMsg), NOTICE_ERROR);
+        return null;
+      }));
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'fulfilled' && r.value) {
+          fixed++;
+          results.push(`- [[${r.value.source}]]: \`[[${r.value.target}]]\` → ${r.value.result}`);
+        } else if (r.status === 'rejected') {
+          const dl = batch[j];
+          console.error(`Failed to fix dead link: ${dl.source} -> ${dl.target}`, r.reason);
+          const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          new Notice(t.lintFixItemFailed.replace('{target}', dl.target).replace('{error}', errMsg), NOTICE_ERROR);
+        }
       }
     }
   } finally {
