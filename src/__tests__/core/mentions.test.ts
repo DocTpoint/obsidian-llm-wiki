@@ -19,6 +19,7 @@ import { describe, it, expect } from 'vitest';
 import { formatMentionsSection } from '../../core/mentions-formatter';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { normalizeBatchResponse } from '../../wiki/source-analyzer';
+import { parseMentionsSection } from '../../core/mentions-parser';
 
 // ─── formatMentionsSection ──────────────────────────────────────────────
 
@@ -391,5 +392,51 @@ describe('normalizeBatchResponse — fillMentionsWithProvenance (#244)', () => {
     const { data } = normalizeBatchResponse(raw);
     expect(data.concepts[0].mentions_with_provenance).toHaveLength(1);
     expect(data.concepts[0].mentions_with_provenance![0].quote).toBe('concept quote');
+  });
+});
+
+// v1.25.10 PATCH Issue #363 — parser tolerance for empty-target bullets.
+//
+// A formatter-produced bullet has shape `- "quote" — [[leftPath|display]]`
+// with `leftPath` non-empty by construction. The legacy #289 path also has
+// non-empty targets by construction. v1.25.9's strict parser rejected
+// lines where the LLM's `source_path` was empty (e.g. an auto-provenance
+// builder emitting ""), the page was frozen by the #267 fail-safe, and
+// never accumulated another quote.
+//
+// After the formatter-side fix in Step 1, this should never happen on
+// newly-written pages. But the parser also needs to be tolerant so that
+// pages that already carry the broken line self-heal on next ingest:
+// the parse must succeed, the broken line must be recoverable as
+// `sourcePath: ''` (so the re-emit has somewhere to anchor via the
+// section's sourcePath fallback), and the page must not flip
+// `fullyParsed` to false.
+describe('parseMentionsSection — Issue #363 self-heal on empty link', () => {
+  it('accepts a formatter-style bullet with an empty link target', () => {
+    const body = `## Mentions in Source
+
+- "verbatim quote" — [[|]]
+`;
+    const parsed = parseMentionsSection(body, 'Mentions in Source');
+    expect(parsed.found).toBe(true);
+    expect(parsed.fullyParsed).toBe(true);
+    expect(parsed.mentions.length).toBe(1);
+    expect(parsed.mentions[0].quote).toBe('verbatim quote');
+    expect(parsed.mentions[0].source_path).toBe('');
+  });
+
+  it('mixes empty and non-empty targets without flipping fullyParsed', () => {
+    const body = `## Mentions in Source
+
+- "q1" — [[sources/x|x]]
+- "q2" — [[|]]
+- "q3" — [[sources/y|y]]
+`;
+    const parsed = parseMentionsSection(body, 'Mentions in Source');
+    expect(parsed.fullyParsed).toBe(true);
+    expect(parsed.mentions.length).toBe(3);
+    expect(parsed.mentions[0].source_path).toBe('sources/x');
+    expect(parsed.mentions[1].source_path).toBe('');
+    expect(parsed.mentions[2].source_path).toBe('sources/y');
   });
 });

@@ -94,7 +94,15 @@ function findSection(
 //   - "quote" (translation) — [[leftPath|display]]
 // Half-width parentheses, em-dash separator (U+2014). Anything that does not
 // match is treated as a hand-edit and flips `fullyParsed` to false.
-const BULLET_RE = /^-\s+"([\s\S]+)"(?:\s+\(([^)]*)\))?\s+—\s+\[\[([^\]|]+)\|[^\]]*\]\]\s*$/;
+//
+// v1.25.10 PATCH Issue #363: `leftPath` was `[^|]+` (one-or-more) so empty
+// targets like `[[|]]` failed to parse. The #267 fail-safe then froze the
+// page forever (the section was unparseable on every subsequent ingest).
+// Accept zero or more in `leftPath` so existing pages with stale empty
+// targets self-heal on next ingest: the parser succeeds, the line is
+// emitted with `source_path: ""`, and the formatter-side fallback in
+// Issue #363 Step 1 re-anchors it on the next re-emit.
+const BULLET_RE = /^-\s+"([\s\S]+)"(?:\s+\(([^)]*)\))?\s+—\s+\[\[([^|\]]*)\|[^\]]*\]\]\s*$/;
 
 // Issue #289 — the pre-#244 shape, grouped by source under a blockquote header:
 //   > **Source: [[sources/X|X]]**
