@@ -25,6 +25,7 @@ import { TEXTS } from '../texts';
 import { getText } from '../core/i18n';
 import { slugify } from '../core/slug';
 import { parseFrontmatter } from '../core/frontmatter';
+import { filterFilesInFolder } from '../core/ingest-folder-boundary';
 import { COMPATIBLE_SOURCE_EXTENSIONS, NOTICE_NORMAL, NOTICE_ERROR } from '../constants';
 import { FileSuggestModal, FolderSuggestModal, MultiFileSuggestModal, IngestReportModal } from '../ui/modals';
 import { ProgressScope } from '../core/progress-notification';
@@ -132,8 +133,14 @@ export const ingestCommands = {
 
     new FolderSuggestModal(this.app, this.settings.wikiFolder, (folder) => {
       const allowedExts: readonly string[] = COMPATIBLE_SOURCE_EXTENSIONS;
+      // v1.25.10 PATCH Issue #364 — folder boundary. The previous bare-prefix
+      // match (`f.path.startsWith(folder.path)`) silently ingested sibling
+      // folders sharing the same name prefix (e.g. picking "Notizen" would
+      // also pull "Notizen-temp/..."). The helper enforces a path-separator
+      // boundary and treats the vault root as a wildcard ancestor.
       const files = this.app.vault.getFiles()
-        .filter(f => f.path.startsWith(folder.path) && allowedExts.includes(f.extension.toLowerCase()));
+        .filter(f => allowedExts.includes(f.extension.toLowerCase()))
+        .filter(f => filterFilesInFolder([f.path], folder.path, folder.isRoot()).length > 0);
 
       if (files.length === 0) {
         const msg = TEXTS[this.settings.language].selectFolderNoMdFiles.replace('{path}', folder.path);
