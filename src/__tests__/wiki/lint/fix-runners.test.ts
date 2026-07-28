@@ -414,6 +414,51 @@ describe('runRetagViolations (Issue #85 v7)', () => {
     expect(result.results[0]).toContain('LLM kept no tags');
   });
 
+  // ── Regression guard (Issue #361 Theme 2) ─────────────────────
+  // ── PR #361 Theme 2: source-typed contract ────────────────
+// PR #349 (eucher, 43479d8) deliberately deferred tier-1 (existing
+// wiki page tags) cleanup to the lint retag runner — closed-vocab
+// enforcement lives in the runner for sources. Production code at
+// fix-runners.ts:441-442 selects getActiveSourceTags when pageType
+// is 'source'. Pin the contract with two tests below.
+
+  const sourceViolation: TagViolation = {
+    path: 'wiki/sources/Smith2024.md',
+    pageType: 'source',
+    title: 'Smith2024',
+    currentTags: ['Medical_Arzneimittel'],
+    invalidTags: ['Medical_Arzneimittel'],
+  };
+
+  it('rewrites source-page frontmatter tags against VALID_SOURCE_TAGS', async () => {
+    const ctx = makeRetagCtx({
+      fileContent: '---\ntype: source\ntitle: Smith2024\ntags: [Medical_Arzneimittel]\n---\n\nSmith 2024 body.',
+      llmResponse: '{"tags":["article"]}',
+    });
+    const writeSpy = (ctx.app.vault.adapter as unknown as { write: ReturnType<typeof vi.fn> }).write;
+    const result = await runRetagViolations(ctx, undefined, [sourceViolation]);
+    expect(result.fixed).toBe(1);
+    const writtenContent = writeSpy.mock.calls[0][1] as string;
+    expect(writtenContent).toContain('article');
+    expect(writtenContent).not.toContain('Medical_Arzneimittel');
+  });
+
+  it('filters LLM-returned source tags not in VALID_SOURCE_TAGS (defensive)', async () => {
+    const ctx = makeRetagCtx({
+      fileContent: '---\ntype: source\ntitle: Smith2024\ntags: [Medical_Arzneimittel]\n---\n\nSmith 2024 body.',
+      // LLM hallucinates "bogus" (any vocab) + "person" (entity vocab,
+      // not source vocab). Both must be filtered.
+      llmResponse: '{"tags":["article","bogus","person"]}',
+    });
+    const writeSpy = (ctx.app.vault.adapter as unknown as { write: ReturnType<typeof vi.fn> }).write;
+    const result = await runRetagViolations(ctx, undefined, [sourceViolation]);
+    expect(result.fixed).toBe(1);
+    const writtenContent = writeSpy.mock.calls[0][1] as string;
+    expect(writtenContent).toContain('article');
+    expect(writtenContent).not.toContain('bogus');
+    expect(writtenContent).not.toContain('person');
+  });
+
   // ── Regression guard (Issue #85 v7.7) ─────────────────────────
   // Earlier commit (ebf58f2) shipped with a SHELL TEST: the mock
   // provided `{ path, read }` and the production code called
