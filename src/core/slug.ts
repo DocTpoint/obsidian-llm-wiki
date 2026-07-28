@@ -68,17 +68,42 @@ export function slugKeys(name: string, aliases: readonly string[] = []): Set<str
 // so a space-variant like "Deep Learning" on deep-learning.md IS a useful alias
 // and must be kept.
 // Pure function (no IO) so the dedup rule can be unit-tested in isolation.
+//
+// v1.25.10 PATCH alias hardening:
+//   - `MIN_ALIAS_LENGTH` floor (3 chars). Two-character aliases like "AI" or
+//     "ML" carry no dedup value above the page basename and collide with
+//     shorthand tokens across the graph; they are dropped silently.
+//   - Optional `existingAliasesAcrossPages` argument lets callers (alias
+//     completion, merge triage) reject candidates that would create a
+//     wikilink ambiguity by overlapping with an alias already on another
+//     page. Pass-through by default — v1.25.9 callers unchanged.
+export const MIN_ALIAS_LENGTH = 3;
+
 export function filterRedundantAliases(
   pagePath: string,
-  candidateAliases: string[]
+  candidateAliases: string[],
+  existingAliasesAcrossPages?: readonly string[],
 ): string[] {
   const fileName = pagePath.split('/').pop() || '';
   const fileKey = fileName.replace(/\.md$/i, '').trim().toLowerCase();
+  const crossPageKeys = new Set<string>();
+  if (existingAliasesAcrossPages) {
+    for (const raw of existingAliasesAcrossPages) {
+      if (typeof raw !== 'string') continue;
+      const trimmed = raw.trim();
+      if (trimmed.length >= MIN_ALIAS_LENGTH) {
+        crossPageKeys.add(trimmed.toLowerCase());
+      }
+    }
+  }
   const seen = new Set<string>();
   return candidateAliases.filter(alias => {
-    if (!alias || alias.trim().length === 0) return false;
-    const key = alias.trim().toLowerCase();
+    if (typeof alias !== 'string') return false;
+    const trimmed = alias.trim();
+    if (trimmed.length < MIN_ALIAS_LENGTH) return false;
+    const key = trimmed.toLowerCase();
     if (key === fileKey) return false; // already resolves to this file — redundant
+    if (crossPageKeys.has(key)) return false; // already used on another page — wikilink ambiguity
     if (seen.has(key)) return false; // duplicate within the batch (case-insensitive)
     seen.add(key);
     return true;

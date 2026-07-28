@@ -58,13 +58,17 @@ describe('appendAliases — happy path', () => {
   });
 
   it('preserves the original aliases order (existing first, then new)', async () => {
-    const ctx = makeContext({ [PAGE]: makePage(['a', 'b']) });
-    await appendAliases(ctx, PAGE, ['c', 'd']);
+    // v1.25.10 PATCH alias hardening raised the floor to 3 chars; the old
+    // single-letter fixtures ('a','b','c','d') are now correctly rejected by
+    // `filterRedundantAliases` before they ever reach the writer. Use
+    // realistic-length aliases so the order-assumption contract still pins.
+    const ctx = makeContext({ [PAGE]: makePage(['aaa', 'bbb']) });
+    await appendAliases(ctx, PAGE, ['ccc', 'ddd']);
     const written = ctx.written.get(PAGE)!;
-    const idxA = written.indexOf('  - "a"');
-    const idxB = written.indexOf('  - "b"');
-    const idxC = written.indexOf('  - "c"');
-    const idxD = written.indexOf('  - "d"');
+    const idxA = written.indexOf('  - "aaa"');
+    const idxB = written.indexOf('  - "bbb"');
+    const idxC = written.indexOf('  - "ccc"');
+    const idxD = written.indexOf('  - "ddd"');
     expect(idxA).toBeGreaterThan(0);
     expect(idxA).toBeLessThan(idxB);
     expect(idxB).toBeLessThan(idxC);

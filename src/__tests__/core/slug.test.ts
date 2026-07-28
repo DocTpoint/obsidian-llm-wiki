@@ -154,8 +154,11 @@ describe('filterRedundantAliases', () => {
   });
 
   it('keeps a genuine alias that differs from the filename', () => {
-    const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['监测']);
-    expect(result).toEqual(['监测']);
+    // 3-character floor (v1.25.10 PATCH): use a multi-char CJK alias so it
+    // clears the floor; the previous single-codepoint CJK alias "监测"
+    // is now correctly rejected by MIN_ALIAS_LENGTH below.
+    const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['监测系统']);
+    expect(result).toEqual(['监测系统']);
   });
 
   it('drops self-pointing alias but keeps distinct ones in the same batch', () => {
@@ -183,5 +186,46 @@ describe('filterRedundantAliases', () => {
   it('handles paths without a folder prefix', () => {
     const result = filterRedundantAliases('vigilanz.md', ['Vigilanz', 'Surveillance']);
     expect(result).toEqual(['Surveillance']);
+  });
+
+  it('drops aliases shorter than the 3-character floor (v1.25.10 PATCH alias hardening)', () => {
+    // "AI" and "ML" are too short to be useful aliases — they cannot
+    // distinguish one entity from another in a wiki-link graph and provide
+    // no dedup value over the page basename. "Überwachung" survives.
+    const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['AI', 'ML', 'Überwachung']);
+    expect(result).toEqual(['Überwachung']);
+  });
+
+  it('accepts a 3-character boundary alias (>= 3 chars)', () => {
+    // "LLM" is exactly 3 chars — at the floor. Must survive.
+    const result = filterRedundantAliases('wiki/entities/openai.md', ['LLM']);
+    expect(result).toEqual(['LLM']);
+  });
+
+  it('drops aliases that already exist on other pages (cross-page uniqueness)', () => {
+    // "Vigilanz" is already an alias on another page — adding it to this
+    // page would create a wikilink ambiguity. Pass them via the third arg.
+    const result = filterRedundantAliases(
+      'wiki/entities/new-page.md',
+      ['Vigilanz', 'Surveillance'],
+      ['Vigilanz'],
+    );
+    expect(result).toEqual(['Surveillance']);
+  });
+
+  it('cross-page uniqueness is case-insensitive (whitespace stripped)', () => {
+    // Even with whitespace/case variations, the existing alias rejects the candidate.
+    const result = filterRedundantAliases(
+      'wiki/entities/new-page.md',
+      ['VIGILANZ'],
+      ['  vigilanz  '],
+    );
+    expect(result).toEqual([]);
+  });
+
+  it('omitting the cross-page argument preserves v1.25.9 behaviour (backward-compat)', () => {
+    // No third argument — should not throw, must still apply filename + batch dedup.
+    const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['Vigilanz']);
+    expect(result).toEqual([]);
   });
 });
