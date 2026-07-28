@@ -14,7 +14,7 @@
 
 [官網](https://llmwiki.greenerai.top/) | [Obsidian 插件市集](https://community.obsidian.md/plugins/karpathywiki) | [部落格](https://llmwiki.greenerai.top/zh/blog/) | [討論區](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
-📑 [目錄](#-目錄) • 🚀 [快速開始](#-快速開始) • ✨ [核心特性](#-核心特性) • 🔍 [檢索原理](#-檢索原理) • 🤖 [模型](#-模型) • ❓ [FAQ](#-faq)
+🤔 [爲什麼選擇這個外掛？](#-爲什麼選擇這個外掛) | 🚀 [快速開始](#-快速開始) | ✨ [核心特性](#-核心特性) | 🌐 [生態](#-生態) | 🔍 [檢索原理](#-檢索原理) | 🤖 [模型](#-模型) | ❓ [FAQ](#-faq)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/H7V1228WMD) ← 如果你覺得這個專案幫到你，歡迎請我喝杯咖啡♥️，或為專案點亮一顆星🌟↗
 
@@ -26,6 +26,7 @@
 - [🎯 適合我嗎？](#-適合我嗎)
 - [🚀 快速開始](#-快速開始)
 - [✨ 核心特性](#-核心特性)
+- [🌐 生態](#-生態)
 - [🔍 檢索原理](#-檢索原理)
 - [🤖 模型](#-模型)
 - [❓ 常見問題 (FAQ)](#-常見問題-faq)
@@ -253,6 +254,20 @@
 - **ChatGPT Plan (Codex OAuth)**——實驗性的獨立 Provider，在瀏覽器或裝置代碼登入後使用符合資格的 Codex 方案額度；可用性取決於 OpenAI Codex 的驗證和額度政策，而非僅憑方案名稱。這是第三方 Codex 相容功能，並非 OpenAI 合作項目或通用 ChatGPT API。
 
 > 📖 **完整選擇表**（雲端 + 本地 + PDF OCR + Codex OAuth + 量化 + 硬體分級）→ [docs/MODEL-GUIDE.md](MODEL-GUIDE.md)
+
+---
+
+## 🌐 生態
+
+本外掛與你的其他 Obsidian 工具無縫協作——以下工具皆可直接接入 `[[wiki-link]]` 圖譜，無需任何程式碼改動。
+
+- **🕸️ Obsidian 原生關係圖譜** —— 在任何 Wiki 頁面開啟原生圖譜視圖；每個 `[[wiki-link]]` 成為節點，每條反向連結成為邊。內建功能，零額外體積。
+- **✂️ [Obsidian Web Clipper](https://obsidian.md/clipper)** —— 官方瀏覽器擴充功能。將網頁（文章、部落格文章、Reddit 串文、Hacker News、食譜、研究論文、YouTube 字幕（透過 Interpreter 取得））儲存到 vault 內任一資料夾，然後執行外掛的「從資料夾攝入」指令以批次萃取實體與概念。
+- **📊 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)** —— 使用 DQL（`LIST FROM "wiki/entities" WHERE contains(tags, "person")`）或 JS API 像查詢資料庫一樣檢索 Wiki。外掛會在每個頁面寫入標準 frontmatter（`tags:`、`type:`、`aliases:`），Dataview 查詢開箱即可使用。
+- **🌿 Git** —— 用任何 Git 客戶端對 vault 進行版本控制。外掛絕不重寫來源檔案，僅在 `wiki/` 下建立新頁面，因此 `git diff` 能清晰區分你的手動編輯與 LLM 生成內容。
+- **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** —— 透過 Marp frontmatter（`marp: true`）將任何 Obsidian 筆記轉為投影片。Wiki 頁面為純 Markdown，無需額外轉換即可直接渲染為投影片。
+- **🖼️ Canvas** —— Obsidian 原生無限畫布。把 Wiki 卡片拖到 Canvas 上，無需離開 vault 即可拼裝學習指南、心智圖或研究概覽，所有內容均透過 `[[wiki-links]]` 互聯。
+- **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** —— 本地語音備忘錄與會議錄製（macOS 上使用 whisper.cpp，音訊資料不出本機）的配套外掛。產生帶說話者標記的轉錄檔案與自有 wiki 中心頁面。與本外掛相互獨立——可在同一 vault 共存而無需耦合。
 
 ---
 

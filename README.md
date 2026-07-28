@@ -14,7 +14,7 @@
 
 [Official Site](https://llmwiki.greenerai.top/) | [Obsidian Marketplace](https://community.obsidian.md/plugins/karpathywiki) | [Blog](https://llmwiki.greenerai.top/blog/) | [Discussions](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
-📑 [Contents](#-contents) • 🚀 [Quick Start](#-quick-start) • ✨ [Features](#-features) • 🔍 [How Retrieval Works](#-how-retrieval-works) • 🤖 [Models](#-models) • ❓ [FAQ](#-faq)
+🤔 [Why this plugin?](#-why-this-plugin) | 🚀 [Quick Start](#-quick-start) | ✨ [Features](#-features) | 🌐 [Ecosystem](#-ecosystem) | 🔍 [How Retrieval Works](#-how-retrieval-works) | 🤖 [Models](#-models) | ❓ [FAQ](#-faq)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/H7V1228WMD) ← If this plugin has helped you, feel free to buy me a coffee♥️ or drop a star🌟↗
 
@@ -26,6 +26,7 @@
 - [Is it for me?](#-is-it-for-me)
 - [Quick Start](#-quick-start)
 - [Features](#-features)
+- [Ecosystem](#-ecosystem)
 - [How retrieval works](#-how-retrieval-works)
 - [Models](#-models)
 - [FAQ](#-faq)
@@ -184,6 +185,20 @@ Three paths, pick what fits your setup:
 - **🌍 10 UI languages** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano. UI and wiki-output language are independent — your wiki can be Chinese while the interface is English.
 - **📚 10 wiki-output languages** — same set; pick in Settings → Wiki Configuration. *Custom input* option for ad-hoc prompts.
 - **🈶 269+ translated UI strings** — every label, modal, and notice. Adding an 11th language is contributor-driven (PR #159 pattern).
+
+---
+
+## 🌐 Ecosystem
+
+The plugin composes with the rest of your Obsidian stack — each tool below plugs into the `[[wiki-link]]` graph without code changes.
+
+- **🕸️ Obsidian Graph View** — open the native graph on any wiki page; every `[[wiki-link]]` becomes a node, every back-link an edge. Built in, zero extra bundle size.
+- **✂️ [Obsidian Web Clipper](https://obsidian.md/clipper)** — official browser extension. Save web pages (articles, blog posts, Reddit threads, Hacker News, recipes, research papers, YouTube transcripts via Interpreter) into any folder of your vault, then run the plugin's `Ingest from folder` command to batch-extract entities and concepts.
+- **📊 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)** — query the wiki like a database with DQL (`LIST FROM "wiki/entities" WHERE contains(tags, "person")`) or JS API. The plugin writes standard frontmatter (`tags:`, `type:`, `aliases:`) on every page, so Dataview queries work out of the box.
+- **🌿 Git** — version your vault (any Git client). The plugin never rewrites your source files; only creates new pages under `wiki/`, so `git diff` cleanly separates your edits from LLM-generated content.
+- **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** — turn any Obsidian note into slide decks via Marp frontmatter (`marp: true`). Wiki pages are pure Markdown, so they render as slides without extra conversion.
+- **🖼️ Canvas** — Obsidian's native infinite canvas. Drag wiki cards onto a Canvas to assemble study guides, mind maps, or research overviews from `[[wiki-links]]` without leaving the vault.
+- **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** — companion plugin for local voice memo and meeting capture (whisper.cpp on macOS; audio never leaves the machine). Generates speaker-labeled transcripts and its own wiki hub pages. Independent of this plugin — both can share the same vault without coupling.
 
 ---
 

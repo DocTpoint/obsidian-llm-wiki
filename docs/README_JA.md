@@ -14,7 +14,7 @@
 
 [公式サイト](https://llmwiki.greenerai.top/) | [Obsidianマーケットプレース](https://community.obsidian.md/plugins/karpathywiki) | [ブログ](https://llmwiki.greenerai.top/blog/) | [Discussions](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
-🚀 [クイックスタート](#-クイックスタート) • ✨ [特徴](#-特徴) • 🔍 [検索の仕組み](#-検索の仕組み) • 🤖 [モデル](#-モデル) • ❓ [FAQ](#-faq)
+🤔 [なぜこのプラグインなのか？](#-なぜこのプラグインなのか) | 🚀 [クイックスタート](#-クイックスタート) | ✨ [特徴](#-特徴) | 🌐 [エコシステム](#-エコシステム) | 🔍 [検索の仕組み](#-検索の仕組み) | 🤖 [モデル](#-モデル) | ❓ [FAQ](#-faq)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/H7V1228WMD) ← このプラグインが役に立ったら、コーヒー一杯♥️を奢ってくれたら嬉しいです、またはスター🌟を付けてね↗
 
@@ -26,6 +26,7 @@
 - [こんな方に](#-こんな方に)
 - [クイックスタート](#-クイックスタート)
 - [特徴](#-特徴)
+- [エコシステム](#-エコシステム)
 - [検索の仕組み](#-検索の仕組み)
 - [モデル](#-モデル)
 - [FAQ](#-faq)
@@ -253,6 +254,20 @@ Monte Carlo PPR（Fogaras 2005）を使用 — 3,000ランダムウォーク×50
 - **ChatGPT Plan（Codex OAuth）** — 実験的かつ独立したプロバイダー。ブラウザまたはデバイスコードサインイン後、対象となるCodex利用枠を使用。提供状況はOpenAI Codexの認証・モデル・利用枠ポリシーに従い、プラン名だけで利用を保証するものではありません。OpenAIとのパートナーシップや汎用ChatGPT APIではなく、サードパーティのCodex互換機能です。
 
 > 📖 **完全な選択肢テーブル**（クラウド＋ローカル＋PDF OCR＋Codex OAuth＋量子化＋ハードウェア階層）→ [docs/MODEL-GUIDE.md](MODEL-GUIDE.md)
+
+---
+
+## 🌐 エコシステム
+
+このプラグインはObsidianの他のツールと組み合わせ可能——以下のツールはすべてコード変更なしで `[[wiki-link]]` グラフに統合できます。
+
+- **🕸️ Obsidian Graph View** — 任意のWikiページでネイティブグラフを開けます。すべての `[[wiki-link]]` がノードに、すべてのバックリンクがエッジになります。標準搭載、追加のバンドルサイズゼロ。
+- **✂️ [Obsidian Web Clipper](https://obsidian.md/clipper)** — 公式ブラウザ拡張機能。記事、ブログ投稿、Redditスレッド、Hacker News、レシピ、研究論文、YouTube字幕（Interpreter経由）をvault内の任意のフォルダに保存し、プラグインの「フォルダから取り込み」コマンドを実行してエンティティとコンセプトを一括抽出できます。
+- **📊 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)** — DQL（`LIST FROM "wiki/entities" WHERE contains(tags, "person")`）またはJS APIでWikiをデータベースのようにクエリ可能。プラグインは全ページに標準frontmatter（`tags:`、`type:`、`aliases:`）を書き込むため、Dataviewクエリはそのまま動作します。
+- **🌿 Git** — 任意のGitクライアントでvaultをバージョン管理。プラグインはソースファイルを書き換えず、`wiki/` 配下にのみ新規ページを作成するため、`git diff` で手動編集とLLM生成コンテンツを明確に区別できます。
+- **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** — Marp frontmatter（`marp: true`）で任意のObsidianノートをスライドに変換。Wikiページは純粋なMarkdownのため、追加変換なしでスライドとしてレンダリングされます。
+- **🖼️ Canvas** — Obsidian標準の無限キャンバス。WikiカードをCanvasに配置すれば、vaultから出ずに学習ガイド・マインドマップ・研究概要を `[[wiki-links]]` で組み立てられます。
+- **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** — ローカル音声メモ＋会議キャプチャ（macOSでwhisper.cpp使用、音声は端末から出ない）のコンパニオンプラグイン。話者ラベル付き文字起こしと独自のwikiハブページを生成。本プラグインとは独立しており、同じvaultを共有しても結合は不要です。
 
 ---
 

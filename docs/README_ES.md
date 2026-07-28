@@ -14,7 +14,7 @@
 
 [Sitio oficial](https://llmwiki.greenerai.top/) | [Mercado de Obsidian](https://community.obsidian.md/plugins/karpathywiki) | [Blog](https://llmwiki.greenerai.top/blog/) | [Debate](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
-📑 [Contenido](#-contenido) • 🚀 [Inicio rápido](#-inicio-rápido) • ✨ [Características](#-características) • 🔍 [Cómo funciona la recuperación](#-cómo-funciona-la-recuperación) • 🤖 [Modelos](#-modelos) • ❓ [FAQ](#-faq)
+🤔 [Por qué este plugin?](#-por-qué-este-plugin) | 🚀 [Inicio rápido](#-inicio-rápido) | ✨ [Características](#-características) | 🌐 [Ecosistema](#-ecosistema) | 🔍 [Cómo funciona la recuperación](#-cómo-funciona-la-recuperación) | 🤖 [Modelos](#-modelos) | ❓ [FAQ](#-faq)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/H7V1228WMD) ← Si este plugin te ha sido útil, invítame a un café♥️ o deja una estrella🌟↗
 
@@ -26,6 +26,7 @@
 - [🎯 Es para mí?](#-es-para-mí)
 - [🚀 Inicio rápido](#-inicio-rápido)
 - [✨ Características](#-características)
+- [🌐 Ecosistema](#-ecosistema)
 - [🔍 Cómo funciona la recuperación](#-cómo-funciona-la-recuperación)
 - [🤖 Modelos](#-modelos)
 - [❓ FAQ](#-faq)
@@ -253,6 +254,20 @@ Este plugin alimenta al LLM con el contexto completo de tu Wiki por consulta —
 - **ChatGPT Plan (Codex OAuth)** — experimental, proveedor distinto que usa la asignación Codex elegible después de iniciar sesión por navegador o código de dispositivo; la disponibilidad sigue las políticas de autenticación y asignación de OpenAI Codex, no el nombre del plan. Compatibilidad de terceros con Codex, no una asociación con OpenAI ni una API general de ChatGPT.
 
 > 📖 **Tabla completa de selección** (cloud + local + OCR PDF + Codex OAuth + cuantización + niveles de hardware) → [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)
+
+---
+
+## 🌐 Ecosistema
+
+El plugin se combina con el resto de tu stack de Obsidian — cada herramienta de abajo se conecta al grafo `[[wiki-link]]` sin cambios de código.
+
+- **🕸️ Obsidian Graph View** — abre la vista de grafo nativa en cualquier página wiki; cada `[[wiki-link]]` se convierte en un nodo, cada backlink en una arista. Integrado, cero tamaño adicional del bundle.
+- **✂️ [Obsidian Web Clipper](https://obsidian.md/clipper)** — extensión oficial del navegador. Guarda páginas web (artículos, entradas de blog, hilos de Reddit, Hacker News, recetas, trabajos de investigación, transcripciones de YouTube vía Interpreter) en cualquier carpeta de tu vault y luego ejecuta el comando «Ingerir desde carpeta» del plugin para extraer entidades y conceptos en lote.
+- **📊 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)** — consulta el wiki como una base de datos con DQL (`LIST FROM "wiki/entities" WHERE contains(tags, "person")`) o la API JS. El plugin escribe frontmatter estándar (`tags:`, `type:`, `aliases:`) en cada página, por lo que las consultas Dataview funcionan sin configuración adicional.
+- **🌿 Git** — versiona tu vault (con cualquier cliente Git). El plugin nunca reescribe tus archivos fuente; solo crea nuevas páginas bajo `wiki/`, por lo que `git diff` separa claramente tus ediciones del contenido generado por el LLM.
+- **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** — convierte cualquier nota de Obsidian en diapositivas mediante el frontmatter Marp (`marp: true`). Las páginas wiki son Markdown puro, se renderizan como diapositivas sin conversión adicional.
+- **🖼️ Canvas** — lienzo infinito nativo de Obsidian. Coloca tarjetas wiki en un canvas para ensamblar guías de estudio, mapas mentales o resúmenes de investigación a partir de `[[wiki-links]]` sin salir del vault.
+- **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** — plugin complementario para captura local de notas de voz y reuniones (whisper.cpp en macOS; el audio nunca sale del dispositivo). Genera transcripciones etiquetadas por hablante y sus propias páginas wiki hub. Independiente de este plugin — ambos pueden compartir el mismo vault sin acoplarse.
 
 ---
 
