@@ -342,6 +342,7 @@ export const DE_TEXTS = {
     tagVocabularyModeName: 'Tag-Vokabular-Konfiguration',
     tagVocabularyModeDescDefault: 'Standard verwendet eingebaute Tags: {}. Wechseln Sie zu „Benutzerdefiniert", um Ihr eigenes Vokabular zu definieren.',
     tagVocabularyModeDescCustom: 'Benutzerdefiniert: Definieren Sie unten Ihre eigenen entity- und concept-Tags per Chip-Eingabe — Enter oder Komma zum Hinzufügen, × zum Entfernen.',
+    tagVocabularyNotEnforcedHint: 'Nur ein Schema-Hinweis — die KI kann weiterhin Typen außerhalb des Vokabulars ausgeben. Lint ausführen, um diese Seiten zu finden und zu reparieren.',
     tagVocabularyModeDefault: 'Standard (eingebaute Subtyp-Tags)',
     tagVocabularyModeCustom: 'Benutzerdefiniert (eigene)',
     customEntityTagsName: 'Benutzerdefinierte Entitäts-Tags',

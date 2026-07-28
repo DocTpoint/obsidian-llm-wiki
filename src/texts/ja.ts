@@ -340,6 +340,7 @@ export const JA_TEXTS = {
     tagVocabularyModeName: 'タグ語彙設定',
     tagVocabularyModeDescDefault: 'デフォルトは組み込みタグを使用: {}。「カスタム」に切り替えると独自の語彙を定義できます。',
     tagVocabularyModeDescCustom: 'カスタム: 下で chip 入力を使って独自の entity/concept タグを定義します。Enter またはカンマで追加、× で削除。',
+    tagVocabularyNotEnforcedHint: 'スキーマのヒントのみ — LLMが語彙外の型を出力する場合もあります。Lintを実行して該当ページを見つけて修正してください。',
     tagVocabularyModeDefault: 'デフォルト (組み込みサブタイプタグ)',
     tagVocabularyModeCustom: 'カスタム (ユーザー定義)',
     customEntityTagsName: 'カスタムエンティティタグ',

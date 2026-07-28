@@ -342,6 +342,7 @@ export const ES_TEXTS = {
     tagVocabularyModeName: 'Configuración del vocabulario de etiquetas',
     tagVocabularyModeDescDefault: 'Por defecto usa etiquetas integradas: {}. Cambie a «Personalizado» para definir su propio vocabulario.',
     tagVocabularyModeDescCustom: 'Personalizado: defina abajo sus propias etiquetas de entity y concept con la entrada por chips — Enter o coma para añadir, × para eliminar.',
+    tagVocabularyNotEnforcedHint: 'Solo una sugerencia de esquema — la IA aún puede emitir tipos fuera del vocabulario. Ejecuta Lint para encontrar y reparar esas páginas.',
     tagVocabularyModeDefault: 'Por defecto (subtipos integrados)',
     tagVocabularyModeCustom: 'Personalizado (definido por el usuario)',
     customEntityTagsName: 'Etiquetas de entidad personalizadas',

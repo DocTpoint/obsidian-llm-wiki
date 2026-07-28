@@ -171,9 +171,14 @@ export function renderWikiConfigSection(tab: LLMWikiSettingTab, containerEl: HTM
     ? `${effectiveEntityTags.join(', ')} (entities) / ${effectiveConceptTags.join(', ')} (concepts)${tempSettings.tagVocabularyMode === 'default' ? ' - custom values shown above (toggle to Custom to activate)' : ''}`
     : `${VALID_ENTITY_TAGS.join(', ')} (entities) / ${VALID_CONCEPT_TAGS.join(', ')} (concepts)`;
   const leadDesc = tab.getText('tagVocabularyInlineDesc');
+  // v1.25.10 PATCH Issue #368: the custom vocabulary is a SCHEMA INJECTION
+  // HINT for the LLM, not a write-time gate. Surface that explicitly in the
+  // settings panel so users do not assume out-of-vocabulary types are
+  // rejected — they are surfaced by the Lint diagnostic instead.
+  const enforcementHint = `\n${tab.getText('tagVocabularyNotEnforcedHint')}`;
   const modeDesc = tempSettings.tagVocabularyMode === 'custom'
-    ? `${leadDesc}\n${tab.getText('tagVocabularyModeDescCustom')}`
-    : `${leadDesc}\n${tab.getText('tagVocabularyModeDescDefault').replace('{}', effectiveListDesc)}`;
+    ? `${leadDesc}\n${tab.getText('tagVocabularyModeDescCustom')}${enforcementHint}`
+    : `${leadDesc}\n${tab.getText('tagVocabularyModeDescDefault').replace('{}', effectiveListDesc)}${enforcementHint}`;
 
   new Setting(containerEl)
     .setName(tab.getText('tagVocabularyModeName'))

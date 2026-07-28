@@ -342,6 +342,7 @@ export const PT_TEXTS = {
     tagVocabularyModeName: 'Configuração do vocabulário de tags',
     tagVocabularyModeDescDefault: 'Padrão usa tags embutidas: {}. Mude para "Personalizado" para definir seu próprio vocabulário.',
     tagVocabularyModeDescCustom: 'Personalizado: defina abaixo suas próprias tags de entity e concept pela entrada por chips — Enter ou vírgula para adicionar, × para remover.',
+    tagVocabularyNotEnforcedHint: 'Apenas uma sugestão de esquema — o LLM ainda pode emitir tipos fora do vocabulário. Execute o Lint para localizar e corrigir essas páginas.',
     tagVocabularyModeDefault: 'Padrão (subtipos embutidos)',
     tagVocabularyModeCustom: 'Personalizado (definido pelo usuário)',
     customEntityTagsName: 'Tags de entidade personalizadas',
