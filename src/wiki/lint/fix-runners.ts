@@ -217,6 +217,8 @@ export async function runDeadLinkFixes(
   // rest. The for-loop shape (vs a flat Promise.all) keeps progress
   // notices bound to a single batch at a time, matching alias runner.
   const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
+  const totalBatches = Math.ceil(unique.length / concurrency);
+  console.debug(`[DeadLink] Starting dead-link fix — ${unique.length} links, concurrency=${concurrency}, batches=${totalBatches}`);
   try {
     for (let i = 0; i < unique.length; i += concurrency) {
       checkCancelled(signal);
@@ -270,6 +272,8 @@ export async function runEmptyPageFixes(
   // batch through Promise.allSettled so a single failure never poisons
   // the rest. concurrency=1 (default) preserves v1.25.9 behaviour.
   const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
+  const totalBatches = Math.ceil(emptyPages.length / concurrency);
+  console.debug(`[EmptyPage] Starting empty-page fix — ${emptyPages.length} pages, concurrency=${concurrency}, batches=${totalBatches}`);
   try {
     for (let i = 0; i < emptyPages.length; i += concurrency) {
       checkCancelled(signal);
@@ -315,6 +319,8 @@ export async function runOrphanFixes(
   const fixNotice = new Notice('', 0);
   // v1.25.10 PATCH Issue #367 P0-1 — see runEmptyPageFixes above.
   const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
+  const totalBatches = Math.ceil(orphans.length / concurrency);
+  console.debug(`[Orphan] Starting orphan link fix — ${orphans.length} pages, concurrency=${concurrency}, batches=${totalBatches}`);
   try {
     for (let i = 0; i < orphans.length; i += concurrency) {
       checkCancelled(signal);
@@ -367,6 +373,8 @@ export async function runDuplicateMerges(
   const fixNotice = new Notice('', 0);
   // v1.25.10 PATCH Issue #367 P0-1 — see runEmptyPageFixes above.
   const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
+  const totalBatches = Math.ceil(duplicates.length / concurrency);
+  console.debug(`[DuplicateMerge] Starting duplicate merges — ${duplicates.length} pairs, concurrency=${concurrency}, batches=${totalBatches}`);
   try {
     for (let i = 0; i < duplicates.length; i += concurrency) {
       checkCancelled(signal);
@@ -459,6 +467,8 @@ export async function runRetagViolations(
   // cap on each LLM call means peak inflight scales with
   // pageGenerationConcurrency, not with the violation count).
   const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
+  const totalBatches = Math.ceil(violations.length / concurrency);
+  console.debug(`[Retag] Starting retag — ${violations.length} violations, concurrency=${concurrency}, batches=${totalBatches}`);
   try {
     for (let i = 0; i < violations.length; i += concurrency) {
       checkCancelled(signal);
