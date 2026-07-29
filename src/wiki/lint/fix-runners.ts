@@ -443,6 +443,7 @@ export async function runRetagViolations(
     return { fixed: 0, results: ['LLM client not initialized; retag skipped.'] };
   }
   const t = TEXTS[ctx.settings.language];
+  const llmClient = ctx.llmClient;
   const fixNotice = new Notice(t.lintTagViolationFiring
     .replace('{current}', '0')
     .replace('{total}', String(violations.length))
@@ -450,18 +451,26 @@ export async function runRetagViolations(
 
   const results: string[] = [];
   let fixed = 0;
+  // v1.25.10 PATCH Issue #367 P0-1 — mirror the other fix-runners.
+  // Even though retag fans out to one LLM call per violation, those
+  // calls are independent and `ctx.buildSystemPrompt` is async-cache-
+  // friendly. Slicing into concurrency-sized chunks keeps the LLM
+  // token-budget ceiling per batch predictable (the 256-token output
+  // cap on each LLM call means peak inflight scales with
+  // pageGenerationConcurrency, not with the violation count).
+  const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
   try {
-    for (let i = 0; i < violations.length; i++) {
-      if (signal?.aborted) {
-        throw new DOMException('Lint fix cancelled by user', 'AbortError');
-      }
-      const v = violations[i];
-      fixNotice.setMessage(t.lintTagViolationFiring
-        .replace('{current}', String(i + 1))
-        .replace('{total}', String(violations.length))
-        .replace('{path}', v.path));
+    for (let i = 0; i < violations.length; i += concurrency) {
+      checkCancelled(signal);
+      const batch = violations.slice(i, i + concurrency);
+      const batchIdx = i;
+      const batchResults = await Promise.allSettled(batch.map(async (v, idx) => {
+        const currentIdx = batchIdx + idx;
+        fixNotice.setMessage(t.lintTagViolationFiring
+          .replace('{current}', String(currentIdx + 1))
+          .replace('{total}', String(violations.length))
+          .replace('{path}', v.path));
 
-      try {
         // Read the current page content. The Obsidian API is
         // `Vault.read(file: TFile)` — TFile itself does not have a
         // `read()` method (this is a common mistake; TFile extends
@@ -477,8 +486,7 @@ export async function runRetagViolations(
         // added to fix-runners.test.ts to prevent regression.
         const file = ctx.app.vault.getAbstractFileByPath(v.path);
         if (!file) {
-          results.push(`${v.path}: file not found`);
-          continue;
+          return { v, kind: 'missing' as const };
         }
         // TFile is the concrete subclass of TAbstractFile that holds
         // vault-readable content. Use instanceof TFile to distinguish
@@ -488,8 +496,7 @@ export async function runRetagViolations(
         // the test mock (new TFile() with Object.assign) also passes
         // because vitest hoists TFile to the same class reference.
         if (!(file instanceof TFile)) {
-          results.push(`${v.path}: not a regular file`);
-          continue;
+          return { v, kind: 'notfile' as const };
         }
         // Read via ctx.app.vault.read(file) — the correct Obsidian API
         // for reading a file by TFile. vault.cachedRead() is also
@@ -535,7 +542,7 @@ Task: Return a JSON object with a single field "tags" that is an array of string
 `;
 
         const systemPrompt = ctx.buildSystemPrompt ? await ctx.buildSystemPrompt('lint') : undefined;
-        const response = await ctx.llmClient.createMessage({
+        const response = await llmClient.createMessage({
           model: resolveModelForTask(ctx.settings, 'lint'),
           max_tokens: 256,
           ...(systemPrompt ? { system: systemPrompt } : {}),
@@ -553,14 +560,12 @@ Task: Return a JSON object with a single field "tags" that is an array of string
         const safeNewTags = newTags.filter(t => validVocab.includes(t));
 
         if (safeNewTags.length === 0) {
-          results.push(`${v.path}: LLM kept no tags (no valid match)`);
-          continue;
+          return { v, kind: 'noop' as const, message: `${v.path}: LLM kept no tags (no valid match)` };
         }
         if (safeNewTags.length === v.currentTags.length &&
             safeNewTags.every(t => v.currentTags.includes(t))) {
           // No-op: the LLM returned the same tags we already had.
-          results.push(`${v.path}: no change`);
-          continue;
+          return { v, kind: 'noop' as const, message: `${v.path}: no change` };
         }
 
         // v1.24.0: use the shared REPLACE helper (full replacement
@@ -572,23 +577,45 @@ Task: Return a JSON object with a single field "tags" that is an array of string
         // block-style case correctly.
         const updated = replaceFrontmatterArrayField(content, 'tags', safeNewTags);
         await ctx.app.vault.adapter.write(v.path, updated);
-        fixed++;
-        results.push(`${v.path}: [${v.currentTags.join(', ')}] → [${safeNewTags.join(', ')}]`);
-      } catch (e) {
-        if (e instanceof DOMException && e.name === 'AbortError') throw e;
-        const errMsg = e instanceof Error ? e.message : String(e);
-        // console.error so the user sees the full stack in DevTools
-        // (Ctrl+Shift+I). Notice alone truncates the error message
-        // and gives no recovery info — that was the bug reported
-        // when "Retag failed for X: tfile.read is not a function"
-        // appeared with no other diagnostic output. We include the
-        // page type + violation context for debugging.
-        console.error(
-          `[runRetagViolations] ${v.path} (${v.pageType}) failed:`,
-          e
-        );
-        results.push(`${v.path}: ${errMsg}`);
-        new Notice(t.lintTagViolationFailed.replace('{path}', v.path).replace('{error}', errMsg), NOTICE_ERROR);
+        return {
+          v,
+          kind: 'fixed' as const,
+          message: `${v.path}: [${v.currentTags.join(', ')}] → [${safeNewTags.join(', ')}]`,
+        };
+      }));
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'rejected') {
+          const v = batch[j];
+          const e: unknown = r.reason;
+          if (e instanceof DOMException && e.name === 'AbortError') throw e;
+          const errMsg = e instanceof Error ? e.message : String(e);
+          // console.error so the user sees the full stack in DevTools
+          // (Ctrl+Shift+I). Notice alone truncates the error message
+          // and gives no recovery info — that was the bug reported
+          // when "Retag failed for X: tfile.read is not a function"
+          // appeared with no other diagnostic output. We include the
+          // page type + violation context for debugging.
+          console.error(
+            `[runRetagViolations] ${v.path} (${v.pageType}) failed:`,
+            e
+          );
+          results.push(`${v.path}: ${errMsg}`);
+          new Notice(t.lintTagViolationFailed.replace('{path}', v.path).replace('{error}', errMsg), NOTICE_ERROR);
+          continue;
+        }
+        const val = r.value;
+        if (val.kind === 'missing') {
+          results.push(`${val.v.path}: file not found`);
+        } else if (val.kind === 'notfile') {
+          results.push(`${val.v.path}: not a regular file`);
+        } else if (val.kind === 'noop') {
+          results.push(val.message);
+        } else {
+          // kind === 'fixed'
+          fixed++;
+          results.push(val.message);
+        }
       }
     }
   } finally {
