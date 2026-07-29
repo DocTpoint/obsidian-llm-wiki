@@ -182,14 +182,32 @@ export function upsertFrontmatterField(content: string, key: string, value: stri
  *
  * Pure function, no IO. Suitable for unit testing.
  */
-const KNOWN_FRONTMATTER_KEYS = new Set([
+/**
+ * Canonical frontmatter keys — single source of truth shared by
+ * `extractPassthroughLines`, the `replaceOrInsertYamlListField`
+ * helper, and any plugin code that needs to recognise a
+ * "known vs unknown" field. Adding a new canonical key here
+ * automatically excludes it from passthrough on every re-touch
+ * and from splice ambiguity in append-style helpers.
+ *
+ * Field name list intentionally mirrors the keys emitted by
+ * `serializeFrontmatter` below — drift would silently break the
+ * passthrough invariant (Issue #356) if a new field is added
+ * in only one of the two places.
+ */
+export const CANONICAL_FRONTMATTER_KEYS = new Set([
   'type', 'created', 'updated', 'sources', 'tags', 'reviewed', 'aliases',
 ]);
 
 /**
  * Read the existing frontmatter block from `content` and extract the
- * passthrough lines (everything not in `KNOWN_FRONTMATTER_KEYS`). Returns
- * `[]` when no frontmatter or no unknown fields exist.
+ * passthrough lines (everything not in `CANONICAL_FRONTMATTER_KEYS`).
+ * Returns `[]` when no frontmatter or no unknown fields exist.
+ *
+ * The early-out at `unknownKeysHint` lets us skip the per-line walk in
+ * the common case (no unknown fields exist) — `extractPassthroughLines`
+ * is on the page-write hot path; that path is dominated by pages whose
+ * frontmatter has zero unknown fields.
  *
  * @param content Full file content (may start with `---` or not).
  */
@@ -211,7 +229,7 @@ export function extractPassthroughLines(content: string): string[] {
       // Top-level line — does its key belong to the known set?
       const m = line.match(/^([A-Za-z_][A-Za-z0-9_-]*)\s*:/);
       const key = m ? m[1] : '';
-      capturing = !!(key && !KNOWN_FRONTMATTER_KEYS.has(key));
+      capturing = !!(key && !CANONICAL_FRONTMATTER_KEYS.has(key));
       // Edge case: if the line continues on the same line (e.g.
       // `redirect_to: "[[X]]"`), the whole single line is the passthrough.
       if (capturing) passthrough.push(line);
@@ -222,6 +240,51 @@ export function extractPassthroughLines(content: string): string[] {
     if (capturing) passthrough.push(line);
   }
   return passthrough;
+}
+
+/**
+ * Replace an existing YAML block-list field (`aliases:` /
+ * `sources:` / `tags:` / etc.) with the supplied `items`, or insert a
+ * fresh block before the closing `---` when the field is absent.
+ *
+ * Shared helper for every plugin-side frontmatter list writer
+ * (`appendAliases`, `appendContradictedByMarker`, ...). Centralizing
+ * the splice arithmetic eliminates the copy-paste that the
+ * `appendAliases` and `appendContradictedByMarker` helpers used to
+ * share. The block shape mirrors what the canonical serializer
+ * emits, so re-parsing after a write yields the same field shape.
+ *
+ * @param frontmatter Full frontmatter block, beginning with `---\n`.
+ *                    Returns it unchanged when no `---` delimiter pair
+ *                    is present.
+ * @param field       Top-level key name (e.g. `aliases`,
+ *                    `contradictions`).
+ * @param items       List of items — already deduplicated by the caller
+ *                    if dedup is desired.
+ */
+export function replaceOrInsertYamlListField(
+  frontmatter: string,
+  field: string,
+  items: readonly string[],
+): string {
+  if (!frontmatter.startsWith('---')) return frontmatter;
+  const fmStart = 3;
+  const fmEnd = frontmatter.indexOf('\n---', fmStart);
+  if (fmEnd === -1) return frontmatter;
+  const fmBody = frontmatter.substring(fmStart, fmEnd);
+  const block = `${field}:\n${items
+    .map(s => `  - "${s.replace(/"/g, '\\"')}"`)
+    .join('\n')}`;
+
+  const listRe = new RegExp(`^${field}:[^\\n]*(?:\\n[ \\t]+[^\\n]*)*`, 'm');
+  const newFmBody = listRe.test(fmBody)
+    ? fmBody.replace(listRe, block)
+    : `${fmBody.trimEnd()}\n${block}`;
+
+  // Rebuild the file content outside the frontmatter block; preserve
+  // the trailing newline pattern of the input.
+  const tail = frontmatter.substring(fmEnd);
+  return `---${newFmBody}\n${tail}`;
 }
 
 /**
@@ -277,7 +340,7 @@ export function mergeFrontmatterArrayField(
     ...(fm ?? {}),
     [field]: merged,
   };
-  const fmBlock = serializeFrontmatter(next, passthroughLines.length > 0 ? { passthroughLines } : {});
+  const fmBlock = serializeFrontmatter(next, { passthroughLines });
 
   // Splice the new block in place of the existing frontmatter.
   if (content.startsWith('---')) {
@@ -318,7 +381,7 @@ export function replaceFrontmatterArrayField(
   } else {
     next[field] = [...newItems];
   }
-  const fmBlock = serializeFrontmatter(next, passthroughLines.length > 0 ? { passthroughLines } : {});
+  const fmBlock = serializeFrontmatter(next, { passthroughLines });
 
   if (content.startsWith('---')) {
     const endIdx = content.indexOf('\n---', 3);

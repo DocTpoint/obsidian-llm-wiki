@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   appendContradictedByMarker,
-  CONTRADICTED_SOURCES_KEY,
+  CONTRADICTIONS_KEY,
 } from '../../core/contradicted-marker';
 
 const FM_BASE = `---
@@ -20,9 +20,9 @@ sources:
 const SOURCE = 'notes/new-evidence.md';
 
 describe('appendContradictedByMarker', () => {
-  it('adds a contradicted_sources block on first contradictory merge', () => {
+  it('adds a contradictions block on first contradictory merge', () => {
     const result = appendContradictedByMarker(FM_BASE, SOURCE);
-    expect(result).toContain(`${CONTRADICTED_SOURCES_KEY}:`);
+    expect(result).toContain(`${CONTRADICTIONS_KEY}:`);
     expect(result).toContain(`- "${SOURCE}"`);
     // Existing fields survive.
     expect(result).toContain('type: concept');
@@ -52,9 +52,9 @@ describe('appendContradictedByMarker', () => {
     // Only one entry should remain after dedup.
     const all = twice.split('\n').filter(l => l.includes('sources/origin'));
     expect(all.length).toBeGreaterThan(0);
-    // The original sources: block is unchanged; the contradicted_sources
+    // The original sources: block is unchanged; the contradictions
     // block carries one logical entry.
-    expect(twice.split(CONTRADICTED_SOURCES_KEY)[1].match(/^\s+- /gm)?.length).toBe(1);
+    expect(twice.split(CONTRADICTIONS_KEY)[1].match(/^\s+- /gm)?.length).toBe(1);
   });
 
   it('survives a re-pass with extra unknown fields (PR A passthrough invariant)', () => {
@@ -86,6 +86,6 @@ Body.
     const result = appendContradictedByMarker(FM_BASE, '   ');
     // No marker emitted; the rest of the frontmatter survives intact.
     expect(result).toContain('type: concept');
-    expect(result).not.toContain(`${CONTRADICTED_SOURCES_KEY}:`);
+    expect(result).not.toContain(`${CONTRADICTIONS_KEY}:`);
   });
 });

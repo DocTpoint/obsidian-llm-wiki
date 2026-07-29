@@ -54,18 +54,14 @@ export function computeSlug(text: string, preserveCase = false): string {
 // the comparison keys, so the plugin now recognises a wikilink target
 // that exists under either spelling.
 //
-// Pure function, easily unit-tested. Applies ONLY the four Turkish-
-// specific letters that the standard `.toLowerCase()` mishandles;
-// everything else is left for `computeSlug` to handle.
+// Pure function, easily unit-tested. The six-letter fold runs in a
+// single regex + map pass (one allocation per match), avoiding the
+// chained `.replace` that would otherwise re-scan the text six times.
+const TURKISH_FOLD: Readonly<Record<string, string>> = {
+  'İ': 'i', 'Ş': 'ş', 'Ğ': 'ğ', 'Ü': 'ü', 'Ö': 'ö', 'Ç': 'ç',
+};
 export function turkishCaseFold(text: string): string {
-  return text
-    .replace(/İ/g, 'i')
-    .replace(/Ş/g, 'ş')
-    .replace(/Ğ/g, 'ğ')
-    .replace(/Ü/g, 'ü')
-    .replace(/Ö/g, 'ö')
-    .replace(/Ç/g, 'ç')
-    .toLowerCase();
+  return text.replace(/[İŞĞÜÖÇ]/g, ch => TURKISH_FOLD[ch]).toLowerCase();
 }
 
 // Issue #312 — comparison keys for "do these two names denote the same thing".
