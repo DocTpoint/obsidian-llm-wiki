@@ -265,20 +265,37 @@ export async function runEmptyPageFixes(
   let filled = 0;
   const results: string[] = [];
   const fixNotice = new Notice('', 0);
+  // v1.25.10 PATCH Issue #367 P0-1 — mirror runAliasCompletion batch:
+  // slice into chunks of pageGenerationConcurrency and resolve each
+  // batch through Promise.allSettled so a single failure never poisons
+  // the rest. concurrency=1 (default) preserves v1.25.9 behaviour.
+  const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
   try {
-    for (let i = 0; i < emptyPages.length; i++) {
+    for (let i = 0; i < emptyPages.length; i += concurrency) {
       checkCancelled(signal);
-      const ep = emptyPages[i];
-      fixNotice.setMessage(t.lintFillProgress.replace('{current}', String(i + 1)).replace('{total}', String(emptyPages.length)).replace('{page}', ep.path));
-      console.debug(`lintFix: fill empty page ${i + 1}/${emptyPages.length}: ${ep.path}`);
-      try {
+      const batch = emptyPages.slice(i, i + concurrency);
+      const batchIdx = i;
+      const batchResults = await Promise.allSettled(batch.map(async (ep, idx) => {
+        const currentIdx = batchIdx + idx;
+        fixNotice.setMessage(t.lintFillProgress
+          .replace('{current}', String(currentIdx + 1))
+          .replace('{total}', String(emptyPages.length))
+          .replace('{page}', ep.path));
+        console.debug(`lintFix: fill empty page ${currentIdx + 1}/${emptyPages.length}: ${ep.path}`);
         const summary = await ctx.wikiEngine.fillEmptyPage(ep.path, ep.content);
-        filled++;
-        results.push(`- ${summary}`);
-      } catch (e) {
-        console.error(`Failed to expand empty page: ${ep.path}`, e);
-        const errMsg = e instanceof Error ? e.message : String(e);
-        new Notice(t.lintFillFailed.replace('{page}', ep.path).replace('{error}', errMsg), NOTICE_ERROR);
+        return { ep, summary };
+      }));
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'fulfilled') {
+          filled++;
+          results.push(`- ${r.value.summary}`);
+        } else {
+          const ep = batch[j];
+          const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          console.error(`Failed to expand empty page: ${ep.path}`, r.reason);
+          new Notice(t.lintFillFailed.replace('{page}', ep.path).replace('{error}', errMsg), NOTICE_ERROR);
+        }
       }
     }
   } finally {
@@ -296,24 +313,40 @@ export async function runOrphanFixes(
   const t = TEXTS[ctx.settings.language];
   const results: string[] = [];
   const fixNotice = new Notice('', 0);
+  // v1.25.10 PATCH Issue #367 P0-1 — see runEmptyPageFixes above.
+  const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
   try {
-    for (let i = 0; i < orphans.length; i++) {
+    for (let i = 0; i < orphans.length; i += concurrency) {
       checkCancelled(signal);
-      const op = orphans[i];
-      const opRel = op.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
-      fixNotice.setMessage(t.lintLinkProgress.replace('{current}', String(i + 1)).replace('{total}', String(orphans.length)).replace('{page}', opRel));
-      console.debug(`lintFix: link orphan ${i + 1}/${orphans.length}: ${op}`);
-      try {
-        const linkedPages = await ctx.wikiEngine.linkOrphanPage(op);
-        if (linkedPages.length > 0) {
-          results.push(`- [[${opRel}]] linked from: ${linkedPages.map(p => `[[${p}]]`).join(', ')}`);
+      const batch = orphans.slice(i, i + concurrency);
+      const batchIdx = i;
+      const batchResults = await Promise.allSettled(batch.map(async (orphan, idx) => {
+        const currentIdx = batchIdx + idx;
+        const opRel = orphan.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+        fixNotice.setMessage(t.lintLinkProgress
+          .replace('{current}', String(currentIdx + 1))
+          .replace('{total}', String(orphans.length))
+          .replace('{page}', opRel));
+        console.debug(`lintFix: link orphan ${currentIdx + 1}/${orphans.length}: ${orphan}`);
+        const linkedPages = await ctx.wikiEngine.linkOrphanPage(orphan);
+        return { orphan, opRel, linkedPages };
+      }));
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'fulfilled') {
+          const { opRel, linkedPages } = r.value;
+          if (linkedPages.length > 0) {
+            results.push(`- [[${opRel}]] linked from: ${linkedPages.map(p => `[[${p}]]`).join(', ')}`);
+          } else {
+            results.push(`- [[${opRel}]]: no suitable linking targets found`);
+          }
         } else {
-          results.push(`- [[${opRel}]]: no suitable linking targets found`);
+          const orphan = batch[j];
+          const opRel = orphan.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+          const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          console.error(`Failed to link orphan: ${orphan}`, r.reason);
+          new Notice(t.lintLinkItemFailed.replace('{page}', opRel).replace('{error}', errMsg), NOTICE_ERROR);
         }
-      } catch (e) {
-        console.error(`Failed to link orphan: ${op}`, e);
-        const errMsg = e instanceof Error ? e.message : String(e);
-        new Notice(t.lintLinkItemFailed.replace('{page}', opRel).replace('{error}', errMsg), NOTICE_ERROR);
       }
     }
   } finally {
@@ -332,22 +365,40 @@ export async function runDuplicateMerges(
   let merged = 0;
   const results: string[] = [];
   const fixNotice = new Notice('', 0);
+  // v1.25.10 PATCH Issue #367 P0-1 — see runEmptyPageFixes above.
+  const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
   try {
-    for (let i = 0; i < duplicates.length; i++) {
+    for (let i = 0; i < duplicates.length; i += concurrency) {
       checkCancelled(signal);
-      const d = duplicates[i];
-      const sourceRel = d.source.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
-      const targetRel = d.target.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
-      fixNotice.setMessage(t.lintMergeProgress.replace('{current}', String(i + 1)).replace('{total}', String(duplicates.length)).replace('{source}', sourceRel).replace('{target}', targetRel));
-      console.debug(`lintFix: merge duplicates ${i + 1}/${duplicates.length}: ${d.source} → ${d.target}`);
-      try {
+      const batch = duplicates.slice(i, i + concurrency);
+      const batchIdx = i;
+      const batchResults = await Promise.allSettled(batch.map(async (d, idx) => {
+        const currentIdx = batchIdx + idx;
+        const sourceRel = d.source.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+        const targetRel = d.target.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+        fixNotice.setMessage(t.lintMergeProgress
+          .replace('{current}', String(currentIdx + 1))
+          .replace('{total}', String(duplicates.length))
+          .replace('{source}', sourceRel)
+          .replace('{target}', targetRel));
+        console.debug(`lintFix: merge duplicates ${currentIdx + 1}/${duplicates.length}: ${d.source} → ${d.target}`);
         const result = await ctx.wikiEngine.mergeDuplicatePages(d.target, d.source);
-        merged++;
-        results.push(`- ${d.source} → ${d.target}: ${result}`);
-      } catch (e) {
-        console.error(`Failed to merge duplicates: ${d.source} → ${d.target}`, e);
-        const errMsg = e instanceof Error ? e.message : String(e);
-        new Notice(t.lintMergeItemFailed.replace('{source}', sourceRel).replace('{target}', targetRel).replace('{error}', errMsg), NOTICE_ERROR);
+        return { d, result };
+      }));
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'fulfilled') {
+          const { d, result } = r.value;
+          merged++;
+          results.push(`- ${d.source} → ${d.target}: ${result}`);
+        } else {
+          const d = batch[j];
+          const sourceRel = d.source.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+          const targetRel = d.target.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+          const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          console.error(`Failed to merge duplicates: ${d.source} → ${d.target}`, r.reason);
+          new Notice(t.lintMergeItemFailed.replace('{source}', sourceRel).replace('{target}', targetRel).replace('{error}', errMsg), NOTICE_ERROR);
+        }
       }
     }
   } finally {
