@@ -14,6 +14,8 @@ export function slugify(text: string, preserveCase = false): string {
 // preserveCase skips the final toLowerCase() for file creation (Issue #111).
 // All comparison/matching callers must NOT pass preserveCase so slugs stay
 // case-insensitively comparable regardless of the user's slugCase setting.
+import { MIN_ALIAS_LENGTH } from '../constants';
+
 export function computeSlug(text: string, preserveCase = false): string {
   if (!text || text.trim().length === 0) return 'untitled';
 
@@ -105,15 +107,22 @@ export function slugKeys(
 // Pure function (no IO) so the dedup rule can be unit-tested in isolation.
 //
 // v1.25.10 PATCH alias hardening:
-//   - `MIN_ALIAS_LENGTH` floor (3 chars). Two-character aliases like "AI" or
-//     "ML" carry no dedup value above the page basename and collide with
-//     shorthand tokens across the graph; they are dropped silently.
+//   - `MIN_ALIAS_LENGTH` floor (2 chars). One-character aliases carry no
+//     dedup value above the page basename and collide with everything;
+//     two-character aliases (ML / HD / CD / AI / UI / ...) are common in
+//     real-world vaults and would be too aggressive to drop, so the
+//     floor is 2, not 3. Tunable per-vault via the setting of the
+//     same name; pass-through callers (existing code paths) keep
+//     v1.25.9 behaviour because the default matches the threshold
+//     they implicitly assumed was being applied.
 //   - Optional `existingAliasesAcrossPages` argument lets callers (alias
 //     completion, merge triage) reject candidates that would create a
-//     wikilink ambiguity by overlapping with an alias already on another
-//     page. Pass-through by default — v1.25.9 callers unchanged.
-export const MIN_ALIAS_LENGTH = 3;
-
+//     wikilink ambiguity by overlapping with an alias already on
+//     another page. Pass-through by default — v1.25.9 callers
+//     unchanged.
+//
+// The constant itself lives in `src/constants.ts` so it can be
+// tuned centrally without grepping the codebase.
 export function filterRedundantAliases(
   pagePath: string,
   candidateAliases: string[],

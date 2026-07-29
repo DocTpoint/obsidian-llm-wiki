@@ -188,18 +188,20 @@ describe('filterRedundantAliases', () => {
     expect(result).toEqual(['Surveillance']);
   });
 
-  it('drops aliases shorter than the 3-character floor (v1.25.10 PATCH alias hardening)', () => {
-    // "AI" and "ML" are too short to be useful aliases — they cannot
-    // distinguish one entity from another in a wiki-link graph and provide
-    // no dedup value over the page basename. "Überwachung" survives.
-    const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['AI', 'ML', 'Überwachung']);
-    expect(result).toEqual(['Überwachung']);
+  it('drops aliases shorter than the 2-character floor (v1.25.10 PATCH alias hardening)', () => {
+    // Single-character aliases are dropped: they carry no dedup value
+    // above the page basename and clutter the wikilink graph. The 2-char
+    // floor intentionally leaves common technical abbreviations (ML,
+    // HD, CD, AI, UI, ...) usable. Tunable via MIN_ALIAS_LENGTH in
+    // src/constants.ts.
+    const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['A', 'ML', 'Überwachung']);
+    expect(result).toEqual(['ML', 'Überwachung']);
   });
 
-  it('accepts a 3-character boundary alias (>= 3 chars)', () => {
-    // "LLM" is exactly 3 chars — at the floor. Must survive.
-    const result = filterRedundantAliases('wiki/entities/openai.md', ['LLM']);
-    expect(result).toEqual(['LLM']);
+  it('accepts a 2-character boundary alias (>= 2 chars)', () => {
+    // "ML" is exactly 2 chars — at the floor. Must survive.
+    const result = filterRedundantAliases('wiki/entities/openai.md', ['ML']);
+    expect(result).toEqual(['ML']);
   });
 
   it('drops aliases that already exist on other pages (cross-page uniqueness)', () => {
