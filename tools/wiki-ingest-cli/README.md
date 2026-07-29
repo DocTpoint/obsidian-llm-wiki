@@ -19,10 +19,21 @@ WIKI_API_KEY=... node tools/wiki-ingest-cli/run-ingest.mjs \
 
 | Flag | Meaning |
 |---|---|
+| `--help` | Print the flag list and exit. |
 | `--vault` | Vault root. Required, no default. |
 | `--source` | Source file, relative to the vault. Required. |
-| `--dry-run` | Run the full ingest but keep every write in memory and list it at the end. |
-| `--force` | Bypass the duplicate-content gate (`IngestOptions.forceReingest`). |
+| `--dry-run` | Run everything, keep every write in memory. |
+| `--force` | Ignore the duplicate-content gate and re-ingest anyway. |
+| `--extract-only` | Stop after extraction. Implies `--dry-run`, so a run that cannot write cannot touch the vault by forgetting a second flag. |
+| `--model` | Override the model, so two arms differ by which one answered rather than by an edited `data.json`. |
+| `--temperature` | Sampling temperature. Named for extraction because it comes from `extractionTemperature`, and it reaches more than extraction: the wrapper applies it to every `createMessage` that does not set its own, and the schema manager arrives at the same value by passing `extractionTemperature` itself. Unset, the server's own preset applies — and presets differ per model, so comparing two models without this compares their presets too. |
+| `--top-p` | Nucleus sampling. Pass it with `--temperature`: a preset is the pair, and overriding one alone runs on half of each. |
+| `--seed` | Fix the sampling seed. Local servers honour it strictly. Anthropic has no such parameter, and neither, in practice, does the `openai` provider: the plugin builds it through `createOpenAI()`, which returns the Responses model, and that model answers `{type:'unsupported', feature:'seed'}` and leaves it out of the body. The best-effort seed belongs to Chat Completions, which this path does not use. |
+| `--thinking` | `off` declines reasoning, the only direction the plugin can express. `on` asks for the server's default; omitting the flag leaves `data.json`'s setting in force, which may itself be `off`. |
+| `--granularity` | `fine` \| `standard` \| `coarse` \| `minimal` \| `custom`. Decides batch size, item limit and round ceiling together. |
+| `--batch-size` | How many items a round asks for. Comparing sizes through this flag keeps every arm on one build, which editing the code between arms does not. Under `--granularity custom` it survives unless the per-type caps sum above 10, in which case `calculateBatchLimits` derives the batch size from them and overwrites it. Each unset cap counts as `MIN_BATCH_SIZE` (5), so a plain `--granularity custom` sums to exactly 10, the rule needs strictly more, and this flag still applies. |
+| `--max-rounds` | Sets the granularity's round base, not the ceiling. The ceiling is `min(base × 3, ceil(source_chars / 2000) + 2)`, so `--max-rounds 6` allows 18 — and on a short source the length term wins and the flag changes nothing. Under `--granularity custom` the same caps-above-10 rule can overwrite it. |
+| `--max-tokens-per-call` | Caps `max_tokens` for every call. `0` removes the cap, leaving whatever the call site asks for — for extraction that is at least `MAX_TOKENS_BATCH` (16000), not "unlimited". |
 
 **Without `--dry-run` the CLI writes into the real vault.** It is the same
 write path Obsidian uses, so pages, `index.md`, `log.md` and the schema file

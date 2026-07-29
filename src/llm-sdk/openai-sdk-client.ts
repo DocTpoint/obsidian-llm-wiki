@@ -144,7 +144,11 @@ export class OpenAISdkClient implements LLMClient {
         providerOptions: this.buildProviderOptions({
           enableThinking,
           repetitionPenalty: repetition_penalty,
-          // response_format goes via providerOptions.openai for non-OpenAI compat
+          // Built here, discarded by the SDK. `createOpenAI()(modelId)` returns
+          // the Responses model, which never emits `response_format` under any
+          // name — its JSON mode is `text.format` — and which parses
+          // providerOptions through a zod schema that strips unknown keys.
+          // See the note on `repetition_penalty`.
           responseFormat: response_format,
         }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
         // Plugin-level sampling (OpenAI's standard param).
@@ -217,9 +221,21 @@ export class OpenAISdkClient implements LLMClient {
     }
 
     if (opts.repetitionPenalty !== undefined) {
-      // llama.cpp extension — passed through as-is for compatible providers.
-      // The wire name, not the camelCase one: the SDK copies these keys through
-      // verbatim, and llama.cpp, vLLM and Ollama all read `repetition_penalty`.
+      // llama.cpp extension — passed through as-is. The wire name rather than
+      // the camelCase one; which backend reads which spelling is not settled
+      // here, and the sibling compat client carries what is known.
+      //
+      // On this path it never leaves the process. `createOpenAI()(modelId)`
+      // returns the Responses model, which parses providerOptions through a zod
+      // schema and strips whatever the schema does not name — it does not
+      // spread raw fields the way `@ai-sdk/openai-compatible` does. Read on
+      // `@ai-sdk/openai` 3.0.86 as installed; 1.23.0 shipped `^3.0.77`, same
+      // major, unverified. The sibling test asserts
+      // the argument handed to the SDK, not the body, so it cannot tell the
+      // difference — the same blind spot that let a wrong providerOptions key
+      // look correct since v1.23.0, across fifteen releases. Left as-is rather
+      // than removed: establishing which of these fields this client actually
+      // delivers wants a request-body test and its own change.
       openaiOpts.repetition_penalty = opts.repetitionPenalty;
     }
 

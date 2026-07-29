@@ -34,15 +34,24 @@ const USAGE = `Usage:
   --extract-only  Stop after extraction; write no pages. Implies --dry-run.
   --seed          Fix the sampling seed, so two runs of the same source are
                   comparable. Without it the provider picks one per request.
-                  Local servers honour it strictly; OpenAI treats it as best
-                  effort; Anthropic has no such parameter.
-  --max-tokens-per-call  Override the output-token cap. 0 lifts it, leaving the
-                  context window as the only bound.
-  --batch-size    Override how many items a round asks for. Comparing sizes
-                  through this flag keeps every arm on one build, which a code
-                  edit between arms does not.
-  --max-rounds    Raise the ceiling on extraction rounds, so a comparison is not
-                  decided by runs that were cut off rather than finished.
+                  Local servers honour it strictly. Anthropic has no such
+                  parameter, and the openai provider drops it: that path builds
+                  the Responses model, which reports seed unsupported and omits
+                  it. Best-effort seed is a Chat Completions feature.
+  --max-tokens-per-call  Cap max_tokens for every call. 0 removes the cap and
+                  leaves whatever the call site asks for — for extraction that
+                  is at least 16000, not "unlimited".
+  --batch-size    How many items a round asks for. Comparing sizes through this
+                  flag keeps every arm on one build, which a code edit between
+                  arms does not. Under --granularity custom it survives unless
+                  the per-type caps sum above 10, where the batch size is
+                  derived from them instead; an unset cap counts as 5, so plain
+                  --granularity custom sums to exactly 10 and this still applies.
+  --max-rounds    Sets the granularity's round base, not the ceiling: the
+                  ceiling is min(base * 3, ceil(source_chars / 2000) + 2), so 6
+                  allows 18 — and on a short source the length term wins and
+                  this changes nothing. Under --granularity custom the same
+                  caps-above-10 rule can overwrite it.
   --model         Override the model, so two arms differ only by which one
                   answered. Otherwise every run takes the model from data.json.
   --temperature   Set the extraction sampling temperature. Unset, the server's
