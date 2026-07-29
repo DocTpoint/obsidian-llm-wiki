@@ -154,6 +154,9 @@ export class OpenAISdkClient implements LLMClient {
         // Plugin-level sampling (OpenAI's standard param).
         ...(temperature !== undefined ? { temperature } : {}),
         ...(top_p !== undefined ? { topP: top_p } : {}),
+        // Passed and discarded: `createOpenAI()(id)` returns the Responses
+        // model, which answers `{type:'unsupported', feature:'seed'}` and omits
+        // it. Left in place so the argument reads the same across clients.
         ...(seed !== undefined ? { seed } : {}),
         // Top-level repetition_penalty is non-standard for OpenAI; pass via providerOptions.
       });

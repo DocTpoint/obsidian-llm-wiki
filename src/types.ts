@@ -332,10 +332,13 @@ export interface LLMWikiSettings {
    * the extraction loop can separate a change from the sampler.
    *
    * What it buys depends on the provider. Local servers honour it strictly:
-   * two runs of one source, hours apart, came back byte-identical. OpenAI
-   * documents it as best effort and pairs it with `system_fingerprint`, which
-   * changes when their serving configuration does. Anthropic has no such
-   * parameter at all, so setting this changes nothing there.
+   * two runs of one source, hours apart, came back byte-identical. The
+   * `openai` provider drops it: that path builds the Responses model, which
+   * reports `seed` unsupported and leaves it out of the body — the best-effort
+   * seed OpenAI documents belongs to Chat Completions, which this path does
+   * not use. Anthropic has no such parameter at all, and the Codex adapter
+   * omits it deliberately. So this reaches local servers and other
+   * OpenAI-compatible endpoints, and nothing else.
    */
   samplingSeed?: number;
   chatTemperature?: number;

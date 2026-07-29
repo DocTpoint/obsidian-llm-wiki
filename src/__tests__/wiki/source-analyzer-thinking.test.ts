@@ -5,9 +5,10 @@ import { TFile } from 'obsidian';
 
 const SOURCE = 'sources/note.md';
 
-// Extraction was the one call site in the plugin that never consulted the
-// thinking setting, so whatever the server had been started with decided it and
-// the setting meant nothing here.
+// Extraction never consulted the thinking setting, so whatever the server had
+// been started with decided it and the setting meant nothing here. It was not
+// the only such call site — the lint alias and tag runners and the PDF
+// converter still do not pass it — but it is the one covered here.
 //
 // Sent in the disable direction only, matching every other call site.
 // `disableThinking` defaults to false, so a call that asked for reasoning would
