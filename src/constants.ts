@@ -556,3 +556,25 @@ export const SHORT_CONTENT_THRESHOLD = 20000;
  * Pairs with SHORT_CONTENT_THRESHOLD above.
  */
 export const BATCH_CHARS_PER_ITEM = 600;
+
+// ============================================================================
+// Alias Hardening (v1.25.10 PATCH)
+// ============================================================================
+
+/**
+ * Minimum length (chars, after trim) of an alias that the plugin will
+ * ever accept on a wiki page. Single-character aliases are dropped at
+ * the `filterRedundantAliases` gate because they carry no dedup value
+ * above the page basename and collide with shorthand tokens across
+ * the entire vault (`a` is a real proposal from small LLMs).
+ *
+ * Tuned to 2 so common short abbreviations stay usable: ML, HD, CD,
+ * AI, UI, OS, DB, ... are real-world aliases for technical vaults
+ * and rejecting them at the floor would be over-aggressive. Raise to
+ * 3 only if a specific vault surfaces alias clutter.
+ *
+ * Not exposed as a Settings field in v1.25.10. The constant lives
+ * here so future per-vault tuning is a one-line edit, not a search
+ * across the codebase.
+ */
+export const MIN_ALIAS_LENGTH = 2;

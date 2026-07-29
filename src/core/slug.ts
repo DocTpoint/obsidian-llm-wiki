@@ -14,6 +14,8 @@ export function slugify(text: string, preserveCase = false): string {
 // preserveCase skips the final toLowerCase() for file creation (Issue #111).
 // All comparison/matching callers must NOT pass preserveCase so slugs stay
 // case-insensitively comparable regardless of the user's slugCase setting.
+import { MIN_ALIAS_LENGTH } from '../constants';
+
 export function computeSlug(text: string, preserveCase = false): string {
   if (!text || text.trim().length === 0) return 'untitled';
 
@@ -41,19 +43,54 @@ export function computeSlug(text: string, preserveCase = false): string {
   return preserveCase ? finalSlug : finalSlug.toLowerCase();
 }
 
+// v1.25.10 PATCH Issue #366 — Turkish-aware case fold for *comparison*
+// keys.
+//
+// `slugKeys` is used to compare "do these two names denote the same thing"
+// across pages and across the link graph. For Turkish-language vaults a
+// plain `.toLowerCase()` is not enough — `I` and `İ` are different
+// letters in Turkish and `Ş`/`Ğ` are not in the ASCII fold at all.
+//
+// We do NOT change `computeSlug`'s output (the file-naming path) —
+// existing users' filenames stay byte-identical. The fold only affects
+// the comparison keys, so the plugin now recognises a wikilink target
+// that exists under either spelling.
+//
+// Pure function, easily unit-tested. The six-letter fold runs in a
+// single regex + map pass (one allocation per match), avoiding the
+// chained `.replace` that would otherwise re-scan the text six times.
+const TURKISH_FOLD: Readonly<Record<string, string>> = {
+  'İ': 'i', 'Ş': 'ş', 'Ğ': 'ğ', 'Ü': 'ü', 'Ö': 'ö', 'Ç': 'ç',
+};
+export function turkishCaseFold(text: string): string {
+  return text.replace(/[İŞĞÜÖÇ]/g, ch => TURKISH_FOLD[ch]).toLowerCase();
+}
+
 // Issue #312 — comparison keys for "do these two names denote the same thing".
-// Returns the slugified forms of a name plus its aliases in the case-insensitive
-// comparison form (never preserveCase, per the rule above), so a caller can test
-// two naming sets for overlap with a set intersection.
+// Returns the slugified forms of a name plus its aliases in the
+// comparison-key form. The fold strategy is opt-in via the second
+// argument so non-Turkish vaults stay on the cheap ASCII path.
 //
 // Pure and allocation-cheap: the merge path calls it once per page write.
-export function slugKeys(name: string, aliases: readonly string[] = []): Set<string> {
+export function slugKeys(
+  name: string,
+  aliases: readonly string[] = [],
+  opts: { turkishFold?: boolean } = {},
+): Set<string> {
   const keys = new Set<string>();
+  const fold = opts.turkishFold === true;
   for (const raw of [name, ...aliases]) {
     if (typeof raw !== 'string') continue;
     const trimmed = raw.trim();
     if (trimmed.length === 0) continue;
-    keys.add(computeSlug(trimmed));
+    // Fold BEFORE slugifying so that `[[İsim]]` and `[[isim]]` collapse
+    // to the same comparison key inside a Turkish vault. ASCII `I`
+    // lowercase remains `i`, but `İ` is folded to `i` first, so both
+    // inputs land on `isim` via the same `computeSlug` path.
+    const folded = fold ? turkishCaseFold(trimmed) : trimmed;
+    const slugged = computeSlug(folded);
+    if (slugged.length === 0) continue;
+    keys.add(slugged);
   }
   return keys;
 }
@@ -68,17 +105,49 @@ export function slugKeys(name: string, aliases: readonly string[] = []): Set<str
 // so a space-variant like "Deep Learning" on deep-learning.md IS a useful alias
 // and must be kept.
 // Pure function (no IO) so the dedup rule can be unit-tested in isolation.
+//
+// v1.25.10 PATCH alias hardening:
+//   - `MIN_ALIAS_LENGTH` floor (2 chars). One-character aliases carry no
+//     dedup value above the page basename and collide with everything;
+//     two-character aliases (ML / HD / CD / AI / UI / ...) are common in
+//     real-world vaults and would be too aggressive to drop, so the
+//     floor is 2, not 3. Tunable per-vault via the setting of the
+//     same name; pass-through callers (existing code paths) keep
+//     v1.25.9 behaviour because the default matches the threshold
+//     they implicitly assumed was being applied.
+//   - Optional `existingAliasesAcrossPages` argument lets callers (alias
+//     completion, merge triage) reject candidates that would create a
+//     wikilink ambiguity by overlapping with an alias already on
+//     another page. Pass-through by default — v1.25.9 callers
+//     unchanged.
+//
+// The constant itself lives in `src/constants.ts` so it can be
+// tuned centrally without grepping the codebase.
 export function filterRedundantAliases(
   pagePath: string,
-  candidateAliases: string[]
+  candidateAliases: string[],
+  existingAliasesAcrossPages?: readonly string[],
 ): string[] {
   const fileName = pagePath.split('/').pop() || '';
   const fileKey = fileName.replace(/\.md$/i, '').trim().toLowerCase();
+  const crossPageKeys = new Set<string>();
+  if (existingAliasesAcrossPages) {
+    for (const raw of existingAliasesAcrossPages) {
+      if (typeof raw !== 'string') continue;
+      const trimmed = raw.trim();
+      if (trimmed.length >= MIN_ALIAS_LENGTH) {
+        crossPageKeys.add(trimmed.toLowerCase());
+      }
+    }
+  }
   const seen = new Set<string>();
   return candidateAliases.filter(alias => {
-    if (!alias || alias.trim().length === 0) return false;
-    const key = alias.trim().toLowerCase();
+    if (typeof alias !== 'string') return false;
+    const trimmed = alias.trim();
+    if (trimmed.length < MIN_ALIAS_LENGTH) return false;
+    const key = trimmed.toLowerCase();
     if (key === fileKey) return false; // already resolves to this file — redundant
+    if (crossPageKeys.has(key)) return false; // already used on another page — wikilink ambiguity
     if (seen.has(key)) return false; // duplicate within the batch (case-insensitive)
     seen.add(key);
     return true;

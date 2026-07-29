@@ -339,6 +339,7 @@ export const ZH_HANT_TEXTS = {
     tagVocabularyModeName: '標籤（Tags)詞彙表配置',
     tagVocabularyModeDescDefault: '預設使用內建標籤: {}。切換到"自定義"可定義您自己的詞彙。',
     tagVocabularyModeDescCustom: '自定義：在下方使用 chip 輸入定義您自己的 entity 與 concept 標籤。回車或逗號新增, × 刪除。',
+    tagVocabularyNotEnforcedHint: '僅作為架構提示——LLM 仍可能輸出詞彙外的類型。請執行 Lint 來查找並修復這些頁面。',
     tagVocabularyModeDefault: '預設 (內建子型別標籤)',
     tagVocabularyModeCustom: '自定義 (使用者定義)',
     customEntityTagsName: '自定義實體標籤',

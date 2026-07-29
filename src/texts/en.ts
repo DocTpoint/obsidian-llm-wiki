@@ -356,6 +356,11 @@ export const EN_TEXTS = {
     tagVocabularyModeName: 'Tag Vocabulary Configuration',
     tagVocabularyModeDescDefault: 'Default uses built-in tags: {}. Switch to Custom to define your own.',
     tagVocabularyModeDescCustom: 'Custom: define your own entity and concept tags below. Use the chip input — Enter or comma to add, × to remove.',
+    // v1.25.10 PATCH Issue #368 — clarification, not enforcement. The custom
+    // vocabulary is a SCHEMA INJECTION HINT for the LLM, not a write-time
+    // gate. Small/local models may still emit out-of-vocabulary types; the
+    // lint "out-of-vocabulary type" diagnostic surfaces those pages for review.
+    tagVocabularyNotEnforcedHint: 'Schema hint only — the LLM may still emit out-of-vocabulary types. Run Lint to find and fix those pages.',
     tagVocabularyModeDefault: 'Default (built-in subtype tags)',
     tagVocabularyModeCustom: 'Custom (user-defined)',
     customEntityTagsName: 'Custom Entity Tags',

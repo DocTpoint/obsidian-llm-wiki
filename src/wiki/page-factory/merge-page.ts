@@ -41,6 +41,7 @@ import {
 } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
 import { mergeFrontmatter, parseFrontmatter } from '../../core/frontmatter';
+import { appendContradictedByMarker } from '../../core/contradicted-marker';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
@@ -110,6 +111,11 @@ export async function mergePage(
     // 1. v1.24.0 #216 — classify-then-route triage.
     let shouldSkip = false;
     let complementaryBody: string | null = null;
+    // v1.25.10 PATCH DocTpoint §4: track whether the rewrite path was
+    // triggered by a contradiction so we can stamp the frontmatter
+    // marker. Default to 'merge' (no marker) when triage fails or is
+    // not classified.
+    let contradictedSourcePath: string | null = null;
     try {
       const triage = await classifyMergeNeed(ctx, info, pageType, sourceFile, existingBody, sourceContext);
 
@@ -150,6 +156,14 @@ export async function mergePage(
         } else {
           shouldSkip = true; // signal "use existing frontmatter + write complementaryBody"
         }
+      } else if (strategy === 'contradictory') {
+        // v1.25.10 PATCH DocTpoint §4 — flag the frontmatter for the
+        // downstream call below. We fall through to the body-rewrite
+        // path; the marker is stamped just before the assemble call.
+        contradictedSourcePath = sourceFile.path;
+        console.debug(
+          `[mergePage] triage=contradictory — will stamp frontmatter marker for ${path} (source=${sourceFile.path})`,
+        );
       }
       // strategy === 'merge' | 'contradictory': fall through to body rewrite.
     } catch (triageError) {
@@ -221,7 +235,22 @@ export async function mergePage(
     );
     await ctx.createOrUpdateFile(
       path,
-      await assembleFinalContent(ctx, frontmatter, guardedBody, info, sourceFile, existingBody),
+      await assembleFinalContent(
+        ctx,
+        // v1.25.10 PATCH DocTpoint §4 — when triage returned `contradictory`,
+        // stamp the source on the rewritten frontmatter so Lint can surface
+        // pages whose rewrite was triggered by a conflict rather than a
+        // routine merge. Unknown-field preservation (PR A Step 2) keeps the
+        // marker across subsequent re-touches; the helper dedupes by
+        // sourcePath so idempotent re-runs are safe.
+        contradictedSourcePath
+          ? appendContradictedByMarker(frontmatter, contradictedSourcePath)
+          : frontmatter,
+        guardedBody,
+        info,
+        sourceFile,
+        existingBody,
+      ),
     );
     return path;
   } catch (error) {

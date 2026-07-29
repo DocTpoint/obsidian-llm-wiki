@@ -341,6 +341,7 @@ export const ZH_TEXTS = {
     tagVocabularyModeName: '标签（Tags)词汇表配置',
     tagVocabularyModeDescDefault: '默认使用内置标签: {}。切换到"自定义"可定义您自己的词汇。',
     tagVocabularyModeDescCustom: '自定义：在下方使用 chip 输入定义您自己的 entity 与 concept 标签。回车或逗号添加, × 删除。',
+    tagVocabularyNotEnforcedHint: '仅作为模式提示——LLM 仍可能输出词表外的类型。请运行 Lint 来查找并修复这些页面。',
     tagVocabularyModeDefault: '默认 (内置子类型标签)',
     tagVocabularyModeCustom: '自定义 (用户定义)',
     customEntityTagsName: '自定义实体标签',

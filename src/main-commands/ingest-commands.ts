@@ -25,6 +25,7 @@ import { TEXTS } from '../texts';
 import { getText } from '../core/i18n';
 import { slugify } from '../core/slug';
 import { parseFrontmatter } from '../core/frontmatter';
+import { isInFolderScope } from '../core/folder-scope';
 import { COMPATIBLE_SOURCE_EXTENSIONS, NOTICE_NORMAL, NOTICE_ERROR } from '../constants';
 import { FileSuggestModal, FolderSuggestModal, MultiFileSuggestModal, IngestReportModal } from '../ui/modals';
 import { ProgressScope } from '../core/progress-notification';
@@ -132,8 +133,15 @@ export const ingestCommands = {
 
     new FolderSuggestModal(this.app, this.settings.wikiFolder, (folder) => {
       const allowedExts: readonly string[] = COMPATIBLE_SOURCE_EXTENSIONS;
+      // v1.25.10 PATCH Issue #364 (consolidated with DocTpoint PR #370):
+      // scope on the folder boundary, not on a bare string prefix. The
+      // helper enforces a path-separator boundary and treats the vault
+      // root as a wildcard ancestor. See core/folder-scope.ts for the
+      // three cases a bare startsWith leaks (sibling-folder-with-prefix,
+      // file-sitting-beside-the-folder, the folder itself).
       const files = this.app.vault.getFiles()
-        .filter(f => f.path.startsWith(folder.path) && allowedExts.includes(f.extension.toLowerCase()));
+        .filter(f => allowedExts.includes(f.extension.toLowerCase()))
+        .filter(f => isInFolderScope(f.path, folder.path, folder.isRoot()));
 
       if (files.length === 0) {
         const msg = TEXTS[this.settings.language].selectFolderNoMdFiles.replace('{path}', folder.path);

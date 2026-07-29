@@ -341,6 +341,7 @@ export const KO_TEXTS = {
     tagVocabularyModeName: '태그 어휘 설정',
     tagVocabularyModeDescDefault: '기본값은 내장 태그 사용: {}. "사용자 지정"으로 전환하면 자체 어휘를 정의할 수 있습니다.',
     tagVocabularyModeDescCustom: '사용자 지정: 아래에서 chip 입력을 사용해 자체 entity/concept 태그를 정의하세요. Enter 또는 쉼표로 추가, ×로 삭제.',
+    tagVocabularyNotEnforcedHint: '스키마 힌트일 뿐 — LLM이 어휘 밖 타입을 출력할 수도 있습니다. Lint를 실행해 해당 페이지를 찾아 수정하세요.',
     tagVocabularyModeDefault: '기본 (내장 서브타입 태그)',
     tagVocabularyModeCustom: '사용자 지정 (사용자 정의)',
     customEntityTagsName: '사용자 지정 엔티티 태그',

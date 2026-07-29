@@ -210,24 +210,43 @@ export async function runDeadLinkFixes(
   let fixed = 0;
   const results: string[] = [];
   const fixNotice = new Notice('', 0);
+  // v1.25.10 PATCH Issue #367 P0-1 — batch with the same concurrency
+  // setting as the alias runner so the wall-clock on a 2000-page vault
+  // drops roughly by `(n / concurrency)`. Each batch runs the items
+  // through `Promise.allSettled` so a single failure never poisons the
+  // rest. The for-loop shape (vs a flat Promise.all) keeps progress
+  // notices bound to a single batch at a time, matching alias runner.
+  const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
+  const totalBatches = Math.ceil(unique.length / concurrency);
+  console.debug(`[DeadLink] Starting dead-link fix — ${unique.length} links, concurrency=${concurrency}, batches=${totalBatches}`);
   try {
-    for (let i = 0; i < unique.length; i++) {
+    for (let i = 0; i < unique.length; i += concurrency) {
       checkCancelled(signal);
-      const dl = unique[i];
-      fixNotice.setMessage(t.lintFixProgress.replace('{current}', String(i + 1)).replace('{total}', String(unique.length)).replace('{target}', dl.target));
-      console.debug(`lintFix: dead link ${i + 1}/${unique.length}: ${dl.source} -> ${dl.target}`);
-      try {
+      const batch = unique.slice(i, i + concurrency);
+      const batchStart = i;
+      const batchResults = await Promise.allSettled(batch.map(async (dl, idx) => {
+        const batchIdx = batchStart + idx;
+        fixNotice.setMessage(t.lintFixProgress.replace('{current}', String(batchIdx + 1)).replace('{total}', String(unique.length)).replace('{target}', dl.target));
+        console.debug(`lintFix: dead link ${batchIdx + 1}/${unique.length}: ${dl.source} -> ${dl.target}`);
         const sourcePath = `${ctx.settings.wikiFolder}/${dl.source}.md`;
         const result = await ctx.wikiEngine.fixDeadLink(sourcePath, dl.target);
         console.debug(`Dead link fix: ${dl.source} -> ${dl.target}: ${result}`);
         if (!result.includes(t.lintFixNoAction)) {
-          fixed++;
-          results.push(`- [[${dl.source}]]: \`[[${dl.target}]]\` → ${result}`);
+          return { source: dl.source, target: dl.target, result };
         }
-      } catch (e) {
-        console.error(`Failed to fix dead link: ${dl.source} -> ${dl.target}`, e);
-        const errMsg = e instanceof Error ? e.message : String(e);
-        new Notice(t.lintFixItemFailed.replace('{target}', dl.target).replace('{error}', errMsg), NOTICE_ERROR);
+        return null;
+      }));
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'fulfilled' && r.value) {
+          fixed++;
+          results.push(`- [[${r.value.source}]]: \`[[${r.value.target}]]\` → ${r.value.result}`);
+        } else if (r.status === 'rejected') {
+          const dl = batch[j];
+          console.error(`Failed to fix dead link: ${dl.source} -> ${dl.target}`, r.reason);
+          const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          new Notice(t.lintFixItemFailed.replace('{target}', dl.target).replace('{error}', errMsg), NOTICE_ERROR);
+        }
       }
     }
   } finally {
@@ -248,20 +267,39 @@ export async function runEmptyPageFixes(
   let filled = 0;
   const results: string[] = [];
   const fixNotice = new Notice('', 0);
+  // v1.25.10 PATCH Issue #367 P0-1 — mirror runAliasCompletion batch:
+  // slice into chunks of pageGenerationConcurrency and resolve each
+  // batch through Promise.allSettled so a single failure never poisons
+  // the rest. concurrency=1 (default) preserves v1.25.9 behaviour.
+  const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
+  const totalBatches = Math.ceil(emptyPages.length / concurrency);
+  console.debug(`[EmptyPage] Starting empty-page fix — ${emptyPages.length} pages, concurrency=${concurrency}, batches=${totalBatches}`);
   try {
-    for (let i = 0; i < emptyPages.length; i++) {
+    for (let i = 0; i < emptyPages.length; i += concurrency) {
       checkCancelled(signal);
-      const ep = emptyPages[i];
-      fixNotice.setMessage(t.lintFillProgress.replace('{current}', String(i + 1)).replace('{total}', String(emptyPages.length)).replace('{page}', ep.path));
-      console.debug(`lintFix: fill empty page ${i + 1}/${emptyPages.length}: ${ep.path}`);
-      try {
+      const batch = emptyPages.slice(i, i + concurrency);
+      const batchIdx = i;
+      const batchResults = await Promise.allSettled(batch.map(async (ep, idx) => {
+        const currentIdx = batchIdx + idx;
+        fixNotice.setMessage(t.lintFillProgress
+          .replace('{current}', String(currentIdx + 1))
+          .replace('{total}', String(emptyPages.length))
+          .replace('{page}', ep.path));
+        console.debug(`lintFix: fill empty page ${currentIdx + 1}/${emptyPages.length}: ${ep.path}`);
         const summary = await ctx.wikiEngine.fillEmptyPage(ep.path, ep.content);
-        filled++;
-        results.push(`- ${summary}`);
-      } catch (e) {
-        console.error(`Failed to expand empty page: ${ep.path}`, e);
-        const errMsg = e instanceof Error ? e.message : String(e);
-        new Notice(t.lintFillFailed.replace('{page}', ep.path).replace('{error}', errMsg), NOTICE_ERROR);
+        return { ep, summary };
+      }));
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'fulfilled') {
+          filled++;
+          results.push(`- ${r.value.summary}`);
+        } else {
+          const ep = batch[j];
+          const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          console.error(`Failed to expand empty page: ${ep.path}`, r.reason);
+          new Notice(t.lintFillFailed.replace('{page}', ep.path).replace('{error}', errMsg), NOTICE_ERROR);
+        }
       }
     }
   } finally {
@@ -279,24 +317,42 @@ export async function runOrphanFixes(
   const t = TEXTS[ctx.settings.language];
   const results: string[] = [];
   const fixNotice = new Notice('', 0);
+  // v1.25.10 PATCH Issue #367 P0-1 — see runEmptyPageFixes above.
+  const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
+  const totalBatches = Math.ceil(orphans.length / concurrency);
+  console.debug(`[Orphan] Starting orphan link fix — ${orphans.length} pages, concurrency=${concurrency}, batches=${totalBatches}`);
   try {
-    for (let i = 0; i < orphans.length; i++) {
+    for (let i = 0; i < orphans.length; i += concurrency) {
       checkCancelled(signal);
-      const op = orphans[i];
-      const opRel = op.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
-      fixNotice.setMessage(t.lintLinkProgress.replace('{current}', String(i + 1)).replace('{total}', String(orphans.length)).replace('{page}', opRel));
-      console.debug(`lintFix: link orphan ${i + 1}/${orphans.length}: ${op}`);
-      try {
-        const linkedPages = await ctx.wikiEngine.linkOrphanPage(op);
-        if (linkedPages.length > 0) {
-          results.push(`- [[${opRel}]] linked from: ${linkedPages.map(p => `[[${p}]]`).join(', ')}`);
+      const batch = orphans.slice(i, i + concurrency);
+      const batchIdx = i;
+      const batchResults = await Promise.allSettled(batch.map(async (orphan, idx) => {
+        const currentIdx = batchIdx + idx;
+        const opRel = orphan.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+        fixNotice.setMessage(t.lintLinkProgress
+          .replace('{current}', String(currentIdx + 1))
+          .replace('{total}', String(orphans.length))
+          .replace('{page}', opRel));
+        console.debug(`lintFix: link orphan ${currentIdx + 1}/${orphans.length}: ${orphan}`);
+        const linkedPages = await ctx.wikiEngine.linkOrphanPage(orphan);
+        return { orphan, opRel, linkedPages };
+      }));
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'fulfilled') {
+          const { opRel, linkedPages } = r.value;
+          if (linkedPages.length > 0) {
+            results.push(`- [[${opRel}]] linked from: ${linkedPages.map(p => `[[${p}]]`).join(', ')}`);
+          } else {
+            results.push(`- [[${opRel}]]: no suitable linking targets found`);
+          }
         } else {
-          results.push(`- [[${opRel}]]: no suitable linking targets found`);
+          const orphan = batch[j];
+          const opRel = orphan.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+          const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          console.error(`Failed to link orphan: ${orphan}`, r.reason);
+          new Notice(t.lintLinkItemFailed.replace('{page}', opRel).replace('{error}', errMsg), NOTICE_ERROR);
         }
-      } catch (e) {
-        console.error(`Failed to link orphan: ${op}`, e);
-        const errMsg = e instanceof Error ? e.message : String(e);
-        new Notice(t.lintLinkItemFailed.replace('{page}', opRel).replace('{error}', errMsg), NOTICE_ERROR);
       }
     }
   } finally {
@@ -315,22 +371,42 @@ export async function runDuplicateMerges(
   let merged = 0;
   const results: string[] = [];
   const fixNotice = new Notice('', 0);
+  // v1.25.10 PATCH Issue #367 P0-1 — see runEmptyPageFixes above.
+  const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
+  const totalBatches = Math.ceil(duplicates.length / concurrency);
+  console.debug(`[DuplicateMerge] Starting duplicate merges — ${duplicates.length} pairs, concurrency=${concurrency}, batches=${totalBatches}`);
   try {
-    for (let i = 0; i < duplicates.length; i++) {
+    for (let i = 0; i < duplicates.length; i += concurrency) {
       checkCancelled(signal);
-      const d = duplicates[i];
-      const sourceRel = d.source.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
-      const targetRel = d.target.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
-      fixNotice.setMessage(t.lintMergeProgress.replace('{current}', String(i + 1)).replace('{total}', String(duplicates.length)).replace('{source}', sourceRel).replace('{target}', targetRel));
-      console.debug(`lintFix: merge duplicates ${i + 1}/${duplicates.length}: ${d.source} → ${d.target}`);
-      try {
+      const batch = duplicates.slice(i, i + concurrency);
+      const batchIdx = i;
+      const batchResults = await Promise.allSettled(batch.map(async (d, idx) => {
+        const currentIdx = batchIdx + idx;
+        const sourceRel = d.source.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+        const targetRel = d.target.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+        fixNotice.setMessage(t.lintMergeProgress
+          .replace('{current}', String(currentIdx + 1))
+          .replace('{total}', String(duplicates.length))
+          .replace('{source}', sourceRel)
+          .replace('{target}', targetRel));
+        console.debug(`lintFix: merge duplicates ${currentIdx + 1}/${duplicates.length}: ${d.source} → ${d.target}`);
         const result = await ctx.wikiEngine.mergeDuplicatePages(d.target, d.source);
-        merged++;
-        results.push(`- ${d.source} → ${d.target}: ${result}`);
-      } catch (e) {
-        console.error(`Failed to merge duplicates: ${d.source} → ${d.target}`, e);
-        const errMsg = e instanceof Error ? e.message : String(e);
-        new Notice(t.lintMergeItemFailed.replace('{source}', sourceRel).replace('{target}', targetRel).replace('{error}', errMsg), NOTICE_ERROR);
+        return { d, result };
+      }));
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'fulfilled') {
+          const { d, result } = r.value;
+          merged++;
+          results.push(`- ${d.source} → ${d.target}: ${result}`);
+        } else {
+          const d = batch[j];
+          const sourceRel = d.source.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+          const targetRel = d.target.replace(ctx.settings.wikiFolder + '/', '').replace('.md', '');
+          const errMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          console.error(`Failed to merge duplicates: ${d.source} → ${d.target}`, r.reason);
+          new Notice(t.lintMergeItemFailed.replace('{source}', sourceRel).replace('{target}', targetRel).replace('{error}', errMsg), NOTICE_ERROR);
+        }
       }
     }
   } finally {
@@ -375,6 +451,7 @@ export async function runRetagViolations(
     return { fixed: 0, results: ['LLM client not initialized; retag skipped.'] };
   }
   const t = TEXTS[ctx.settings.language];
+  const llmClient = ctx.llmClient;
   const fixNotice = new Notice(t.lintTagViolationFiring
     .replace('{current}', '0')
     .replace('{total}', String(violations.length))
@@ -382,18 +459,28 @@ export async function runRetagViolations(
 
   const results: string[] = [];
   let fixed = 0;
+  // v1.25.10 PATCH Issue #367 P0-1 — mirror the other fix-runners.
+  // Even though retag fans out to one LLM call per violation, those
+  // calls are independent and `ctx.buildSystemPrompt` is async-cache-
+  // friendly. Slicing into concurrency-sized chunks keeps the LLM
+  // token-budget ceiling per batch predictable (the 256-token output
+  // cap on each LLM call means peak inflight scales with
+  // pageGenerationConcurrency, not with the violation count).
+  const concurrency = Math.max(1, ctx.settings.pageGenerationConcurrency ?? 1);
+  const totalBatches = Math.ceil(violations.length / concurrency);
+  console.debug(`[Retag] Starting retag — ${violations.length} violations, concurrency=${concurrency}, batches=${totalBatches}`);
   try {
-    for (let i = 0; i < violations.length; i++) {
-      if (signal?.aborted) {
-        throw new DOMException('Lint fix cancelled by user', 'AbortError');
-      }
-      const v = violations[i];
-      fixNotice.setMessage(t.lintTagViolationFiring
-        .replace('{current}', String(i + 1))
-        .replace('{total}', String(violations.length))
-        .replace('{path}', v.path));
+    for (let i = 0; i < violations.length; i += concurrency) {
+      checkCancelled(signal);
+      const batch = violations.slice(i, i + concurrency);
+      const batchIdx = i;
+      const batchResults = await Promise.allSettled(batch.map(async (v, idx) => {
+        const currentIdx = batchIdx + idx;
+        fixNotice.setMessage(t.lintTagViolationFiring
+          .replace('{current}', String(currentIdx + 1))
+          .replace('{total}', String(violations.length))
+          .replace('{path}', v.path));
 
-      try {
         // Read the current page content. The Obsidian API is
         // `Vault.read(file: TFile)` — TFile itself does not have a
         // `read()` method (this is a common mistake; TFile extends
@@ -409,8 +496,7 @@ export async function runRetagViolations(
         // added to fix-runners.test.ts to prevent regression.
         const file = ctx.app.vault.getAbstractFileByPath(v.path);
         if (!file) {
-          results.push(`${v.path}: file not found`);
-          continue;
+          return { v, kind: 'missing' as const };
         }
         // TFile is the concrete subclass of TAbstractFile that holds
         // vault-readable content. Use instanceof TFile to distinguish
@@ -420,8 +506,7 @@ export async function runRetagViolations(
         // the test mock (new TFile() with Object.assign) also passes
         // because vitest hoists TFile to the same class reference.
         if (!(file instanceof TFile)) {
-          results.push(`${v.path}: not a regular file`);
-          continue;
+          return { v, kind: 'notfile' as const };
         }
         // Read via ctx.app.vault.read(file) — the correct Obsidian API
         // for reading a file by TFile. vault.cachedRead() is also
@@ -467,7 +552,7 @@ Task: Return a JSON object with a single field "tags" that is an array of string
 `;
 
         const systemPrompt = ctx.buildSystemPrompt ? await ctx.buildSystemPrompt('lint') : undefined;
-        const response = await ctx.llmClient.createMessage({
+        const response = await llmClient.createMessage({
           model: resolveModelForTask(ctx.settings, 'lint'),
           max_tokens: 256,
           ...(systemPrompt ? { system: systemPrompt } : {}),
@@ -485,14 +570,12 @@ Task: Return a JSON object with a single field "tags" that is an array of string
         const safeNewTags = newTags.filter(t => validVocab.includes(t));
 
         if (safeNewTags.length === 0) {
-          results.push(`${v.path}: LLM kept no tags (no valid match)`);
-          continue;
+          return { v, kind: 'noop' as const, message: `${v.path}: LLM kept no tags (no valid match)` };
         }
         if (safeNewTags.length === v.currentTags.length &&
             safeNewTags.every(t => v.currentTags.includes(t))) {
           // No-op: the LLM returned the same tags we already had.
-          results.push(`${v.path}: no change`);
-          continue;
+          return { v, kind: 'noop' as const, message: `${v.path}: no change` };
         }
 
         // v1.24.0: use the shared REPLACE helper (full replacement
@@ -504,23 +587,45 @@ Task: Return a JSON object with a single field "tags" that is an array of string
         // block-style case correctly.
         const updated = replaceFrontmatterArrayField(content, 'tags', safeNewTags);
         await ctx.app.vault.adapter.write(v.path, updated);
-        fixed++;
-        results.push(`${v.path}: [${v.currentTags.join(', ')}] → [${safeNewTags.join(', ')}]`);
-      } catch (e) {
-        if (e instanceof DOMException && e.name === 'AbortError') throw e;
-        const errMsg = e instanceof Error ? e.message : String(e);
-        // console.error so the user sees the full stack in DevTools
-        // (Ctrl+Shift+I). Notice alone truncates the error message
-        // and gives no recovery info — that was the bug reported
-        // when "Retag failed for X: tfile.read is not a function"
-        // appeared with no other diagnostic output. We include the
-        // page type + violation context for debugging.
-        console.error(
-          `[runRetagViolations] ${v.path} (${v.pageType}) failed:`,
-          e
-        );
-        results.push(`${v.path}: ${errMsg}`);
-        new Notice(t.lintTagViolationFailed.replace('{path}', v.path).replace('{error}', errMsg), NOTICE_ERROR);
+        return {
+          v,
+          kind: 'fixed' as const,
+          message: `${v.path}: [${v.currentTags.join(', ')}] → [${safeNewTags.join(', ')}]`,
+        };
+      }));
+      for (let j = 0; j < batchResults.length; j++) {
+        const r = batchResults[j];
+        if (r.status === 'rejected') {
+          const v = batch[j];
+          const e: unknown = r.reason;
+          if (e instanceof DOMException && e.name === 'AbortError') throw e;
+          const errMsg = e instanceof Error ? e.message : String(e);
+          // console.error so the user sees the full stack in DevTools
+          // (Ctrl+Shift+I). Notice alone truncates the error message
+          // and gives no recovery info — that was the bug reported
+          // when "Retag failed for X: tfile.read is not a function"
+          // appeared with no other diagnostic output. We include the
+          // page type + violation context for debugging.
+          console.error(
+            `[runRetagViolations] ${v.path} (${v.pageType}) failed:`,
+            e
+          );
+          results.push(`${v.path}: ${errMsg}`);
+          new Notice(t.lintTagViolationFailed.replace('{path}', v.path).replace('{error}', errMsg), NOTICE_ERROR);
+          continue;
+        }
+        const val = r.value;
+        if (val.kind === 'missing') {
+          results.push(`${val.v.path}: file not found`);
+        } else if (val.kind === 'notfile') {
+          results.push(`${val.v.path}: not a regular file`);
+        } else if (val.kind === 'noop') {
+          results.push(val.message);
+        } else {
+          // kind === 'fixed'
+          fixed++;
+          results.push(val.message);
+        }
       }
     }
   } finally {

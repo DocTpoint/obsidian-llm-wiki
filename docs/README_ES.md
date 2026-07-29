@@ -138,7 +138,7 @@ Eso es todo. El plugin no modifica nada en tus notas originales — solo crea p�
 - **🏷️ Alias obligatorios** — cada página incluye al menos un alias (traducción, abreviatura, variante) para que la detección de duplicados entre idiomas funcione.
 - **🔄 Detección de duplicados por niveles** — Nivel 1 (coincidencia directa de nombre: entre idiomas, abreviatura, títulos de alta similitud) siempre se verifica; Nivel 2 (enlaces compartidos, similitud media) llena el presupuesto de tokens restante.
 - **🧩 Fusión inteligente y máquina de estados de contradicción** — los duplicados se fusionan preservando alias; las contradicciones se marcan con atribución de fuente; las páginas con `reviewed: true` están protegidas contra sobrescritura.
-- **🎨 Vocabulario de etiquetas personalizable** — define tus propias listas de etiquetas de tipo de entidad y concepto en Configuración → Wiki → Tag Vocabulary → *Custom*; Lint informa de cualquier página cuyas etiquetas estén fuera del vocabulario activo.
+- **🎨 Vocabulario de etiquetas personalizable** — define tus propias listas de etiquetas de tipo de entidad y concepto en Configuración → Wiki → Tag Vocabulary → *Custom*. El vocabulario es una PISTA DE INYECCIÓN DE ESQUEMA para el LLM, no un gate de escritura — los modelos pequeños/locales aún pueden desviarse, y Lint informa de esas páginas. (La aplicación se está diseñando para v1.26.0+.)
 
 ### 📄 Ingesta de PDF (v1.25.0+)
 

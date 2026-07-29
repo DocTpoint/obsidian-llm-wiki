@@ -351,6 +351,7 @@ export const IT_TEXTS = {
     tagVocabularyModeName: 'Configurazione vocabolario tag',
     tagVocabularyModeDescDefault: 'Il predefinito usa i tag integrati: {}. Passa a Personalizzato per definire i tuoi.',
     tagVocabularyModeDescCustom: 'Personalizzato: definisci qui sotto i tuoi tag per entità e concetti. Usa l\'input a chip — Invio o virgola per aggiungere, × per rimuovere.',
+    tagVocabularyNotEnforcedHint: 'Solo un suggerimento di schema — l’LLM può comunque emettere tipi fuori vocabolario. Esegui Lint per trovare e correggere quelle pagine.',
     tagVocabularyModeDefault: 'Predefinito (tag di sottotipo integrati)',
     tagVocabularyModeCustom: 'Personalizzato (definito dall\'utente)',
     customEntityTagsName: 'Tag entità personalizzati',

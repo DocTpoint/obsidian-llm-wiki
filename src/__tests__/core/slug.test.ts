@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSlug, filterRedundantAliases, slugify } from '../../core/slug';
+import { computeSlug, filterRedundantAliases, slugify, slugKeys, turkishCaseFold } from '../../core/slug';
 describe('slugify', () => {
   it('returns "untitled" for empty input', () => {
     expect(slugify('')).toBe('untitled');
@@ -154,8 +154,11 @@ describe('filterRedundantAliases', () => {
   });
 
   it('keeps a genuine alias that differs from the filename', () => {
-    const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['监测']);
-    expect(result).toEqual(['监测']);
+    // 3-character floor (v1.25.10 PATCH): use a multi-char CJK alias so it
+    // clears the floor; the previous single-codepoint CJK alias "监测"
+    // is now correctly rejected by MIN_ALIAS_LENGTH below.
+    const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['监测系统']);
+    expect(result).toEqual(['监测系统']);
   });
 
   it('drops self-pointing alias but keeps distinct ones in the same batch', () => {
@@ -183,5 +186,136 @@ describe('filterRedundantAliases', () => {
   it('handles paths without a folder prefix', () => {
     const result = filterRedundantAliases('vigilanz.md', ['Vigilanz', 'Surveillance']);
     expect(result).toEqual(['Surveillance']);
+  });
+
+  it('drops aliases shorter than the 2-character floor (v1.25.10 PATCH alias hardening)', () => {
+    // Single-character aliases are dropped: they carry no dedup value
+    // above the page basename and clutter the wikilink graph. The 2-char
+    // floor intentionally leaves common technical abbreviations (ML,
+    // HD, CD, AI, UI, ...) usable. Tunable via MIN_ALIAS_LENGTH in
+    // src/constants.ts.
+    const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['A', 'ML', 'Überwachung']);
+    expect(result).toEqual(['ML', 'Überwachung']);
+  });
+
+  it('accepts a 2-character boundary alias (>= 2 chars)', () => {
+    // "ML" is exactly 2 chars — at the floor. Must survive.
+    const result = filterRedundantAliases('wiki/entities/openai.md', ['ML']);
+    expect(result).toEqual(['ML']);
+  });
+
+  it('drops aliases that already exist on other pages (cross-page uniqueness)', () => {
+    // "Vigilanz" is already an alias on another page — adding it to this
+    // page would create a wikilink ambiguity. Pass them via the third arg.
+    const result = filterRedundantAliases(
+      'wiki/entities/new-page.md',
+      ['Vigilanz', 'Surveillance'],
+      ['Vigilanz'],
+    );
+    expect(result).toEqual(['Surveillance']);
+  });
+
+  it('cross-page uniqueness is case-insensitive (whitespace stripped)', () => {
+    // Even with whitespace/case variations, the existing alias rejects the candidate.
+    const result = filterRedundantAliases(
+      'wiki/entities/new-page.md',
+      ['VIGILANZ'],
+      ['  vigilanz  '],
+    );
+    expect(result).toEqual([]);
+  });
+
+  it('omitting the cross-page argument preserves v1.25.9 behaviour (backward-compat)', () => {
+    // No third argument — should not throw, must still apply filename + batch dedup.
+    const result = filterRedundantAliases('wiki/entities/vigilanz.md', ['Vigilanz']);
+    expect(result).toEqual([]);
+  });
+});
+
+// v1.25.10 PATCH Issue #366 — Turkish-aware case folding for slug
+// comparison keys. The default ASCII fold stays untouched; the new
+// path is opt-in via `slugKeys({ turkishFold: true })` so non-Turkish
+// vaults pay nothing.
+describe('turkishCaseFold', () => {
+  it('lowercases ASCII to lowercase ASCII', () => {
+    expect(turkishCaseFold('HELLO')).toBe('hello');
+    expect(turkishCaseFold('World')).toBe('world');
+  });
+
+  it('passes ASCII lowercase through unchanged', () => {
+    expect(turkishCaseFold('hello')).toBe('hello');
+  });
+
+  it('maps İ (capital Turkish I-with-dot) to i', () => {
+    expect(turkishCaseFold('İSTANBUL')).toBe('istanbul');
+  });
+
+  it('leaves ASCII I untouched here (lowercase applied later by computeSlug)', () => {
+    // turkishCaseFold only handles the four Turkish-specific letters
+    // (and the case they carry). ASCII I is left for the downstream
+    // `.toLowerCase()` step — the comparison-key pipeline folds
+    // BEFORE computeSlug, so the lowercase there is what normalises
+    // ASCII. The helper's job is the Turkish-case delta only.
+    expect(turkishCaseFold('ISIM')).toBe('isim');
+  });
+
+  it('lowercases Ş → ş, Ğ → ğ, ASCII I via the lowercase step', () => {
+    // turkishCaseFold handles Ş/Ğ/İ/Ö/Ü/Ç. The Turkish rule for ASCII
+    // I is locale-dependent: standard .toLowerCase() in the host
+    // locale is what we use here (the comparison-key pipeline runs
+    // the fold BEFORE computeSlug, which lowercases ASCII anyway).
+    expect(turkishCaseFold('ŞEHIR')).toBe('şehir');
+    expect(turkishCaseFold('DOĞA')).toBe('doğa');
+  });
+
+  it('passes already-folded Turkish lowercase through unchanged', () => {
+    expect(turkishCaseFold('doğa')).toBe('doğa');
+    expect(turkishCaseFold('ırmak')).toBe('ırmak');
+  });
+
+  it('round-trips ç, ö, ü through plain toLowerCase', () => {
+    expect(turkishCaseFold('ÇAY')).toBe('çay');
+    expect(turkishCaseFold('ÖRNEK')).toBe('örnek');
+    expect(turkishCaseFold('ÜLKE')).toBe('ülke');
+  });
+
+  it('leaves diacritics on Turkish dotted letters untouched (downstream slug strips them)', () => {
+    // The fold is character-class level. Diacritic stripping belongs to
+    // the slug stage (computeSlug). The fold just normalises case.
+    expect(turkishCaseFold('DOĞRU')).toBe('doğru');
+    expect(turkishCaseFold('KÜÇÜK')).toBe('küçük');
+  });
+});
+
+describe('slugKeys with turkishFold (Issue #366)', () => {
+  it('ASCII path: turkishFold=false returns slug exactly as computeSlug does', () => {
+    const keys = slugKeys('Doga Demir', ['doga demir'], { turkishFold: false });
+    // computeSlug lowercases by default — no further fold.
+    expect([...keys]).toEqual(['doga-demir']);
+  });
+
+  it('Turkish path: turkishFold=true unifies casing variants of the same name', () => {
+    // 'Doğa' and 'doğa' both fold + lowercase to the same slug.
+    const a = slugKeys('Doğa', [], { turkishFold: true });
+    const b = slugKeys('doğa', [], { turkishFold: true });
+    expect([...a][0]).toBe([...b][0]);
+    expect([...a][0]).toBe('doğa');
+  });
+
+  it('Turkish path: Ş/ş/G/ğ/ç/ö/ü cross-page dedup', () => {
+    // 'ŞEHIR' and 'şehir' should both yield 'şehir'.
+    const a = slugKeys('ŞEHIR', [], { turkishFold: true });
+    const b = slugKeys('şehir', [], { turkishFold: true });
+    expect([...a][0]).toBe('şehir');
+    expect([...b][0]).toBe('şehir');
+  });
+
+  it('omitting opts preserves the v1.25.9 behaviour (backward-compat)', () => {
+    expect([...slugKeys('Test', ['Test'])]).toEqual(['test']);
+  });
+
+  it('skipping empty / whitespace-only inputs is unchanged', () => {
+    const keys = slugKeys('', ['   ', 'Real'], { turkishFold: true });
+    expect([...keys]).toEqual(['real']);
   });
 });
