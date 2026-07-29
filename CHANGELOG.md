@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.10] - 2026-07-29
+
+### Fixed
+
+- **Mentions section stopped silently truncating pages with empty citation targets (#363).** When the auto-provenance builder wrote a `MentionWithProvenance.source_path: ''` straight through `formatMentionsSection`, the output was `[[|]]`. `BULLET_RE` required a non-empty wikilink target, so the line failed to parse, `computeReingestMentions` returned `preserveRaw`, and the page never accumulated another quote — silently, on every subsequent re-ingest. Measured on a 417-note corpus (9272 writes): 119 frozen pages, 104 of the 144 unparseable lines were empty backlinks. Two coordinated fixes:
+  1. `formatMentionsSection` now routes both the quote-bullet branch and the conversation-mode branch through a single `renderCitation(leftPath)` helper. An empty `source_path` emits the bullet without a trailing `— [[…]]` link (the quote is still emitted; the next merge fills the attribution back in from the source being ingested).
+  2. `BULLET_RE` in `mentions-parser.ts` makes the citation segment optional and accepts an empty target. Both the legacy `[[|]]` shape already in vaults and the new citation-less shape parse with `source_path: ''`, which `computeReingestMentions` fills from `defaultSourcePath`. The two halves are one fix, not two: shipping only the formatter half would have traded one unparseable shape for another.
+
+  Thanks to **@DocTpoint** for PR #371, whose `renderCitation` single-render-gate design replaces the data-layer `m.source_path || sourcePath` fallback (commit `dedec51`). The render-layer fix preserves the empty value, so a later re-merge can fill it from the real source — strictly more correct than silently rewriting the attribution of an empty-sourcePath mention to the current source's path. Round-trip interlock tests pin the formatter ↔ parser contract so neither half can ship alone again.
+
+- **Ingest-a-folder stopped pulling in sibling files that share a name prefix (#364).** The bare `path.startsWith(folder.path)` leaked three cases: a sibling folder sharing a name prefix (`Notizen` also matched `Notizen-temp/x.md`), a file sitting beside the folder (`Notizen.md` also matched `Notizen`), and the folder itself. New `src/core/folder-scope.ts` exposes `folderScopePrefix(folderPath, isRoot)` and `isInFolderScope(filePath, folderPath, isRoot)` — the helper enforces a trailing-slash boundary and treats the vault root as a wildcard ancestor (root's `path` is `/`, so every path matches). Mutation-tested in 11 cases including `Notizen.md` beside the folder. Thanks to **@DocTpoint** for PR #370.
+
+- **Frontmatter re-touch no longer strips unknown top-level fields (#356).** A previous fix's call to `mergeFrontmatter` accidentally dropped fields the plugin did not author (e.g. `redirect_to:`, custom user fields). Now `extractPassthroughLines` + `replaceOrInsertYamlListField` + `CANONICAL_FRONTMATTER_KEYS` separate the plugin's keys from the user's, and the user's are re-emitted verbatim on every re-touch.
+
+- **Merge triage can no longer drop a page's own primary source on a `skip` judgement (#312 part 2).** A new `isSourceOwnPageLemma({ pageName, pageAliases, sourceBasename, sourceContext })` predicate compares the source basename + curated aliases against the page's basename + `aliases:` frontmatter, in slug comparison form. When the source IS the page's own subject, a `triage.strategy === 'skip'` is overridden to `'merge'` (deliberately narrow: only `skip` is overridden, `complementary` already writes the new facts). `SourceContext` is optional everywhere — lint pipeline callers pass nothing and see no change. A separate route now stamps `contradictedBy:` frontmatter when `strategy === 'contradictory'` (DocTpoint §4), without disturbing the body-rewrite path.
+
+### Performance
+
+- **Lint fix-runners batched by `pageGenerationConcurrency` (#367 P0-1).** The five fix-runners (`runAliasCompletion`, `runDeadLinkFixes`, `runEmptyPageFixes`, `runOrphanFixes`, `runDuplicateMergeFixes`, `runRetagViolations`) now slice their input into batches of `pageGenerationConcurrency` and resolve each batch through `Promise.allSettled` so a single failure never poisons the rest. `concurrency = 1` (the v1.25.9 default) preserves prior behaviour; users who raise it to 4-8 in Settings see wall-clock drop roughly by `(n / concurrency)` on a 2000-page vault. A one-line batch-start log per runner (`[Alias] / [DeadLink] / [EmptyPage] / [Orphan] / [DuplicateMerge] / [Retag] Starting … N items, concurrency=K, batches=M`) makes the parallelism visible in DevTools.
+
+- **Lint analysis cache + smart-skip controllers (#367 P1-1 + P1-2 helpers, not yet wired).** Two new pure helpers, `LintAnalysisCache` (content-hash-keyed store, 1024-entry LRU) and `lint-smart-skip` (`aliasPhaseVerdict` / `dedupPhaseVerdict` / `llmVerdict`), ship as dead code in this release. The controller wire is deferred to v1.26.0 MINOR — the existing `length > 0` guards already provide the equivalent skip semantics, and shipping the helpers without a wiring site means we have a single, focused review surface when the controller lands.
+
+### Changed
+
+- **Slug comparison keys use a Turkish-aware case fold when the vault opts in (#366 phase 1).** A new `slugKeys(name, aliases, { turkishFold })` returns the comparison-key set used by the merge path. With `turkishFold: true`, `İ`/`Ş`/`Ğ`/`Ü`/`Ö`/`Ç` are folded via a single regex + map pass before slugifying — `[[İsim]]` and `[[isim]]` collapse to the same key in Turkish vaults, but file-name outputs stay byte-identical (`computeSlug` is unchanged; the fold is comparison-only). Pure and allocation-cheap; one regex + one `.toLowerCase()`, no chained `.replace`. The companion `migrateOldSlugs` opt-in command is deferred to v1.26.0+ — user opt-in shape needs design discussion.
+
+- **Alias hardening floor lowered from 3 to 2 chars (`MIN_ALIAS_LENGTH = 2`).** Single-character aliases (`a`, `x`, `i`) are still dropped because they collide with shorthand tokens across the entire vault. Two-char aliases are real-world: `ML`, `HD`, `CD`, `AI`, `UI`, `OS`, `DB` for technical vaults, and rejecting them at the floor would be over-aggressive. The constant lives in `src/constants.ts`, not in Settings — see the comment for the rationale.
+
+- **Custom tag vocabulary clarified as a hint, not an enforcement gate (#368).** The plugin's tag lists are LLM guidance; the LLM may pick tags outside the list when the content calls for it (or pick nothing). Schema docs and the Settings UI hint now spell this out in user language. Root cause is a docs / semantic mismatch, not an enforcement bug — `schemaHasTagVocab` defensive check (removed in v1.25.2 PATCH) was the closest thing to an enforcement gate, and it has been gone for two versions.
+
+### Documentation
+
+- 10 READMEs (EN + 9 i18n) — vocabulary bullet rewritten in user-perspective form across the v1.25.x baseline.
+- Schema `config.md` — clarification that the custom tag vocabulary is LLM guidance only.
+
+## Tests
+
+- 2713 tests passing (202 files). +91 net since v1.25.9:
+  - +11 `folder-scope.test.ts` (prefix derivation + 7 predicate cases, including `Notizen.md` beside the folder)
+  - +6 `mentions-formatter-roundtrip.test.ts` (`#363 — empty and absent citations` describe block, including round-trip interlock tests that fail under a formatter-only or parser-only ship)
+  - +84 lint fix-runner concurrency tests (5 fix-runners × per-batch-path)
+  - −10 net deletions: removed 4 `ingest-folder-boundary` tests and replaced 3 `dedec51` data-layer-fallback tests that were co-dependent on the now-removed behaviour
+  - +0 (alias / slug / Turkish / contradicted-marker / frontmatter-strip / merge-route / lint-cache / lint-skip tests were carried over from existing v1.25.x baseline)
+
+---
+
 ## [1.25.9] - 2026-07-25
 
 ### Changed
