@@ -1,12 +1,12 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-07-28 (v1.25.10 PATCH scope expanded 5 → 10 items + DocTpoint Triage role correction. main @ `2d26620` after 2026-07-26 PATCH batch merge (#347/#349/#350/#352 → 2605 tests / 195 files). v1.25.10 PATCH scope locked: 5 from #330/#356 + DocTpoint batch (#363 format+parser, #364 folder boundary) + Guru35 batch (#366 slug migration option d, #367 lint-perf P0-1+P1-1+P1-2 from v1.25.7 deferred, #368 docs+settings hint as `enhancement`). #365 deferred v1.26.0+; PR #357 anchored v1.26.0+.)
+**Last Updated:** 2026-07-29 (v1.25.10 PATCH RELEASED — 16 commits / 78 files / +3499 / −315 / 2713 tests / 202 files. main @ `fc0f1ce` after PR #373 merge. DocTpoint PRs #370 + #371 consolidated into commits `98afe42` + `292d42e` with `Co-authored-by: DocTpoint` trailer; both source PRs closed with thanks. v1.25.10 PATCH scope: 5 locked from #330/#356 + DocTpoint batch (#363 format+parser, #364 folder boundary) + Guru35 batch (#366 slug migration option d phase 1 helper, #367 lint-perf P0-1+P1-1+P1-2 from v1.25.7 deferred, #368 docs+settings hint as `enhancement`). #365 deferred v1.26.0+; PR #357 anchored v1.26.0+.)
 
 ---
 
-## Current Phase: v1.25.10 PATCH scope locked at 10 items; v1.26.0 MINOR in design phase.
+## Current Phase: v1.25.10 PATCH RELEASED; v1.26.0 MINOR in design phase.
 
-**v1.25.10 PATCH** (planned, sequential on v1.25.9): ten-item scope (locked 2026-07-28, expanded from initial 5 after DocTpoint + Guru35 morning batches):
+**v1.25.10 PATCH** (RELEASED 2026-07-29, sequential on v1.25.9): ten-item scope (locked 2026-07-28, expanded from initial 5 after DocTpoint + Guru35 morning batches):
 - admission criterion in Task Requirements (closes DocTpoint §2 "rules stated twice in the same prompt")
 - cross-type dedup candidate visibility (closes §3, #328 Phase 2 pre-condition)
 - `merge` vs `contradictory` route split (closes §4, `src/wiki/page-factory/merge-page.ts:124`)
@@ -35,7 +35,7 @@
 2. ~~Phase A Obsidian bot compliance — `prefer-create-el` × 50 + `getSettingDefinitions` not implemented.~~ **COMPLETED 2026-07-21 (`c9fd4ce`).** eslint-plugin-obsidianmd 0.3.0→0.4.1 upgrade, flat config test override, `src/types/obsidian-dom.d.ts`, `src/__tests__/__support__/dom-helpers.ts`, 47 prefer-create-el production fixes, no-alert → ConfirmModal replacement.
 3. ✅ **Schema Phase 1 (Option A user-approved 2026-07-22)** — Eliminate the dual-source problem: tag lists move from `buildDefaultSchemaBody()` to runtime injection layer; `schemaHasTagVocab` defensive check removed. (Folder layout will move in Phase 2 alongside the per-type registration work — see Issue #328.) See [[feedback-schema-phase1-option-a-decision]] for full decision rationale + orthogonality proof against Phase 2/3. Owner override of the "wait 2 weeks for community feedback" public commitment (Issue #328) justified by (a) bug-fix nature, (b) ~3-4h PATCH-scope effort, (c) Phase 2/3 orthogonality. Implementation order (TDD): RED test → GREEN edit → refactor → Gate 1 → in-memory sanitize for legacy vaults. Backwards-compat: existing user schemas **not rewritten**; runtime improvement immediate.
 4. **DOCS: still pending** — 10 READMEs + CHANGELOG + versions.json v1.25.2 entry.
-5. **Lint perf** — `controller.ts:151` + `:239` TODOs from v1.18.0+ unaddressed. Remains v1.26.0 work.
+5. ✅ **Lint perf P0-1 fix-runners parallelization** (v1.25.10 PATCH, commit `ece6007`/`17982b7`/`dbe9e13`/`76f2475`) — five fix-runners now slice by `pageGenerationConcurrency` + `Promise.allSettled`. P1-1 analysis cache + P1-2 smart-skip helpers ship as dead code; controller wire deferred to v1.26.0 MINOR (existing `length > 0` guards provide equivalent skip semantics today).
 
 **v1.25.0 scope decision (2026-07-15, user-confirmed post-pivot):**
 
@@ -517,7 +517,7 @@ For any new function or behavior change: write a failing test first, then write 
 | **ROADMAP.md** | Planning | Next Milestone / Version Timeline (condensed) / Deferred & Backlog | Per-version detail (use CHANGELOG) |
 | **CHANGELOG.md** | History (Keep a Changelog) | Per-version Added/Changed/Fixed/Removed — ancient versions are pre-aggregated, **do not re-merge** | Forward-looking plans, dev standards |
 | **CONTRIBUTING.md** | Contributor guide | Project structure tree, architecture, Mermaid, dev setup | User docs, design philosophy |
-| **10 READMEs (EN + 9 i18n)** | User docs | Features / Quick Start / FAQ / What's New | Implementation details, internal version numbers |
+| **10 READMEs (EN + 9 i18n)** | User docs | Features / Quick Start / FAQ | Implementation details, internal version numbers, What's New sections |
 | **memory/** | Session-persistent lessons | [[feedback-*]] (rules) + [[project-*]] (current state) | Code references that drift (use code comments) |
 
 **Cross-reference format:** `[section](./OTHER.md#anchor)` — keep one canonical source, link to it.

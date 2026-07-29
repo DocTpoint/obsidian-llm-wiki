@@ -121,7 +121,13 @@ src/
 │   ├── model-resolver.ts       # resolveModelForTask(settings, task) #208 per-task routing helper (v1.24.0)
 │   ├── pdf-cache.ts            # Content-hash PDF conversion cache + LRU eviction (v1.25.0)
 │   ├── pdf-converter.ts        # PDF→Markdown via LLM FilePart + OCR-style prompt (v1.25.0)
-│   └── pdf-metadata.ts         # Pure-function PDF Info dict parser (title/author/pageCount, v1.25.0)
+│   ├── pdf-metadata.ts         # Pure-function PDF Info dict parser (title/author/pageCount, v1.25.0)
+│   ├── folder-scope.ts         # Folder-boundary predicate (#364, v1.25.10) — anchor on trailing slash, root wildcard
+│   ├── contradicted-marker.ts  # `contradictions:` frontmatter marker (#312 §4, v1.25.10)
+│   ├── source-language.ts      # Source-frontmatter language directive builder (#350 follow-on, v1.25.10)
+│   ├── template-renderer.ts    # {{placeholder}} substitution with named keys (#244/v1.25.10)
+│   ├── lint-analysis-cache.ts  # Content-hash lint analysis cache (P1-1 helper, v1.25.10; controller wire deferred)
+│   └── lint-smart-skip.ts      # Per-phase verdict helpers (P1-2 helper, v1.25.10; controller wire deferred)
 ├── wiki/                # Wiki engine modules
 │   ├── wiki-engine.ts   # Orchestrator (ingest, lint, log) — v1.25.1: 4 internal modules extracted
 │   ├── graph-cache.ts   # (v1.25.1) `_cachedGraph` + invalidate logic
@@ -196,7 +202,7 @@ src/
 │   ├── tag-chip-input.ts
 │   └── schema-diff-modal.ts
 ├── texts/               # i18n (10 languages: EN/ZH/ZH-Hant/JA/KO/DE/FR/ES/PT/IT)
-└── __tests__/           # Unit tests (vitest, 2566 tests across 192 files; v1.25.7 PATCH SHIPPED 2026-07-25, +19: 12 DocTpoint dedup perf + 7 API key switching bug fix regression)
+└── __tests__/           # Unit tests (vitest, 2713 tests across 202 files; v1.25.10 PATCH SHIPPED 2026-07-29, +91 net: +11 folder-scope + 6 mentions round-trip #363 + 84 lint fix-runner concurrency − 10 net deletions)
 ```
 
 ## Internationalization

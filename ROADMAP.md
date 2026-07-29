@@ -2,9 +2,35 @@
 
 > Feature planning and improvement proposals
 
-**Version:** 1.25.9 PATCH (re-publish of 1.25.8). | **Updated:** 2026-07-28
+**Version:** 1.25.10 PATCH (in release, awaiting publish). | **Updated:** 2026-07-29
 
 ## Current Status
+
+**v1.25.10 — RELEASED 2026-07-29 (in release).** Sequential PATCH on v1.25.9 carrying bug fixes only — 10-item scope locked 2026-07-28:
+
+*Composition (16 commits, oldest → newest)*:
+- `f9a680e` feat(slug): alias hardening — 3-char floor + cross-page uniqueness (later revised to 2-char floor)
+- `6736b06` fix(frontmatter): preserve unknown top-level fields on re-touch (#356)
+- `728f235` fix(ingest): enforce folder boundary so siblings sharing a prefix are not pulled in (#364, initial helper)
+- `dedec51` fix(mentions): data-layer `m.source_path || sourcePath` fallback (#363 part 1, later superseded)
+- `f3c61ab` fix(mentions): parser accepts empty-target bullets (#363 part 2)
+- `83dec0e` docs(schema): clarify that custom tag vocabulary is a hint, not an enforcement gate (#368)
+- `e3861b5` feat(merge): split merge / contradictory routes via frontmatter marker (DocTpoint §4)
+- `ece6007` perf(lint): partial P0-1 + complete P1-1 + P1-2 helpers (Issue #367)
+- `507e895` feat(slug): Turkish-aware case fold for comparison keys (Issue #366 phase 1)
+- `cbac760` refactor: apply simplify+audit findings — shared frontmatter helper, key rename, single-pass fold
+- `b3e0b79` refactor(slug): lower alias-hardening floor to 2 chars and centralise the constant
+- `17982b7` perf(lint): batch the Empty/Orphan/Duplicate fix-runners by pageGenerationConcurrency (Issue #367 P0-1 part 2)
+- `dbe9e13` perf(lint): batch runRetagViolations by pageGenerationConcurrency (Issue #367 P0-1 final)
+- `76f2475` log(lint): one-line batch-start log per fix-runner so the parallelism is visible in DevTools
+- `98afe42` refactor(ingest): consolidate #364 with DocTpoint's `folder-scope` helper (PR #370)
+- `292d42e` refactor(mentions): consolidate #363 with DocTpoint's `renderCitation` + round-trip interlock (PR #371)
+
+*DocTpoint consolidation (commits 15, 16)*: Two PRs from @DocTpoint (#370 for #364, #371 for #363) shipped stricter implementations than the local fixes. Both PRs adopt their `Co-authored-by: DocTpoint` trailer and the PRs are closed in favour of the merged result:
+- **#364** (commit 98afe42) — DocTpoint's `src/core/folder-scope.ts` mutation-tests the third case (`Notizen.md` beside the folder) that the local helper covered only by accident. Splits prefix-derivation from the descendant predicate into two unit-testable functions.
+- **#363** (commit 292d42e) — DocTpoint's `renderCitation(leftPath)` single-render-gate design fixes a side-effect the local two-commit split had: the data-layer fallback (`m.source_path || sourcePath`) silently rewrote the attribution of an empty-sourcePath mention to the current source's path. The render-layer fix preserves the empty value, so a later re-merge can fill it from the real source. Also covers the citation-less shape (`- "q"` with no `— [[...]]`) which the local regex did not, and adds a round-trip interlock test that fails under a formatter-only or parser-only ship.
+
+*Test count*: 2713 tests passing (202 files), +91 net since v1.25.9.
 
 **v1.25.9 — RELEASED 2026-07-25.** Re-publish PATCH:
 - **PR (this release)** (self): Re-publish v1.25.8 as v1.25.9. During the v1.25.8 release flow the GitHub release record was inadvertently deleted while Obsidian's automated community plugin review bot was mid-review, causing the bot to fail the v1.25.8 submission (review is one-shot and cannot be re-triggered for an already-attempted version). v1.25.9 carries the exact same code as v1.25.8 (no functional changes) and is the version Obsidian's bot will now review on resubmission. **Also includes** a fix for `versions.json` trailing-comma JSON syntax error introduced in commit `c572c27` (1.25.8 bump). 0/0 tests affected.
@@ -17,41 +43,6 @@
 - **PR #349** eucher — source-page tag vocabulary (stays inside closed enum)
 - **PR #350** eucher — translation-hint gated on source frontmatter language
 - **PR #352** eucher — silent-truncation finish-reason (closes #305 follow-on)
-
-## Next: v1.25.10 PATCH (sequential on v1.25.9)
-
-Theme: bug-fix only, no new features. All 10 items have measured reproduction or empirical evidence; scope intentionally narrow to land before v1.26.0 opens the design window.
-
-**Scope (expanded 2026-07-28 from 5 → 10 items, locked after DocTpoint + Guru35 morning batches)**:
-
-*Locked 2026-07-27 (5 items from #330 close-out + #356 frontmatter-strip)*:
-- **admission criterion in Task Requirements** — closes #330 §2 (rules stated twice in the same prompt; 17 citation-titled pages violated)
-- **cross-type dedup candidate visibility** — closes #330 §3 (`src/wiki/page-factory/path-resolution.ts:165` filter scope); pre-condition for #328 Phase 2
-- **`merge` vs `contradictory` route split** — closes #330 §4 (`src/wiki/page-factory/merge-page.ts:124` routes both into same body rewrite)
-- **alias hardening** — closes #330 §3 (3-char floor + uniqueness; DocTpoint measured 0 links affected by 3-char floor, 30/31,553 by uniqueness)
-- **#356 frontmatter-strip fix** — preserves unknown top-level fields on re-touch (data-loss bug, not v1.26.0 feature)
-
-*DocTpoint batch (2026-07-28 04:38-04:43 UTC)*:
-- **#363 format + parser tolerance** — `formatMentionsSection` 1-line `sourcePath: m.source_path || sourcePath` mirror `computeReingestMentions.normalize`, **plus** parser-side `BULLET_RE` empty-target tolerance + `buildBullets()` defensive skip-when-empty. DocTpoint measured 4.7% pages frozen by parse→fail-safe chain (119/9272 writes on 417-note vault). DocTpoint contributes parser side.
-- **#364 folder ingest boundary** — 1-line + root special-case: `folderPrefix = folder.isRoot() ? '' : `${folder.path}/``. Data-safety: `Foo/` + `Foo-bar/` no longer cross-bleed.
-
-*Guru35 batch (2026-07-28 09:15-09:18 UTC, single 11k-page Turkish vault)*:
-- **#366 slug derivation unification** — single shared `slugify()` (Turkish char folding: ı→i, İ→i, ç→c, ş→s, ğ→g, ö→o, ü→u) + migration story **option (d) two-phase hybrid**: Phase 1 = emit `aliases:` field on new pages so Obsidian native alias resolution handles old wikilinks transparently; Phase 2 = opt-in `migrateOldSlugs` setting rewrites `[[old|...]]` → `[[new|...]]` on next lint/ingest.
-- **#367 lint-perf** — fold forward v1.25.7 deferred plan items: **P0-1 fix-runners parallelization** (80 LOC + 5 tests, `Promise.allSettled` rewrite of 5 phases), **P1-1 analysis content-hash cache** (80 LOC + 3 tests, LRU 50 entries using `DiskCache<T>` from v1.25.1), **P1-2 smart-skip controller** (30 LOC + 1 test). **Strict scope lock**: only these 3 sub-items; no Tier 1 n-gram bucket, no per-file content-hash diff-index, no embedding/RAG (permanently banned), no new settings UI.
-- **#368 schema docs + settings UI hint** (relabeled `bug` → `enhancement`) — root cause is docs/semantic mismatch, NOT enforcement bug: `type:` is broad category (entity/concept/source, prompt-mandated in `src/wiki/prompts/generation.ts:45/106/159/212/253`); `tags:` is subtype enum (validated via `getActive*Tags(settings)` at `src/core/frontmatter.ts:496-502`, custom vocabulary already in place). Fix is docs clarification + settings UI hint panel; NO `enforceFrontmatterConstraints` change.
-
-**Out of scope for v1.25.10** (moved to v1.26.0): identity ambiguity record, bidirectional frontmatter, typed edges, Preview-Confirm gate, source-lemma PR #357 (already in `feat/ingest-source-lemma` branch, ships independently). **#365 programmatic sources stamp on create path** (DocTpoint) — also deferred to v1.26.0; pre-condition for v1.26.0 "Bidirectional frontmatter" item.
-
-**Expected impact (post all 10 items + lint-perf fold-in)**:
-
-| Metric | baseline (v1.25.9) | v1.25.10 |
-|---|---|---|
-| Lint ingest wall (2805p vault) | 1836s | ~150s (−92%, from lint-perf) |
-| Smart Fix All | 120-180s | <60s (−65%) |
-| Mentions frozen pages (`[[|]]`) | 4.7% (DocTpoint) | 0% (parser tolerance) |
-| Folder mis-ingest (data-safety) | up to 50x (DocTpoint: 409 notes) | 0 (boundary check) |
-| Broken wikilinks (Turkish vault) | 16.5% (Guru35) | depends on migration completion |
-| Settings custom tag vocab drift | 9% (Guru35) | 0 (docs clarification) |
 
 ## Next: v1.26.0 MINOR (after v1.25.10 ships)
 
@@ -98,7 +89,7 @@ Historic compositions (v1.25.7 and earlier) live in [CHANGELOG.md](./CHANGELOG.m
 ## Version Timeline
 | Version | Date | Headline |
 |---------|------|----------|
-| **1.25.10 PATCH** | TBD (planned) | Sequential PATCH on v1.25.9 carrying bug fixes only: admission criterion, cross-type dedup visibility, merge/contradictory route split, alias hardening, #356 frontmatter-strip |
+| **1.25.10 PATCH** | 2026-07-29 | Sequential PATCH on v1.25.9 carrying bug fixes only: #363 Mentions `[[|]]` parser + formatter (DocTpoint PR #371), #364 folder ingest boundary (DocTpoint PR #370), #356 frontmatter-strip, #366 Turkish-aware slug fold (phase 1), #367 lint-perf P0-1 fix-runner parallelisation (P1-1/P1-2 helpers ship dead-code, controller wire deferred to v1.26.0), #368 schema docs + settings UI hint, DocTpoint §4 merge/contradictory route split, alias hardening (3-char → 2-char floor). 16 commits, 78 files, +3499 / −315, 2713 tests |
 | **1.26.0 MINOR** | TBD (in design) | Complementary memory model: per-type registration, typed edges, bidirectional frontmatter, identity ambiguity record, Preview-Confirm gate, stable mutation interface. Anchored at [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358) |
 | **1.25.9** | 2026-07-25 | PATCH: Re-publish v1.25.8 to recover from a release-engineering incident where the v1.25.8 GitHub release record was inadvertently deleted while Obsidian's automated community plugin review bot was mid-review. No code changes vs v1.25.8. Also fixes `versions.json` trailing-comma JSON syntax error introduced in v1.25.8 bump commit |
 | **1.25.8** | 2026-07-25 | PATCH Hotfix: `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only `hide()`). Fixes v1.25.7 regression where provider switching made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header". +7 tests (6 against real `LLMWikiSettingTab.commitTempSettings` via `Object.create(prototype)` + 1 mock signature update). Bot 0/0 preserved. 2572 tests / 193 files |
