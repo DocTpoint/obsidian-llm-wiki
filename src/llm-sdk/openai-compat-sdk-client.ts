@@ -265,12 +265,13 @@ export class OpenAICompatSdkClient implements LLMClient {
       // serving Qwen3-family models) ignores `thinking.type` entirely — it
       // expects chat_template_kwargs instead, so both dialects are sent.
       //
-      // Sending both assumes each side ignores the dialect it does not know,
-      // which is an assumption and not a measurement — and one this repository
-      // already contradicts for at least one backend, see the note on the
-      // return below. Neither field currently leaves the process, so the
-      // assumption costs nothing today; it becomes load-bearing the moment the
-      // key is corrected.
+      // Sending both assumes each side ignores the dialect it does not know.
+      // Half of that is now measured and the news is mixed: on LM Studio 0.4.20
+      // `chat_template_kwargs` is accepted with a 200 and the model reasons
+      // anyway (#372), so on that backend delivery would not make the toggle
+      // work. Neither field currently leaves the process, so the assumption
+      // costs nothing today; it becomes load-bearing the moment the key is
+      // corrected, and what it buys is unproven on every backend measured.
       openaiOpts.chat_template_kwargs = { enable_thinking: false };
     }
 

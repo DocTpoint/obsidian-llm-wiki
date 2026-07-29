@@ -55,11 +55,14 @@ describe('OpenAICompatSdkClient — what reaches the request body', () => {
     }
 
     // Requested above and absent for a second, independent reason: the client
-    // no longer builds it at all. #65 reports an error from LM Studio 0.4.15 on
-    // `{"type":"json_object"}` — the issue gives no status code. Removing it
-    // rather than re-keying it, because `json_object` is the form that was
-    // reported and `json_schema`, the form worth sending, belongs to the
-    // structured-output work and travels as a standard argument anyway.
+    // no longer builds it at all. #65 reported this against LM Studio 0.4.15,
+    // and it is not historical — measured again on 0.4.20 in #372 by curl,
+    // outside both the plugin and the SDK: `{"type":"json_object"}` answers
+    // 400 `'response_format.type' must be 'json_schema' or 'text'`, while
+    // `json_schema` answers 200 and structures correctly. So `json_object` is
+    // not a form to keep, and `json_schema` is not a form to inject raw — it
+    // travels as the SDK's own `responseFormat` argument, which is where the
+    // structured-output work will put it.
     expect(Object.keys(body)).not.toContain('response_format');
   });
 
