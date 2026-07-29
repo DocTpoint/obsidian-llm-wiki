@@ -374,6 +374,13 @@ export class SourceAnalyzer {
           response_format: { type: 'json_object' },
           cacheBreakpoint: staticPrefix.length,
           maxTokensPerCall: retryCap,
+          // Extraction was the one call site that never mentioned the thinking
+          // setting, so whatever the server had been started with decided it
+          // and the setting meant nothing here. Sent in the disable direction
+          // only, matching every other call site: `disableThinking` defaults to
+          // false, so asking for reasoning would fire on every install that
+          // never opened the setting.
+          ...(this.ctx.settings.disableThinking === true ? { enableThinking: false } : {}),
           onFinish: (meta) => { finish.reason = meta.finishReason; finish.usage = meta.usage; },
         });
 

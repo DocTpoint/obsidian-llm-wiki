@@ -65,7 +65,7 @@ describe('OpenAICodexSdkClient', () => {
     const fetchFn = vi.fn(async () => streamingResponse(['hel', 'lo']));
     const onChunk = vi.fn();
     const client = new OpenAICodexSdkClient({ auth, fetch: vi.fn(), streamFetch: fetchFn, sessionId: () => 'session-stream', version: '1.24.1' });
-    await expect(client.createMessageStream({ ...messageParams(), onChunk })).resolves.toBe('hello');
+    await expect(client.createMessageStream({ ...messageParams(), max_tokens: 100, onChunk })).resolves.toBe('hello');
     expect(onChunk.mock.calls).toEqual([['hel'], ['lo']]);
     expect(fetchFn).toHaveBeenCalledOnce();
   });

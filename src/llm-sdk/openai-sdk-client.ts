@@ -124,7 +124,7 @@ export class OpenAISdkClient implements LLMClient {
 
   async createMessage(params: LLMClient['createMessage'] extends (p: infer P) => unknown ? P : never): Promise<string> {
     // Type-safe params destructure (LLMClient.createMessage signature).
-    const { model, max_tokens, system, messages, temperature, repetition_penalty, enableThinking, response_format, onFinish } = params;
+    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, seed, enableThinking, response_format, onFinish } = params;
 
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
@@ -149,6 +149,8 @@ export class OpenAISdkClient implements LLMClient {
         }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
         // Plugin-level sampling (OpenAI's standard param).
         ...(temperature !== undefined ? { temperature } : {}),
+        ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...(seed !== undefined ? { seed } : {}),
         // Top-level repetition_penalty is non-standard for OpenAI; pass via providerOptions.
       });
       reportFinish(onFinish, result.finishReason, result.usage);
@@ -178,6 +180,8 @@ export class OpenAISdkClient implements LLMClient {
             responseFormat: response_format,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
           ...(temperature !== undefined ? { temperature } : {}),
+          ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...(seed !== undefined ? { seed } : {}),
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
@@ -214,11 +218,13 @@ export class OpenAISdkClient implements LLMClient {
 
     if (opts.repetitionPenalty !== undefined) {
       // llama.cpp extension — passed through as-is for compatible providers.
-      openaiOpts.repetitionPenalty = opts.repetitionPenalty;
+      // The wire name, not the camelCase one: the SDK copies these keys through
+      // verbatim, and llama.cpp, vLLM and Ollama all read `repetition_penalty`.
+      openaiOpts.repetition_penalty = opts.repetitionPenalty;
     }
 
     if (opts.responseFormat?.type === 'json_object') {
-      openaiOpts.response_format = { type: 'json_object' };
+      openaiOpts.response_format = opts.responseFormat;
     }
 
     return Object.keys(openaiOpts).length > 0 ? { openai: openaiOpts } : {};
@@ -246,9 +252,11 @@ export class OpenAISdkClient implements LLMClient {
     onChunk: (chunk: string) => void;
     enableThinking?: boolean;
     temperature?: number;
+    top_p?: number;
     repetition_penalty?: number;
+    seed?: number;
   }): Promise<string> {
-    const { model, max_tokens, system, messages, onChunk, temperature, repetition_penalty, enableThinking } = params;
+    const { model, max_tokens, system, messages, onChunk, temperature, top_p, repetition_penalty, seed, enableThinking } = params;
 
     // v1.23.0 P1.5: same URL fallback as createMessage, so streaming
     // (Query Wiki) is consistent with non-streaming (Ingest / Lint).
@@ -271,6 +279,8 @@ export class OpenAISdkClient implements LLMClient {
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
         ...(temperature !== undefined ? { temperature } : {}),
+        ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...(seed !== undefined ? { seed } : {}),
       });
 
       // Accumulate text deltas (sent to onChunk) and reasoning (prepended).
@@ -334,6 +344,8 @@ export class OpenAISdkClient implements LLMClient {
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
           ...(temperature !== undefined ? { temperature } : {}),
+          ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...(seed !== undefined ? { seed } : {}),
         });
 
         let fullText = '';

@@ -148,13 +148,19 @@ describe('OpenAICompatSdkClient', () => {
       // Both dialects are sent: `thinking.type` for DeepSeek/Kimi/GLM, and
       // `chat_template_kwargs` for llama.cpp-style local servers, which ignore
       // the former entirely. Each side ignores the field it does not know.
+      //
+      // Keyed by the provider's own name, because that is the only key the SDK
+      // forwards to the request body. Asserting the argument, as this test does,
+      // cannot tell a key that travels from one that is dropped — see
+      // openai-compat-request-body.test.ts, which reads the body itself.
       expect(call.providerOptions).toEqual({
-        openaiCompatible: {
+        deepseek: {
           thinking: { type: 'disabled' },
           chat_template_kwargs: { enable_thinking: false },
         },
       });
     });
+
 
     it('omits reasoningEffort when enableThinking is undefined', async () => {
       const client = new OpenAICompatSdkClient({
@@ -174,7 +180,7 @@ describe('OpenAICompatSdkClient', () => {
   });
 
   describe('response_format support', () => {
-    it('forwards response_format via providerOptions.openaiCompatible', async () => {
+    it('forwards response_format under the provider key', async () => {
       const client = new OpenAICompatSdkClient({
         apiKey: 'sk-test',
         baseURL: 'https://api.deepseek.com/v1',
@@ -189,7 +195,7 @@ describe('OpenAICompatSdkClient', () => {
 
       const call = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
       expect(call.providerOptions).toEqual({
-        openaiCompatible: { response_format: { type: 'json_object' } },
+        deepseek: { response_format: { type: 'json_object' } },
       });
     });
   });

@@ -100,11 +100,16 @@ export class OpenAICodexSdkClient implements LLMClient {
     this.version = options.version;
     this.quotaMessage = options.quotaMessage ?? DEFAULT_CODEX_QUOTA_MESSAGE;
   }
+  // `seed` and `max_output_tokens` are deliberately absent: the Codex backend
+  // accepts neither, so a setting for them is honoured everywhere else and
+  // silently does nothing here. `top_p` and `temperature` it does accept, and
+  // both are forwarded — a preset is the pair, and sending half of one is the
+  // failure this comment exists to prevent repeating.
   async createMessage(params: Parameters<LLMClient['createMessage']>[0]): Promise<string> {
     const model = this.getModel(params.model, this.streamFetchImpl);
     try {
       let streamError: unknown;
-      const result = streamText({ model, ...(params.system ? { system: params.system } : {}), messages: params.messages.map((message) => ({ role: message.role, content: message.content })), maxOutputTokens: params.max_tokens, ...(params.temperature !== undefined ? { temperature: params.temperature } : {}), ...(params.response_format?.type === 'json_object' ? { output: Output.json() } : {}), providerOptions: this.providerOptions(params.enableThinking), maxRetries: 0, onError: ({ error }) => { streamError = error; } });
+      const result = streamText({ model, ...(params.system ? { system: params.system } : {}), messages: params.messages.map((message) => ({ role: message.role, content: message.content })), maxOutputTokens: params.max_tokens, ...(params.temperature !== undefined ? { temperature: params.temperature } : {}), ...(params.top_p !== undefined ? { topP: params.top_p } : {}), ...(params.response_format?.type === 'json_object' ? { output: Output.json() } : {}), providerOptions: this.providerOptions(params.enableThinking), maxRetries: 0, onError: ({ error }) => { streamError = error; } });
       let text = '';
       for await (const chunk of result.textStream) text += chunk;
       if (streamError !== undefined) throw streamError instanceof Error ? streamError : new Error(typeof streamError === 'string' ? streamError : 'Codex stream failed');
@@ -116,7 +121,7 @@ export class OpenAICodexSdkClient implements LLMClient {
   async createMessageStream(params: Parameters<NonNullable<LLMClient['createMessageStream']>>[0]): Promise<string> {
     const model = this.getModel(params.model, this.streamFetchImpl);
     try {
-      const result = streamText({ model, ...(params.system ? { system: params.system } : {}), messages: params.messages.map((message) => ({ role: message.role, content: message.content })), maxOutputTokens: params.max_tokens, ...(params.temperature !== undefined ? { temperature: params.temperature } : {}), providerOptions: this.providerOptions(params.enableThinking), maxRetries: 0 });
+      const result = streamText({ model, ...(params.system ? { system: params.system } : {}), messages: params.messages.map((message) => ({ role: message.role, content: message.content })), maxOutputTokens: params.max_tokens, ...(params.temperature !== undefined ? { temperature: params.temperature } : {}), ...(params.top_p !== undefined ? { topP: params.top_p } : {}), providerOptions: this.providerOptions(params.enableThinking), maxRetries: 0 });
       let text = '';
       for await (const chunk of result.textStream) {
         text += chunk;

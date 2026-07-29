@@ -105,7 +105,7 @@ export class AnthropicSdkClient implements LLMClient {
   }
 
   async createMessage(params: LLMClient['createMessage'] extends (p: infer P) => unknown ? P : never): Promise<string> {
-    const { model, max_tokens, system, messages, temperature, repetition_penalty, enableThinking, onFinish } = params;
+    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, enableThinking, onFinish } = params;
 
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
@@ -122,6 +122,7 @@ export class AnthropicSdkClient implements LLMClient {
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
         ...(temperature !== undefined ? { temperature } : {}),
+        ...(top_p !== undefined ? { topP: top_p } : {}),
       });
       reportFinish(onFinish, result.finishReason);
       return result.text;
@@ -151,6 +152,7 @@ export class AnthropicSdkClient implements LLMClient {
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
           ...(temperature !== undefined ? { temperature } : {}),
+          ...(top_p !== undefined ? { topP: top_p } : {}),
         });
         reportFinish(onFinish, result.finishReason);
         return result.text;
@@ -194,9 +196,13 @@ export class AnthropicSdkClient implements LLMClient {
     onChunk: (chunk: string) => void;
     enableThinking?: boolean;
     temperature?: number;
+    top_p?: number;
+    // No `seed`. The Messages API has no such parameter, so a run against
+    // Anthropic is not repeatable no matter what the setting says — see the
+    // note on `samplingSeed` in types.ts.
     repetition_penalty?: number;
   }): Promise<string> {
-    const { model, max_tokens, system, messages, onChunk, temperature, repetition_penalty, enableThinking } = params;
+    const { model, max_tokens, system, messages, onChunk, temperature, top_p, repetition_penalty, enableThinking } = params;
 
     // v1.23.0 P1.5: same URL fallback as createMessage, so streaming
     // (Query Wiki) is consistent with non-streaming (Ingest / Lint /
@@ -216,6 +222,7 @@ export class AnthropicSdkClient implements LLMClient {
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
         ...(temperature !== undefined ? { temperature } : {}),
+        ...(top_p !== undefined ? { topP: top_p } : {}),
       });
 
       let fullText = '';
@@ -270,6 +277,7 @@ export class AnthropicSdkClient implements LLMClient {
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
           ...(temperature !== undefined ? { temperature } : {}),
+          ...(top_p !== undefined ? { topP: top_p } : {}),
         });
 
         let fullText = '';

@@ -242,7 +242,7 @@ describe('OpenAISdkClient', () => {
 
       const call = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
       expect(call.providerOptions).toEqual({
-        openai: { repetitionPenalty: 1.1 },
+        openai: { repetition_penalty: 1.1 },
       });
     });
 

@@ -317,6 +317,27 @@ export interface LLMWikiSettings {
   // provider's default. Low values (e.g. 0.15) improve fidelity for extraction
   // and verbatim quotes; higher values (e.g. 0.7) make chat answers more fluid.
   extractionTemperature?: number;
+
+  /**
+   * Nucleus sampling for extraction. Its partner, not an independent knob: a
+   * provider preset sets the two together, so overriding only the temperature
+   * leaves a run on half of one preset and half of another.
+   */
+  extractionTopP?: number;
+
+  /**
+   * Fixed sampling seed. Unset leaves the provider free to pick one per
+   * request, so ingesting the same source twice gives two different wikis —
+   * normal behaviour, but it also means no comparison between two versions of
+   * the extraction loop can separate a change from the sampler.
+   *
+   * What it buys depends on the provider. Local servers honour it strictly:
+   * two runs of one source, hours apart, came back byte-identical. OpenAI
+   * documents it as best effort and pairs it with `system_fingerprint`, which
+   * changes when their serving configuration does. Anthropic has no such
+   * parameter at all, so setting this changes nothing there.
+   */
+  samplingSeed?: number;
   chatTemperature?: number;
 
   // Issue #128 follow-up: repetition penalty. Leave undefined to omit the field.
@@ -574,6 +595,19 @@ export interface LLMClient {
     maxTokensPerCall?: number;  // Issue #75: cap for truncation retry
     enableThinking?: boolean;   // ROADMAP P3 #12: allow thinking for thinking-capable models
     temperature?: number;       // Issue #128: per-request sampling temperature
+    /**
+     * Nucleus sampling. Travels with `temperature` because a preset is a pair:
+     * sending one and leaving the other to the server compares two halves of
+     * two different presets, which is not a comparison of anything.
+     */
+    top_p?: number;
+    /**
+     * Fixed sampling seed. Unset — the default — leaves the provider free to
+     * pick a fresh one per request, which is normal generation behaviour but
+     * means no comparison between two versions of a prompt can tell a change
+     * from the sampler.
+     */
+    seed?: number;
     repetition_penalty?: number; // Issue #128 follow-up: llama.cpp extension
     chat_template_kwargs?: Record<string, unknown>; // Issue #99: template-based reasoning disable
     // v1.25.0 PR3 follow-up #8 (Bug D, e2e 2026-07-17): cancellation
@@ -600,6 +634,8 @@ export interface LLMClient {
     onChunk: (chunk: string) => void;
     enableThinking?: boolean;
     temperature?: number;
+    top_p?: number;
+    seed?: number;
     repetition_penalty?: number;
     /** Issue: streamed answers were truncated silently — surface finish_reason. */
     onFinish?: (meta: LLMFinishMeta) => void;

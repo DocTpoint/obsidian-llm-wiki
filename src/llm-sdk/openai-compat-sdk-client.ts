@@ -139,7 +139,7 @@ export class OpenAICompatSdkClient implements LLMClient {
   }
 
   async createMessage(params: LLMClient['createMessage'] extends (p: infer P) => unknown ? P : never): Promise<string> {
-    const { model, max_tokens, system, messages, temperature, repetition_penalty, enableThinking, response_format, onFinish } = params;
+    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, seed, enableThinking, response_format, onFinish } = params;
 
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
@@ -156,6 +156,8 @@ export class OpenAICompatSdkClient implements LLMClient {
           responseFormat: response_format,
         }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
         ...(temperature !== undefined ? { temperature } : {}),
+        ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...(seed !== undefined ? { seed } : {}),
       });
       reportFinish(onFinish, result.finishReason, result.usage);
       return result.text;
@@ -184,6 +186,8 @@ export class OpenAICompatSdkClient implements LLMClient {
             responseFormat: response_format,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
           ...(temperature !== undefined ? { temperature } : {}),
+          ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...(seed !== undefined ? { seed } : {}),
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
@@ -216,6 +220,8 @@ export class OpenAICompatSdkClient implements LLMClient {
             responseFormat: response_format,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
           ...(temperature !== undefined ? { temperature } : {}),
+          ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...(seed !== undefined ? { seed } : {}),
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
@@ -267,15 +273,29 @@ export class OpenAICompatSdkClient implements LLMClient {
       openaiOpts.chat_template_kwargs = { enable_thinking: false };
     }
 
+
     if (opts.repetitionPenalty !== undefined) {
-      openaiOpts.repetitionPenalty = opts.repetitionPenalty;
+      // The wire name, not the camelCase one: the SDK copies these keys through
+      // verbatim, and llama.cpp, vLLM and Ollama all read `repetition_penalty`.
+      openaiOpts.repetition_penalty = opts.repetitionPenalty;
     }
 
     if (opts.responseFormat?.type === 'json_object') {
-      openaiOpts.response_format = { type: 'json_object' };
+      openaiOpts.response_format = opts.responseFormat;
     }
 
-    return Object.keys(openaiOpts).length > 0 ? { openaiCompatible: openaiOpts } : {};
+    if (Object.keys(openaiOpts).length === 0) return {};
+
+    // The key has to be the provider's own name. `createOpenAICompatible` is
+    // constructed with `name: this.provider`, and the SDK forwards unknown
+    // fields to the request body only from `providerOptions[name]` (and its
+    // camelCase form). Under any other key they are dropped without a word —
+    // which is what a fixed `openaiCompatible` key did to `response_format`,
+    // `chat_template_kwargs` and `thinking` for every provider on this path.
+    const camelCase = this.provider.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
+    return camelCase === this.provider
+      ? { [this.provider]: openaiOpts }
+      : { [this.provider]: openaiOpts, [camelCase]: openaiOpts };
   }
 
   async createMessageStream(params: {
@@ -286,10 +306,12 @@ export class OpenAICompatSdkClient implements LLMClient {
     onChunk: (chunk: string) => void;
     enableThinking?: boolean;
     temperature?: number;
+    top_p?: number;
     repetition_penalty?: number;
+    seed?: number;
     onFinish?: (meta: { finishReason: LLMFinishReason }) => void;
   }): Promise<string> {
-    const { model, max_tokens, system, messages, onChunk, temperature, repetition_penalty, enableThinking, onFinish } = params;
+    const { model, max_tokens, system, messages, onChunk, temperature, top_p, repetition_penalty, seed, enableThinking, onFinish } = params;
 
     // v1.23.0 P1-7 follow-up: stream path uses streamWithFallback
     // (real streaming via window.fetch with CORS fallback to
@@ -323,6 +345,8 @@ export class OpenAICompatSdkClient implements LLMClient {
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
         ...(temperature !== undefined ? { temperature } : {}),
+        ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...(seed !== undefined ? { seed } : {}),
       });
 
       let fullText = '';
@@ -398,6 +422,8 @@ export class OpenAICompatSdkClient implements LLMClient {
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
           ...(temperature !== undefined ? { temperature } : {}),
+          ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...(seed !== undefined ? { seed } : {}),
         });
 
         let fullText = '';
@@ -437,6 +463,8 @@ export class OpenAICompatSdkClient implements LLMClient {
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
           ...(temperature !== undefined ? { temperature } : {}),
+          ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...(seed !== undefined ? { seed } : {}),
         });
         let fullText = '';
         for await (const chunk of result.textStream) {
