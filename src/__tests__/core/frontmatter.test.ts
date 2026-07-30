@@ -431,6 +431,83 @@ describe('mergeFrontmatter', () => {
     expect(result.frontmatter).toContain('[[sources/new]]');
   });
 
+  // Issue #356 follow-up (v1.25.10 PATCH): the array-only helpers
+  // (replaceOrInsertYamlListField / replaceFrontmatterArrayField) call
+  // extractPassthroughLines and pass the result into serializeFrontmatter so
+  // re-touching a page preserves user-authored top-level fields. The full-page
+  // rewrite path (mergePage → mergeFrontmatter) was missed in the v1.25.10
+  // sweep; borthwick reported 4 entities losing `redirect_to:` after
+  // re-ingest of "The Nature of Technology" on 2026-07-29. These tests pin
+  // the post-fix behaviour for all three custom fields borthwick's repro
+  // exercised (redirect_to / parent_org / source_url) and a fourth common
+  // shape (single-line quoted value).
+  it('preserves a single-line redirect_to through full-page rewrite (Issue #356 follow-up)', () => {
+    const input = `---
+type: entity
+created: 2026-01-01
+updated: 2026-01-01
+reviewed: true
+redirect_to: "[[external/DeepSeek]]"
+sources: ["[[sources/the-great-reorg]]"]
+---
+
+Body
+`;
+    const result = mergeFrontmatter(input, 'sources/the-great-reorg');
+    expect(result.frontmatter).toContain('redirect_to: "[[external/DeepSeek]]"');
+    expect(result.frontmatter).toContain('reviewed: true');
+    expect(result.frontmatter).toContain('[[sources/the-great-reorg]]');
+  });
+
+  it('preserves a single-line parent_org through full-page rewrite (Issue #356 follow-up)', () => {
+    const input = `---
+type: product
+created: 2026-01-01
+updated: 2026-01-01
+parent_org: anthropic
+sources: ["[[sources/the-great-reorg]]"]
+---
+
+Body
+`;
+    const result = mergeFrontmatter(input, 'sources/the-great-reorg');
+    expect(result.frontmatter).toContain('parent_org: anthropic');
+  });
+
+  it('preserves a single-line source_url through full-page rewrite (Issue #356 follow-up)', () => {
+    const input = `---
+type: organization
+created: 2026-01-01
+updated: 2026-01-01
+source_url: "https://www.anthropic.com/company"
+sources: ["[[sources/the-great-reorg]]"]
+---
+
+Body
+`;
+    const result = mergeFrontmatter(input, 'sources/the-great-reorg');
+    expect(result.frontmatter).toContain('source_url: "https://www.anthropic.com/company"');
+  });
+
+  it('preserves multiple custom fields simultaneously (Issue #356 follow-up)', () => {
+    const input = `---
+type: entity
+created: 2026-01-01
+updated: 2026-01-01
+redirect_to: "[[p- John Fowles]]"
+external_id: "nyt-bestseller-1975"
+notion_url: "https://notion.so/abc123"
+sources: ["[[sources/the-aristos]]"]
+---
+
+Body
+`;
+    const result = mergeFrontmatter(input, 'sources/the-aristos');
+    expect(result.frontmatter).toContain('redirect_to: "[[p- John Fowles]]"');
+    expect(result.frontmatter).toContain('external_id: "nyt-bestseller-1975"');
+    expect(result.frontmatter).toContain('notion_url: "https://notion.so/abc123"');
+  });
+
   it('deduplicates repeated aliases (parity with enforceFrontmatterConstraints)', () => {
     const input = '---\ntype: concept\ncreated: 2026-01-01\nupdated: 2026-01-01\naliases:\n  - "UPF"\n  - "Ultra-processed food"\n  - "UPF"\n  - "Ultra-processed food"\n---\n\nBody';
     const result = mergeFrontmatter(input, 'sources/new');
