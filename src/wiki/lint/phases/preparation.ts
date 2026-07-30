@@ -33,7 +33,7 @@ export async function runPreparationPhase(
   ctx.stageNotice?.setMessage(
     getText(ctx.settings.language, 'lintReadingPages').replace('{count}', String(wikiFiles.length))
   );
-  ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStatusReading'));
+  ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStagePrep'));
   console.debug(`lintWiki: reading ${wikiFiles.length} wiki pages in parallel`);
 
   const BATCH_READ = LINT_PREP_BATCH_READ;

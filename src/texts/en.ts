@@ -512,6 +512,25 @@ export const EN_TEXTS = {
     lintStatusDuplicates: 'Linting… (click to cancel)',
     lintStatusScanningLinks: 'Linting… (click to cancel)',
     lintStatusAnalyzing: 'Linting… (click to cancel)',
+    // v1.25.11 PATCH #169 — fine-grained stage hints for the status bar.
+    // These labels are ADD-only emission sandwiched between the page name
+    // and the always-visible base label (e.g. "My Note · Generating summary ·
+    // Ingesting… (click to cancel)"). They never replace the base label, so
+    // the cancel affordance is preserved through every long-running stage.
+    ingestStageAnalyze: 'Analyzing source',
+    ingestStageSummary: 'Generating summary',
+    ingestStageEntity: 'Creating entity',
+    ingestStageConcept: 'Creating concept',
+    ingestStageRetry: 'Retrying failed page',
+    ingestStageSave: 'Saving pages',
+    ingestStageIndex: 'Generating index',
+    pdfStageReading: 'Reading PDF',
+    pdfStageConverting: 'Converting PDF',
+    pdfStageSidecar: 'Writing sidecar',
+    lintStagePrep: 'Reading pages',
+    lintStageProgrammatic: 'Scanning links',
+    lintStageDedup: 'Detecting duplicates',
+    lintStageContradiction: 'Detecting contradictions',
     ingestionCancelling: 'Cancelling — will stop after current batch completes',
     ingestionCancelled: 'Ingestion cancelled',
     crossTypeCollisionNotice: '{count} items merged as cross-type aliases (entity ↔ concept duplicates prevented)',

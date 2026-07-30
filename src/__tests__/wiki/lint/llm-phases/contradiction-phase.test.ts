@@ -137,6 +137,9 @@ describe('runContradictionPhase', () => {
       getOpenContradictions: vi.fn().mockResolvedValue([]),
       resolveContradiction: vi.fn(),
       updateContradictionStatus: vi.fn(),
+      // v1.25.11 PATCH #169: contradiction phase now mirrors the stage
+      // label to the status bar via ctx.wikiEngine.updateStatusBar.
+      updateStatusBar: vi.fn(),
     } as unknown as LintPhaseContext['wikiEngine'];
     const ctx = makeLintPhaseContext(wikiEngine);
     const result: ContradictionPhaseResult = await runContradictionPhase(ctx);
@@ -159,6 +162,8 @@ describe('runContradictionPhase', () => {
       getOpenContradictions: getOpen,
       resolveContradiction: resolve,
       updateContradictionStatus: updateStatus,
+      // v1.25.11 PATCH #169: status-bar mirror (see other test stubs).
+      updateStatusBar: vi.fn(),
     } as unknown as LintPhaseContext['wikiEngine'];
     const ctx = makeLintPhaseContext(wikiEngine);
     const result = await runContradictionPhase(ctx);
@@ -186,6 +191,8 @@ describe('runContradictionPhase', () => {
       getOpenContradictions: getOpen,
       resolveContradiction: resolve,
       updateContradictionStatus: updateStatus,
+      // v1.25.11 PATCH #169: status-bar mirror (see other test stubs).
+      updateStatusBar: vi.fn(),
     } as unknown as LintPhaseContext['wikiEngine'];
     const ctx = makeLintPhaseContext(wikiEngine);
     const result = await runContradictionPhase(ctx);
@@ -218,6 +225,8 @@ describe('runContradictionPhase', () => {
       getOpenContradictions: getOpen,
       resolveContradiction: vi.fn(),
       updateContradictionStatus: vi.fn(),
+      // v1.25.11 PATCH #169: status-bar mirror (see other test stubs).
+      updateStatusBar: vi.fn(),
     } as unknown as LintPhaseContext['wikiEngine'];
     const ctx = makeLintPhaseContext(wikiEngine);
     const result = await runContradictionPhase(ctx);

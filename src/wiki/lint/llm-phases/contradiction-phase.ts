@@ -14,6 +14,7 @@
 // `runContradictionPhase` is the integration entrypoint.
 
 import { TEXTS } from '../../../texts';
+import { getText } from '../../../core/i18n';
 import type { LintPhaseContext } from '../types';
 
 export interface ContradictionItem {
@@ -92,6 +93,11 @@ export function formatContradictionReport(
 export async function runContradictionPhase(
   ctx: LintPhaseContext,
 ): Promise<ContradictionPhaseResult> {
+  // v1.25.11 PATCH #169: status bar carries the fine-grained stage label
+  // for the contradiction phase. Previously the status bar stayed on
+  // "Linting… (click to cancel)" throughout; the new key surfaces
+  // "Detecting contradictions" in the bottom-right.
+  ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStageContradiction'));
   const openContradictions: ContradictionItem[] = await ctx.wikiEngine.getOpenContradictions();
 
   // Step 1: auto-resolve 'review_ok' items
