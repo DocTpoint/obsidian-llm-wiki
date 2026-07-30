@@ -44,7 +44,7 @@ import { resolveModelForTask } from '../core/model-resolver';
 import { calculateBatchLimits, adjustBatchSizeForResponse, getCustomTypeCaps } from '../core/batch-limits';
 import { detectConvergence, checkCumulativeLimits, checkEmptyBatch, formatConvergenceStatus } from '../core/convergence-detector';
 import { createEmptyAccumulation, mergeBatchResults, buildSourceAnalysis, calculateBatchStats } from '../core/batch-merger';
-import { decideSourceLemma, parseTagList } from '../core/source-lemma';
+import { decideSourceLemma } from '../core/source-lemma';
 
 // ── Batch response normalization ─────────────────────────────────
 // LLMs often return irregular JSON: omitted empty arrays, non-array truthy
@@ -665,10 +665,6 @@ export class SourceAnalyzer {
       sourceAliases: matchAliases,
       entities: analysis.entities,
       concepts: analysis.concepts,
-      domainTags: [
-        ...parseTagList(this.ctx.settings.customEntityTags),
-        ...parseTagList(this.ctx.settings.customConceptTags),
-      ],
     });
 
     if (decision.action === 'skip') {

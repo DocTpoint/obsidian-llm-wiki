@@ -8,11 +8,8 @@
 // This module answers the *whether* deterministically: no IO, no LLM, no
 // side effects. The caller owns the *what* (type choice, body). Every helper
 // is a pure function so the decision can be unit-tested without a vault.
-//
-// The same matching logic answers a second question ("is this source the one
-// the page is named after?"), so it is exported rather than inlined.
 
-import { computeSlug } from './slug';
+import { slugKeys } from './slug';
 
 /** An extracted candidate as far as lemma matching is concerned. */
 export interface NamedCandidate {
@@ -22,24 +19,8 @@ export interface NamedCandidate {
 
 /** What the caller should do about the source note's own lemma. */
 export type LemmaDecision =
-  | { action: 'skip'; reason: 'no-title' | 'already-extracted' | 'domain-container' }
+  | { action: 'skip'; reason: 'no-title' | 'already-extracted' }
   | { action: 'add'; name: string };
-
-/**
- * Slug keys a name claims: the name itself plus any aliases.
- *
- * `computeSlug` is used without `preserveCase` so keys stay comparable
- * regardless of the user's slugCase setting — the same rule the conflict
- * resolver follows.
- */
-export function slugKeys(name: string, aliases: readonly string[] = []): Set<string> {
-  const keys = new Set<string>();
-  if (name && name.trim().length > 0) keys.add(computeSlug(name));
-  for (const alias of aliases) {
-    if (typeof alias === 'string' && alias.trim().length > 0) keys.add(computeSlug(alias));
-  }
-  return keys;
-}
 
 /**
  * True when any extracted candidate already claims one of `keys` — by its own
@@ -48,6 +29,10 @@ export function slugKeys(name: string, aliases: readonly string[] = []): Set<str
  * This is the S45 "Papain" guard: the lemma is frequently extracted on its
  * own, and re-adding it would create a duplicate candidate for a page that is
  * already on its way.
+ *
+ * Note: the canonical `slugKeys` from `./slug` already filters degenerate
+ * `untitled-<Date.now()>` outputs (`core/slug.ts:92`), so punctuation-only
+ * names cannot produce a coincidental match via millisecond collisions.
  */
 export function isLemmaExtracted(
   keys: ReadonlySet<string>,
@@ -62,38 +47,19 @@ export function isLemmaExtracted(
 }
 
 /**
- * True when the note is a domain container rather than a topic — a note named
- * after a field of study, whose density of terms is the point and whose own
- * name is not a lemma the wiki wants ("Neurology", "Pharmacology").
- *
- * Deliberately driven by the user's *configured* tag vocabulary rather than a
- * hand-written word list: the settings already enumerate the domains this
- * vault recognizes, so the rule carries no separate list to drift out of sync.
- * A vault with no domain tags configured simply never skips for this reason.
- */
-export function isDomainContainer(
-  keys: ReadonlySet<string>,
-  domainTags: readonly string[],
-): boolean {
-  for (const tag of domainTags) {
-    if (typeof tag !== 'string' || tag.trim().length === 0) continue;
-    if (keys.has(computeSlug(tag))) return true;
-  }
-  return false;
-}
-
-/** Split a comma-separated settings tag list into trimmed, non-empty entries. */
-export function parseTagList(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return raw.split(',').map(t => t.trim()).filter(t => t.length > 0);
-}
-
-/**
  * Decide whether the source note's own lemma must be added as a candidate.
  *
  * Conservative by construction: every branch that is not clearly "missing and
  * wanted" returns `skip`. A node that is not created costs nothing; a wrongly
  * created one is permanent.
+ *
+ * Note: a previous `domain-container` skip reason was removed in PR #357
+ * review. That rule read `customEntityTags`/`customConceptTags` as a domain
+ * list, conflating two unrelated settings (entity/concept subtype vocabulary,
+ * not "field of study" names) and silently firing for any user on the
+ * built-in vocabulary whose notes happened to share a slug with a subtype
+ * like "method" or "place". Wait for #328 Phase 2 to land a real
+ * folder/domain registry before reintroducing this guard.
  */
 export function decideSourceLemma(params: {
   /** Title the analysis recorded for the source (falls back to the filename). */
@@ -102,18 +68,12 @@ export function decideSourceLemma(params: {
   sourceAliases?: readonly string[];
   entities: readonly NamedCandidate[];
   concepts: readonly NamedCandidate[];
-  /** Configured domain tag vocabulary, already split. */
-  domainTags?: readonly string[];
 }): LemmaDecision {
   const title = (params.sourceTitle ?? '').trim();
   if (title.length === 0) return { action: 'skip', reason: 'no-title' };
 
   const keys = slugKeys(title, params.sourceAliases ?? []);
-  if (keys.size === 0) return { action: 'skip', reason: 'no-title' };
 
-  if (isDomainContainer(keys, params.domainTags ?? [])) {
-    return { action: 'skip', reason: 'domain-container' };
-  }
   if (isLemmaExtracted(keys, params.entities) || isLemmaExtracted(keys, params.concepts)) {
     return { action: 'skip', reason: 'already-extracted' };
   }

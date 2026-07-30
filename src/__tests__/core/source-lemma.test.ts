@@ -3,26 +3,29 @@
 // vault observation, noted next to the assertion.
 import { describe, it, expect } from 'vitest';
 import {
-  slugKeys,
   isLemmaExtracted,
-  isDomainContainer,
-  parseTagList,
   decideSourceLemma,
 } from '../../core/source-lemma';
+import { slugKeys } from '../../core/slug';
 
-describe('slugKeys', () => {
-  it('collects title and aliases, case-insensitively comparable', () => {
-    const keys = slugKeys('Silent Inflammation', ['Stille Entzündung']);
-    expect(keys.has('silent-inflammation')).toBe(true);
-    expect(keys.has('stille-entzündung')).toBe(true);
+describe('slugKeys (imported from core/slug — Issue #366 regression guard)', () => {
+  // Regression: PR #357 originally re-implemented slugKeys locally without
+  // threading the `turkishFold` opt-in, which would have re-introduced the
+  // duplicate-page bug Issue #366 fixed. source-lemma.ts must use the canonical
+  // version. Compare keys between Turkish-folded inputs to confirm they share
+  // at least one common slug.
+  it('folds Turkish İ→i so İnsülin and insülin share a comparison key', () => {
+    const a = slugKeys('İnsülin', [], { turkishFold: true });
+    const b = slugKeys('insülin', [], { turkishFold: true });
+    const intersection = [...a].filter(k => b.has(k));
+    expect(intersection.length).toBeGreaterThan(0);
   });
 
-  it('ignores empty and whitespace-only aliases', () => {
-    expect(slugKeys('Klotho', ['', '   ']).size).toBe(1);
-  });
-
-  it('yields no keys for an empty name', () => {
-    expect(slugKeys('', []).size).toBe(0);
+  it('without Turkish fold, the same inputs yield distinct keys', () => {
+    const a = slugKeys('İnsülin');
+    const b = slugKeys('insülin');
+    expect(a.has('insülin')).toBe(false);
+    expect(b.has('insülin')).toBe(true);
   });
 });
 
@@ -52,47 +55,13 @@ describe('isLemmaExtracted', () => {
   });
 });
 
-describe('isDomainContainer', () => {
-  const tags = parseTagList('Erkrankung, Neurologie, Kardiologie, Immunologie, Biochemie');
-
-  it('recognises a note named after a configured domain', () => {
-    expect(isDomainContainer(slugKeys('Neurologie'), tags)).toBe(true);
-  });
-
-  it('recognises it through a curated alias', () => {
-    // `Notizen/Biochemie-Signalwege.md` carries `Biochemie` as an alias.
-    expect(isDomainContainer(slugKeys('Biochemie-Signalwege', ['Biochemie']), tags)).toBe(true);
-  });
-
-  it('leaves a topic note alone', () => {
-    expect(isDomainContainer(slugKeys('D-Manose'), tags)).toBe(false);
-  });
-
-  it('never fires when no domain vocabulary is configured', () => {
-    expect(isDomainContainer(slugKeys('Neurologie'), [])).toBe(false);
-  });
-});
-
-describe('parseTagList', () => {
-  it('splits, trims and drops empties', () => {
-    expect(parseTagList(' A ,, B , ')).toEqual(['A', 'B']);
-  });
-
-  it('treats undefined as no vocabulary', () => {
-    expect(parseTagList(undefined)).toEqual([]);
-  });
-});
-
 describe('decideSourceLemma', () => {
-  const tags = parseTagList('Neurologie, Kardiologie, Biochemie');
-
   it('adds the lemma when the extraction missed it', () => {
     // The observed b1 case: alpha-/beta-Klotho extracted, Klotho itself not.
     expect(decideSourceLemma({
       sourceTitle: 'Klotho',
       entities: [{ name: 'alpha-Klotho' }, { name: 'beta-Klotho' }],
       concepts: [{ name: 'Phosphathaushalt' }],
-      domainTags: tags,
     })).toEqual({ action: 'add', name: 'Klotho' });
   });
 
@@ -101,7 +70,6 @@ describe('decideSourceLemma', () => {
       sourceTitle: 'Papain',
       entities: [{ name: 'Papain' }],
       concepts: [],
-      domainTags: tags,
     })).toEqual({ action: 'skip', reason: 'already-extracted' });
   });
 
@@ -110,28 +78,7 @@ describe('decideSourceLemma', () => {
       sourceTitle: 'Silent Inflammation',
       entities: [],
       concepts: [{ name: 'Silent-Inflammation' }],
-      domainTags: tags,
     })).toEqual({ action: 'skip', reason: 'already-extracted' });
-  });
-
-  it('skips a domain container even when its lemma is missing', () => {
-    expect(decideSourceLemma({
-      sourceTitle: 'Neurologie',
-      sourceAliases: ['Neurowissenschaften'],
-      entities: [{ name: 'Hippocampus' }],
-      concepts: [],
-      domainTags: tags,
-    })).toEqual({ action: 'skip', reason: 'domain-container' });
-  });
-
-  it('prefers the container reason over the extraction reason', () => {
-    // Both would fire; the reported reason must be stable for the log.
-    expect(decideSourceLemma({
-      sourceTitle: 'Neurologie',
-      entities: [{ name: 'Neurologie' }],
-      concepts: [],
-      domainTags: tags,
-    })).toEqual({ action: 'skip', reason: 'domain-container' });
   });
 
   it('skips when no title is available', () => {
@@ -139,7 +86,6 @@ describe('decideSourceLemma', () => {
       sourceTitle: '   ',
       entities: [],
       concepts: [],
-      domainTags: tags,
     })).toEqual({ action: 'skip', reason: 'no-title' });
   });
 
@@ -151,11 +97,10 @@ describe('decideSourceLemma', () => {
       sourceAliases: ['LAMA/LABA'],
       entities: [{ name: 'LAMALABA' }],
       concepts: [],
-      domainTags: tags,
     })).toEqual({ action: 'skip', reason: 'already-extracted' });
   });
 
-  it('adds nothing for a vault with no domain vocabulary but an extracted lemma', () => {
+  it('adds nothing for a vault with an extracted lemma and no aliases', () => {
     expect(decideSourceLemma({
       sourceTitle: 'Rutosid',
       entities: [{ name: 'Rutosid' }],
