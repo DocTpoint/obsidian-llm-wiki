@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Freshly generated entity/concept pages silently lost the `sources:` provenance field (#365).** The `enforceFrontmatterConstraints` call at `create-page.ts:293` runs before `createOrUpdateFile`; it rewrites the frontmatter from a fixed allowlist (`type`, `created`, `updated`, `tags`, `aliases`, `reviewed`) and strips every other field — including `sources:`. So the generated page landed in the vault with `type: entity`, `created: …`, `tags: …` and *zero* `sources:` entries, even though the LLM had correctly included them in its output. The root cause was the gap between `enforceFrontmatterConstraints` (allowlist-based, strips unknowns) and `mergeFrontmatter` (union-based, merges `sources`); the two helpers were never designed to be chained. Fix: splice a `mergeFrontmatter(content, 'sources/<slug>')` call AFTER the constraints pass but BEFORE the vault write, so the `sources:` entry re-punctures the allowlist it was just stripped from — byte-shape identical to the `merge-page.ts:93` path. A structural frontmatter-fence guard (`expect(…).toBe(2)`) prevents a double-`---` regression class (wrapping a pre-delimited `serializeFrontmatter` output in another pair of `---` fences).
+
+- **Relative cross-file links in README files break in Obsidian's community plugin browser (#375).** When a `](docs/README_CN.md)` markdown anchor resolves correctly on GitHub, the marketplace render strips relative paths, so users lose navigation between locales and to the companion PDF-OCR / MODEL guides. Rewrote every cross-file URL in all 10 README files (EN + 9 locales) to the absolute form `https://github.com/green-dalii/obsidian-llm-wiki/blob/main/…`. (Image refs `![…](…)` are exempted — Obsidian renders them correctly inline.) A new `src/__tests__/root/readme-links.test.ts` (12 cases) pins the contract: 10 files × no relative cross-file link + 1 switcher-count parity + 1 canonical-prefix check.
+
+### Added
+
+- **Fine-grained pipeline stage hints in the bottom-right status bar (#169).** The v3 plan moved fine-grained progress (e.g. "Generating summary", "Detecting duplicates", "Reading PDF") from Notice popups to the status bar. The always-visible cancel base label (e.g. "Ingesting… (click to cancel)") stays put — stage labels are ADD-only emission sandwiched between the page name and the base label. Coverage: 7 ingest stages (analyze / summary / entity / concept / retry / save / index), 3 PDF stages (reading / converting / sidecar), 4 lint SCAN stages (prep / programmatic / dedup / contradiction). Lint fix-all is unchanged (already dual-channel via `makeMirroredNotice`). 14 new i18n keys across all 10 locales (EN + 9 i18n). Tests: 2713 → 2739 (+26: 7 new Phase 4 + 12 Phase 2 readme-links + 5 Phase 1 sources-stamp + new frontmatter-fence structural guard after simplify).
+
+### Internal
+
+- `src/core/ingest-stages.ts` — new module holding `STAGE_KEYS` (canonical ordered list of all 14 stage key names, `as const` tuple) and the derived `StageKey` union type. Production callers resolve stage labels through the standard `getText()` access pattern.
+- `buildIngestStatusBarText` gained an optional 4th `stage` parameter sandwiched between filename and base label. Absent / empty / whitespace = omitted (backward-compatible).
+- `mergeFrontmatter` splice in `create-page.ts` no longer double-wraps the frontmatter fences (regression from initial Phase 1 implementation).
+
 ## [1.25.10] - 2026-07-29
 
 ### Fixed

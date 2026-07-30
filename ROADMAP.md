@@ -61,7 +61,22 @@
 
 **Out of this PATCH:** #372 (eucher CLI) — scope split needed; CLI direction accepted, but per-comment concerns from DocTpoint require responder turnaround (see separate analysis in PR review).
 
-**Issue #356 follow-up (post-publish):** `mergeFrontmatter` was missed in the v1.25.10 sweep. The array-mutation helpers (`replaceOrInsertYamlListField`, `replaceFrontmatterArrayField`) were taught to thread `extractPassthroughLines` into `serializeFrontmatter`, but the full-page rewrite path (`mergePage` → `mergeFrontmatter`) was not. @borthwick's 2026-07-29 report on 4 entities losing `redirect_to:` after re-ingest of "The Nature of Technology" was the diagnostic. **Fix shipped as PR #377** (open, MERGEABLE) — single-line change in `mergeFrontmatter` + 4 regression tests in `frontmatter.test.ts`. +4 tests (2713 → 2717). Plan to merge into the same v1.25.10 PATCH follow-ups milestone (or v1.25.11 PATCH if #375/#365/#168/#169 ETA scope grows past the natural seam).
+**Issue #356 follow-up (post-publish — MERGED 2026-07-30):** `mergeFrontmatter` passthrough fix shipped as PR #377 (now on `main @ b8ae391`). +4 tests (2713 → 2717 → 2718 then 2731 after v1.25.10 batch closes). No longer needs separate v1.25.11 PATCH slot.
+
+**v1.25.11 PATCH scope (re-locked 2026-07-30, branch `fix/v1.25.11-patch-follow-ups` from `main @ b8ae391`):**
+
+After Explore agent verified Phase locations and user review of the full plan, scope trimmed. **3 phases shipped, 1 deferred to next release**:
+
+| Phase | Item | Status | Commit |
+|---|---|---|---|
+| **Phase 1** | #365 sources: stamp | ✅ DONE | `9289bdd` — `mergeFrontmatter(content, 'sources/<slug>')` via IIFE splice at `create-page.ts:298`. Frontmatter-fence guard added after simplify review. |
+| **Phase 2** | #375 README absolute URLs | ✅ DONE | `7588034` — 10 READMEs rewritten + `readme-links.test.ts` (12 cases) |
+| **Phase 3** | #169 fine-grained stage labels | ✅ DONE | `98f180c` + simplify fix `c191878` — 14 i18n keys × 10 locales; `ingest-stages.ts` + `status-bar.ts` stage field + `wiki-engine.ts` PDF closure + 4 lint phase `updateStatusBar` updates |
+| **(Phase 4)** | #168 granularity | ⏸️ DEFERRED to next release — design discussion needed (a/b constants, log base, interaction with existing dropdowns) |
+
+Total: 4 commits on `fix/v1.25.11-patch-follow-ups`, 2739 tests (+26 net since v1.25.10 PATCH).
+
+PRs #357 (DocTpoint) + #372 (eucher) still HOLD; do NOT merge into v1.25.11.
 
 ## Next: v1.26.0 MINOR (after v1.25.10 PATCH follow-ups ship)
 
