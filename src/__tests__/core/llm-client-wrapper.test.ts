@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { wrapWithAdvancedSettings, type WrapperSettings } from './llm-client-wrapper';
-import type { LLMClient } from './types';
+import { wrapWithAdvancedSettings, type WrapperSettings } from '../../llm-client-wrapper';
+import type { LLMClient } from '../../types';
 
 // The wrapper is where a setting becomes a request field, and every field it
 // forwards is one the caller could also have set. Two rules hold for all of
