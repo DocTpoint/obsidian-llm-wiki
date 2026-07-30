@@ -99,4 +99,20 @@ describe('SourceAnalyzer — patch 16 lemma guarantee wiring', () => {
     expect((result?.concepts ?? []).map(c => c.name)).toContain('Klotho');
     expect((result?.entities ?? []).map(e => e.name)).not.toContain('Klotho');
   });
+
+  it('respects the custom granularity cap so the added lemma does not exceed it', async () => {
+    // P0 #3 regression: extraction-phase cap slice at :602-607 only trims
+    // the LLM-extracted lists. The push in ensureSourceLemma used to bypass
+    // it, so a user who set customEntityLimit: 1 (with extractionGranularity
+    // 'custom') would get 2 entities. This test pins the post-fix behaviour:
+    // when the entities list is already at the cap, the lemma push is skipped.
+    const result = await run(analyzerWith(
+      [EXTRACTION_WITHOUT_LEMMA, EMPTY_BATCH, TYPE_ENTITY],
+      { extractionGranularity: 'custom', customEntityLimit: 2 },
+    ));
+    // EXTRACTION_WITHOUT_LEMMA already produces 2 entities (alpha-Klotho,
+    // FGF23); the cap of 2 is hit, so the pushed Klotho is skipped.
+    expect((result?.entities ?? []).map(e => e.name)).not.toContain('Klotho');
+    expect((result?.entities ?? []).length).toBe(2);
+  });
 });
