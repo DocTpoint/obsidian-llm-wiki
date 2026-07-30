@@ -46,12 +46,12 @@ export function buildIngestStatusBarText(
   batch?: BatchProgress | null,
   stage?: string
 ): string {
-  const name = filename?.trim() || '';
-  const stageSegment = stage?.trim() || '';
   const prefix = batch ? `[${batch.current}/${batch.total}] ` : '';
-  const middle = name && stageSegment
-    ? `${name} · ${stageSegment}`
-    : name || stageSegment;
-  const body = middle ? `${middle} · ${label}` : label;
+  // Each segment is either present (non-empty after trim) or absent;
+  // absent segments drop out via `filter(Boolean)` and the rest join on
+  // the uniform ` · ` separator. The base `label` is always last (never
+  // a replacement — see v3 plan: ADD-only emission, cancel affordance
+  // stays put).
+  const body = [filename?.trim(), stage?.trim(), label].filter(Boolean).join(' · ');
   return `${prefix}${body}`;
 }

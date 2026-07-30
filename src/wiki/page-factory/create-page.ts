@@ -298,8 +298,14 @@ export async function createNewPage(
     const sourcedContent = sourceSlug
       ? (() => {
           const mergeResult = mergeFrontmatter(mentionsInjectedContent, `sources/${sourceSlug}`);
+          // `mergeFrontmatter` returns a `frontmatter` field that already
+          // includes the leading and trailing `---` delimiters (it goes
+          // through `serializeFrontmatter`, lines 428 + 458 of
+          // frontmatter.ts). Reassemble by joining the pre-delimited
+          // frontmatter with the body — same shape as the existing
+          // `merge-page.ts` consumers via `assembleFinalContent`.
           return mergeResult.wasMerged
-            ? `---\n${mergeResult.frontmatter}\n---\n\n${mergeResult.body}`
+            ? `${mergeResult.frontmatter}\n\n${mergeResult.body}`
             : mentionsInjectedContent;
         })()
       : mentionsInjectedContent;

@@ -351,6 +351,18 @@ Body.`;
     // goes through the same helper.
     expect(written).toContain('## Description\nBody.');
     expect(written).toMatch(/sources:\s*\n\s*-\s*"?\[\[sources\/source-slug-foo\]\]"?/);
+
+    // Structural frontmatter guard: the file must open with EXACTLY ONE
+    // `---` fence (not two). `mergeFrontmatter`'s `frontmatter` field
+    // already includes the delimiters (it goes through
+    // `serializeFrontmatter` at frontmatter.ts:428+458). Re-wrapping it
+    // in another `---\n...\n---` would corrupt the frontmatter block —
+    // the first fence would close on the second `---`, demoting the real
+    // metadata to body text. This is the v1.25.11 PATCH simplify-fix
+    // regression guard; the test would have caught the original Phase 1
+    // double-`---` bug if it had been written first.
+    const fenceMatches = written.match(/^---\s*$/gm) ?? [];
+    expect(fenceMatches.length, 'expected exactly 2 `---` fences (one open, one close) — not 4').toBe(2);
   });
 
   it('does NOT stamp a synthetic sources: entry when sourceSlug is undefined', async () => {

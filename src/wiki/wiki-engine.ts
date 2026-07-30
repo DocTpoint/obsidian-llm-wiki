@@ -17,6 +17,7 @@ import {
 } from '../types';
 import { PROMPTS } from '../prompts';
 import { getText } from '../core/i18n';
+import { TEXTS } from '../texts';
 import { buildIngestStatusBarText } from '../core/status-bar';
 import { renderTemplate } from '../core/template-renderer';
 import { slugify } from '../core/slug';
@@ -646,14 +647,23 @@ export class WikiEngine {
     const pdfMsg = getText(lang, 'pdfReadingInProgress').replace('{filename}', file.basename);
     new Notice(pdfMsg, NOTICE_NORMAL);
     this.onProgress?.(pdfMsg);
-    this.updateStatusBar(
-      buildIngestStatusBarText(
-        getText(lang, 'ingestionStatusBar'),
-        file.basename,
-        undefined,
-        getText(lang, 'pdfStageReading')
-      )
-    );
+    // v1.25.11 PATCH #169: the 3 PDF stages (reading / converting /
+    // sidecar) all share the same status-bar composition — filename +
+    // localized stage + base cancel-affordance label. Capturing the
+    // invariant parts in a closure keeps the call sites one-liners.
+    // The `keyof typeof TEXTS.en` constraint ensures callers can only pass
+    // real i18n keys; if a future stage is added to STAGE_KEYS it is
+    // automatically picked up here.
+    const setPdfStage = (stageKey: keyof typeof TEXTS.en) =>
+      this.updateStatusBar(
+        buildIngestStatusBarText(
+          getText(lang, 'ingestionStatusBar'),
+          file.basename,
+          undefined,
+          getText(lang, stageKey),
+        ),
+      );
+    setPdfStage('pdfStageReading');
 
     let conversionResult;
     try {
@@ -721,19 +731,12 @@ export class WikiEngine {
       throw error;
     }
 
-    // v1.25.11 PATCH #169: status-bar mirror for the conversion stage. The
-    // LLM call inside convertPdfToMarkdown doesn't have direct hooks; this
-    // is fired as soon as it returns. Sidecar write below fires the next
-    // stage. ADD-only emission — every prior onProgress / Notice call is
-    // preserved.
-    this.updateStatusBar(
-      buildIngestStatusBarText(
-        getText(lang, 'ingestionStatusBar'),
-        file.basename,
-        undefined,
-        getText(lang, 'pdfStageConverting')
-      )
-    );
+    // v1.25.11 PATCH #169: status-bar mirror for the conversion stage.
+    // The LLM call inside convertPdfToMarkdown doesn't have direct hooks;
+    // this is fired as soon as it returns. Sidecar write below fires the
+    // next stage. ADD-only emission — every prior onProgress / Notice
+    // call is preserved.
+    setPdfStage('pdfStageConverting');
 
     // v1.25.0 PR3: optional sidecar write. When the user opts in via
     // `writePdfMarkdownToVault`, persist the converted markdown next to the
@@ -752,17 +755,10 @@ export class WikiEngine {
       const rawPath = dir ? `${dir}/${file.basename}.pdf.md` : `${file.basename}.pdf.md`;
       const sidecarPath = normalizePath(rawPath);
       const existing = this.app.vault.getAbstractFileByPath(sidecarPath);
-      // v1.25.11 PATCH #169: sidecar-write stage mirror. Fires only when the
-      // user has opted in via writePdfMarkdownToVault. ADD-only emission —
-      // the vault write itself is unchanged.
-      this.updateStatusBar(
-        buildIngestStatusBarText(
-          getText(lang, 'ingestionStatusBar'),
-          file.basename,
-          undefined,
-          getText(lang, 'pdfStageSidecar')
-        )
-      );
+      // v1.25.11 PATCH #169: sidecar-write stage mirror. Fires only when
+      // the user has opted in via writePdfMarkdownToVault. ADD-only
+      // emission — the vault write itself is unchanged.
+      setPdfStage('pdfStageSidecar');
       if (existing instanceof TFile) {
         await this.app.vault.modify(existing, conversionResult.markdown);
       } else {
