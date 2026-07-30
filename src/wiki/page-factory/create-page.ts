@@ -34,7 +34,7 @@ import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { canonicalizeSectionHeaders } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
-import { parseFrontmatter, enforceFrontmatterConstraints } from '../../core/frontmatter';
+import { parseFrontmatter, enforceFrontmatterConstraints, mergeFrontmatter } from '../../core/frontmatter';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
@@ -267,7 +267,43 @@ export async function createNewPage(
         conversationLabel: `Conversation: ${sourceFile.basename}`,
       },
     );
-    await ctx.createOrUpdateFile(path, mentionsInjectedContent);
+    // #365 v1.25.11 PATCH: stamp `sources:` provenance on every freshly
+    // generated page. `enforceFrontmatterConstraints` rewrites the
+    // frontmatter block from a fixed allowlist (`type/created/updated/tags/
+    // aliases/reviewed`), so the `sources:` that `merge-page.ts:93` writes
+    // is stripped here. Splice `mergeFrontmatter` AFTER every transform step
+    // (last thing before the write). We use the SAME helper that
+    // `merge-page.ts:95` uses, so the byte-shape of the `sources:` entry is
+    // identical regardless of which code path produced the page — bit-
+    // identical `[[sources/<slug>]]` wikilink form (line 490 of frontmatter.ts
+    // rewraps every entry). This is the Plan-A path: smallest blast radius
+    // because the only thing the surrounding code learns is that
+    // `createNewPage` now goes through `mergeFrontmatter` before the write;
+    // we do not touch `enforceFrontmatterConstraints` (which 8+ callers
+    // depend on, including the fix-runners that re-touch pages and would
+    // otherwise need to relearn this rule).
+    //
+    // Guarded by `sourceSlug` truthiness so the two non-ingest call sites
+    // (conversation-ingest.ts:251 / :270 do not pass sourceSlug) leave the
+    // content unchanged — they never had a source-stamp in the LLM prompt,
+    // and synthesising `sources/undefined` would be a hard regression on the
+    // conversation-source path.
+    //
+    // If `enforceFrontmatterConstraints` returned content without a
+    // parseable frontmatter block (LLM drift on the very rare path),
+    // `mergeFrontmatter` reports `wasMerged:false` — we leave the content
+    // unchanged rather than synthesise a thin frontmatter block. The
+    // sources stamp is a best-effort add-on; it is strictly less risky than
+    // the primary write.
+    const sourcedContent = sourceSlug
+      ? (() => {
+          const mergeResult = mergeFrontmatter(mentionsInjectedContent, `sources/${sourceSlug}`);
+          return mergeResult.wasMerged
+            ? `---\n${mergeResult.frontmatter}\n---\n\n${mergeResult.body}`
+            : mentionsInjectedContent;
+        })()
+      : mentionsInjectedContent;
+    await ctx.createOrUpdateFile(path, sourcedContent);
     return path;
   } catch (error) {
     throw contextualizeError(error, info.name, pageType);

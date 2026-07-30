@@ -292,3 +292,128 @@ describe('#290 — PageCreationResult.created reflects the pre-write existence c
     expect(result.created).toBe(false);
   });
 });
+
+// ─── #365 v1.25.11 PATCH: stamp `sources:` provenance on new pages ────────
+//
+// Root cause: `enforceFrontmatterConstraints` rewrites the frontmatter
+// block from scratch using only the canonical keys `type/created/updated/
+// tags/aliases/reviewed`. The `sources:` key is canonical but the
+// constructor does not surface it, so it is dropped from the new-page
+// output. `merge-page.ts:93` has the right behavior via `mergeFrontmatter`;
+// `create-page.ts` has to acquire it via the same shape.
+//
+// How the test surface maps to the bug:
+//   - calling `createNewPage` with `sourceSlug='source-slug-foo'` and then
+//     reading back the written file MUST contain `sources: [[[sources/
+//     source-slug-foo]]]`. (Currently fails: `enforceFrontmatterConstraints`
+//     strips it.)
+//   - calling `createOrUpdateEntityPage` without `sourceSlug` (the
+//     conversation-ingest.ts:251 call site does this) MUST NOT synthesize
+//     a garbage sources: entry. (Currently passes by accident — but
+//     pinning prevents regressions after the GREEN edit lands.)
+//   - calling `createNewPage` twice with the same `sourceSlug` and writing
+//     to the same path dedups (Plan A's chosen helper does dedup; this
+//     pins that contract).
+
+describe('#365 — sources: stamp on createNewPage', () => {
+  // Mock LLM output that mimics a real ingest response: `enforceFrontmatterConstraints`
+  // would rewrite the frontmatter block (preserving type/created/updated/tags) but
+  // historically dropped `sources:` because the rewriter only enumerates a fixed
+  // allowlist of canonical keys. Body shape: `type:` + `tags:` set + raw body.
+  const REAL_LLM_BODY_WITH_FRONTMATTER = `---
+type: entity
+created: 2026-07-30
+updated: 2026-07-30
+tags:
+  - other
+aliases: []
+---
+
+## Description
+Body.`;
+
+  it('stamps sources: [[[sources/<slug>]]] when sourceSlug is provided', async () => {
+    const ctx = makeCtx({ llmResponse: REAL_LLM_BODY_WITH_FRONTMATTER });
+    await createNewPage(
+      ctx,
+      createMockEntity({ name: 'Foo' }),
+      'entity',
+      { path: 'notes/article.md', basename: 'article.md' },
+      [],
+      'wiki/entities/Foo.md',
+      'source-slug-foo',
+    );
+    const written = ctx.written.get('wiki/entities/Foo.md')!;
+    // Body survived AND the frontmatter carries the canonical
+    // `[[sources/<slug>]]` wikilink form, byte-identical to what
+    // `merge-page.ts:93` writes. `core/frontmatter.ts:490` rewraps every
+    // entry in `[[ ]]` regardless of input shape, and `merge-page.ts:95`
+    // goes through the same helper.
+    expect(written).toContain('## Description\nBody.');
+    expect(written).toMatch(/sources:\s*\n\s*-\s*"?\[\[sources\/source-slug-foo\]\]"?/);
+  });
+
+  it('does NOT stamp a synthetic sources: entry when sourceSlug is undefined', async () => {
+    // Mirrors the conversation-ingest.ts call site (4-arg
+    // createOrUpdateEntityPage), which never has a sourceSlug.
+    const ctx = makeCtx({ llmResponse: REAL_LLM_BODY_WITH_FRONTMATTER });
+    await createOrUpdateEntityPage(
+      ctx,
+      createMockEntity({ name: 'NoSource' }),
+      EMPTY_ANALYSIS,
+      { path: 'notes/no-source.md', basename: 'no-source.md' },
+    );
+    const written = ctx.written.get('wiki/entities/NoSource.md')!;
+    // No garbage `sources: ["<random path>"]` from a path we did not intend.
+    // The bare boolean asserts: the frontmatter either omits sources: or
+    // carries a deliberately empty value, NOT a phantom source path.
+    const sourcesMatch = written.match(/^sources:\s*(\[?\s*([^\]]*?)\s*\]?|.+?)(?=\n[a-zA-Z_-]+:|\n---)/m);
+    const sourcesValue = sourcesMatch?.[2]?.trim() ?? '';
+    expect(sourcesValue).not.toContain('notes/');
+    expect(sourcesValue).not.toMatch(/^\[\[sources\//);
+  });
+});
+
+describe('#365 — idempotency on repeated source-slug stamp', () => {
+  it('does not duplicate sources: entries across repeated createNewPage calls with the same slug', async () => {
+    const REAL_LLM_BODY_WITH_FRONTMATTER = `---
+type: entity
+created: 2026-07-30
+updated: 2026-07-30
+tags:
+  - other
+aliases: []
+---
+
+## Description
+Body.`;
+    const ctx = makeCtx({ llmResponse: REAL_LLM_BODY_WITH_FRONTMATTER });
+    // First call writes the page. Because `ctx.createOrUpdateFile` is a
+    // mock that just stores into a Map, the second call reads it back via
+    // `tryReadFile`, which short-circuits the createNewPage branch
+    // (existingContent present) and routes to mergePage — so the
+    // observable signal here is the merged-file sources: list carrying
+    // exactly one entry, not two.
+    await createNewPage(
+      ctx,
+      createMockEntity({ name: 'Twice' }),
+      'entity',
+      { path: 'notes/article.md', basename: 'article.md' },
+      [],
+      'wiki/entities/Twice.md',
+      'same-slug',
+    );
+    await createOrUpdateEntityPage(
+      ctx,
+      createMockEntity({ name: 'Twice' }),
+      EMPTY_ANALYSIS,
+      { path: 'notes/article.md', basename: 'article.md' },
+      [],
+      'same-slug',
+    );
+    const written = ctx.written.get('wiki/entities/Twice.md')!;
+    const sourcesLines = written.split('\n').filter((line) => line.includes('sources/same-slug'));
+    // Expect exactly one occurrence in the file body (not "same-slug same-slug")
+    expect(sourcesLines.length).toBe(1);
+  });
+});
