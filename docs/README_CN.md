@@ -10,7 +10,7 @@
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
-[English](../README.md) | **简体中文** | [繁體中文](README_ZH-Hant.md) | [日本語](README_JA.md) | [한국어](README_KO.md) | [Deutsch](README_DE.md) | [Français](README_FR.md) | [Español](README_ES.md) | [Português](README_PT.md) | [Italiano](README_IT.md)
+[English](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/README.md) | **简体中文** | [繁體中文](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_ZH-Hant.md) | [日本語](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_JA.md) | [한국어](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_KO.md) | [Deutsch](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_DE.md) | [Français](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_FR.md) | [Español](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_ES.md) | [Português](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_PT.md) | [Italiano](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_IT.md)
 
 [官网](https://llmwiki.greenerai.top/) | [Obsidian 插件市场](https://community.obsidian.md/plugins/karpathywiki) | [博客](https://llmwiki.greenerai.top/zh/blog/) | [反馈讨论](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
@@ -148,7 +148,7 @@
 
 ### 📄 PDF 摄入 (v1.25.0+)
 
-- **🔌 Provider 准入** — Anthropic、OpenAI 和 Bedrock 原生支持 PDF。对于任何其他 OpenAI/Anthropic 兼容端点，在设置 → LLM 配置 → 高级中开启 **Force PDF Support** 让插件尝试调用。关于 Apple Silicon 上的本地 OCR、第三方提取工具（MinerU、Docling、Mathpix、Adobe）及完整 PDF 摄入教程，见下方的 [PDF OCR 路径](#-pdf-ocr-路径) 和 [docs/PDF-OCR-GUIDE.md](./PDF-OCR-GUIDE.md)。
+- **🔌 Provider 准入** — Anthropic、OpenAI 和 Bedrock 原生支持 PDF。对于任何其他 OpenAI/Anthropic 兼容端点，在设置 → LLM 配置 → 高级中开启 **Force PDF Support** 让插件尝试调用。关于 Apple Silicon 上的本地 OCR、第三方提取工具（MinerU、Docling、Mathpix、Adobe）及完整 PDF 摄入教程，见下方的 [PDF OCR 路径](#-pdf-ocr-路径) 和 [docs/PDF-OCR-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/PDF-OCR-GUIDE.md)。
 - **🗄️ 有界缓存** — `.obsidian/plugins/karpathywiki/pdf-cache/` 按内容哈希 + 模型 + 转换器版本为键存储转换后的 Markdown。三层防御治理：总计 100 MB / 1000 条 / 单条 10 MB 上限，LRU-by-mtime 淘汰。
 - **📝 可选 vault sidecar** — 设置 → Wiki 配置 → Wiki 文件夹 → *将 PDF Markdown 写入 Vault* 在源 PDF 旁写入 `<basename>.pdf.md`（默认关闭——仅缓存模式）。
 - **🛡️ 逐字转录提示** — 带 `[illegible]` / `[figure: ...]` 反幻觉标记的 OCR 风格转换；小型本地模型的 markdown 围栏包裹在写入缓存前自动清洗。
@@ -161,7 +161,7 @@
 2. **🖥️ Apple Silicon 本地 OCR** — [oMLX](https://github.com/jundot/omlx) 将 Microsoft Markitdown 集成为其内置的 PDF→Markdown 后端。在 oMLX 中启用 Markitdown，加载 [百度 Unlimited-OCR](https://huggingface.co/baidu/Unlimited-OCR)（3B / 570M 活跃参数，2026-06 开源）作为视觉模型，将插件指向 oMLX 作为自定义 OpenAI 兼容 Provider，开启 **Force PDF Support**，选择 oMLX 服务的多模态模型。PDF 全程不离开你的机器。
 3. **🛠️ 第三方提取工具（MinerU、Docling、Mathpix、Adobe）** — 在你的 PDF 上运行独立提取工具生成 `.md` 文件，然后通过插件的标准管线将其作为普通 Markdown 笔记摄入。对于科学论文、扫描文档、数学密集型 PDF 最为可靠。
 
-📖 **所有三条路径的完整设置教程**（云端 Provider、oMLX 硬件等级、MinerU 安装、缓存管理）→ [docs/PDF-OCR-GUIDE.md](./PDF-OCR-GUIDE.md)
+📖 **所有三条路径的完整设置教程**（云端 Provider、oMLX 硬件等级、MinerU 安装、缓存管理）→ [docs/PDF-OCR-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/PDF-OCR-GUIDE.md)
 
 ### 💬 查询与维护
 
@@ -244,7 +244,7 @@
 | **ChatGPT Plan (Codex OAuth)** | Codex Responses API | 浏览器/设备代码登录；SecretStorage |
 | **本地：Ollama, LM Studio, OpenRouter, Anthropic 兼容** | 任何 OpenAI/Anthropic 协议模型 | 自定义 OpenAI 兼容 + Anthropic 兼容（Token Plan / Coding Plan）|
 
-本插件每次查询向 LLM 提供完整的 Wiki 上下文——因此 **长上下文模型胜出**。完整的分级表格（云端 + 本地）见 [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)，来自 [models.dev](https://models.dev/) 交叉核对以确保推荐持续有效。
+本插件每次查询向 LLM 提供完整的 Wiki 上下文——因此 **长上下文模型胜出**。完整的分级表格（云端 + 本地）见 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)，来自 [models.dev](https://models.dev/) 交叉核对以确保推荐持续有效。
 
 ### 什么更重要
 
@@ -259,7 +259,7 @@
 - **OpenAI** —— 单独计费的 OpenAI Platform API Key。
 - **ChatGPT Plan (Codex OAuth)** —— 实验性、独立的 Provider，在浏览器或设备代码登录后使用符合条件的 Codex 额度；可用性遵循 OpenAI Codex 身份验证和额度政策，而非计划名称。第三方 Codex 兼容功能，非 OpenAI 合作项目或通用 ChatGPT API。
 
-> 📖 **完整选择表格**（云端 + 本地 + PDF OCR + Codex OAuth + 量化 + 硬件等级）→ [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)
+> 📖 **完整选择表格**（云端 + 本地 + PDF OCR + Codex OAuth + 量化 + 硬件等级）→ [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
 
 ---
 
@@ -305,7 +305,7 @@
 
 ### 该选哪个 LLM？
 
-长上下文模型（≥200K tokens）效果最佳。[模型推荐](#-模型推荐) 一节涵盖了原则；完整分级表格见 [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)。
+长上下文模型（≥200K tokens）效果最佳。[模型推荐](#-模型推荐) 一节涵盖了原则；完整分级表格见 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)。
 
 ### 有公开的基准测试吗？
 

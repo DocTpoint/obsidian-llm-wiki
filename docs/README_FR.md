@@ -10,7 +10,7 @@
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
-[English](../README.md) | [简体中文](README_CN.md) | [繁體中文](README_ZH-Hant.md) | [日本語](README_JA.md) | [한국어](README_KO.md) | [Deutsch](README_DE.md) | **Français** | [Español](README_ES.md) | [Português](README_PT.md) | [Italiano](README_IT.md)
+[English](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/README.md) | [简体中文](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_CN.md) | [繁體中文](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_ZH-Hant.md) | [日本語](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_JA.md) | [한국어](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_KO.md) | [Deutsch](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_DE.md) | **Français** | [Español](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_ES.md) | [Português](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_PT.md) | [Italiano](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_IT.md)
 
 [Site officiel](https://llmwiki.greenerai.top/) | [Marketplace Obsidian](https://community.obsidian.md/plugins/karpathywiki) | [Blog](https://llmwiki.greenerai.top/blog/) | [Discussions](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
@@ -142,7 +142,7 @@ C'est tout. Le plugin ne modifie rien dans vos notes originales — il crée uni
 
 ### 📄 Ingestion PDF (v1.25.0+)
 
-- **🔌 Porte fournisseur** — Anthropic, OpenAI et Bedrock gèrent le PDF nativement. Pour tout autre endpoint compatible OpenAI/Anthropic, activez **Force PDF Support** dans Paramètres → Configuration LLM → Avancé pour que le plugin tente l'appel. Pour l'OCR local sur Apple Silicon, les extracteurs tiers (MinerU, Docling, Mathpix, Adobe) et le guide complet d'ingestion PDF, voir [Voies OCR PDF](#-voies-ocr-pdf) ci-dessous et [docs/PDF-OCR-GUIDE.md](./PDF-OCR-GUIDE.md).
+- **🔌 Porte fournisseur** — Anthropic, OpenAI et Bedrock gèrent le PDF nativement. Pour tout autre endpoint compatible OpenAI/Anthropic, activez **Force PDF Support** dans Paramètres → Configuration LLM → Avancé pour que le plugin tente l'appel. Pour l'OCR local sur Apple Silicon, les extracteurs tiers (MinerU, Docling, Mathpix, Adobe) et le guide complet d'ingestion PDF, voir [Voies OCR PDF](#-voies-ocr-pdf) ci-dessous et [docs/PDF-OCR-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/PDF-OCR-GUIDE.md).
 - **🗄️ Cache à croissance bornée** — `.obsidian/plugins/karpathywiki/pdf-cache/` stocke le Markdown converti, indexé par hash de contenu + modèle + version du convertisseur. Ménage à trois niveaux de défense : 100 Mo total / 1000 entrées / 10 Mo par entrée avec éviction LRU-by-mtime.
 - **📝 Sidecar coffre optionnel** — Paramètres → Configuration Wiki → Dossier Wiki → *Write PDF Markdown to Vault* écrit `<basename>.pdf.md` à côté du PDF source (désactivé par défaut — cache uniquement).
 - **🛡️ Invite de transcription textuelle** — Conversion style OCR avec marqueurs anti-hallucination `[illegible]` / `[figure: ...]` ; le wrapping dans des fences ```markdown par les petits modèles locaux est automatiquement nettoyé avant l'écriture en cache.
@@ -155,7 +155,7 @@ Trois chemins, choisissez celui qui correspond à votre configuration :
 2. **🖥️ OCR local sur Apple Silicon** — [oMLX](https://github.com/jundot/omlx) intègre Microsoft Markitdown comme backend PDF→Markdown intégré. Activez Markitdown dans oMLX, chargez [Baidu Unlimited-OCR](https://huggingface.co/baidu/Unlimited-OCR) (3B / 570M actifs, open-source 2026-06) comme modèle de vision, pointez le plugin vers oMLX comme fournisseur personnalisé compatible OpenAI, activez **Force PDF Support** et choisissez le modèle multimodal servi par oMLX. Le PDF ne quitte jamais votre machine.
 3. **🛠️ Extracteur tiers (MinerU, Docling, Mathpix, Adobe)** — exécutez un extracteur séparé sur vos PDF pour produire des fichiers `.md`, puis ingérez-les comme des notes Markdown standard via le pipeline normal du plugin. Plus fiable pour les articles scientifiques, documents scannés, PDF riches en mathématiques.
 
-📖 **Guides d'installation complets** pour les trois chemins (fournisseurs cloud, niveaux matériels oMLX, installation MinerU, ménage du cache) → [docs/PDF-OCR-GUIDE.md](./PDF-OCR-GUIDE.md)
+📖 **Guides d'installation complets** pour les trois chemins (fournisseurs cloud, niveaux matériels oMLX, installation MinerU, ménage du cache) → [docs/PDF-OCR-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/PDF-OCR-GUIDE.md)
 
 ### 💬 Requête et maintenance
 
@@ -238,7 +238,7 @@ Nous avons délibérément rejeté la voie des embeddings dans [Issue #175](http
 | **ChatGPT Plan (Codex OAuth)** | API Codex Responses | Connexion navigateur/code d'appareil ; SecretStorage |
 | **Local : Ollama, LM Studio, OpenRouter, Anthropic-Compatible** | Tout modèle protocole OpenAI/Anthropic | Custom OpenAI-Compatible + Anthropic-Compatible (Token Plan / Coding Plan) |
 
-Ce plugin alimente le LLM avec le contexte complet de votre Wiki par requête — donc **les modèles à long contexte gagnent**. Le tableau complet des niveaux (cloud + local) se trouve dans [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md), vérifié par recoupement avec [models.dev](https://models.dev/) pour que les choix restent à jour.
+Ce plugin alimente le LLM avec le contexte complet de votre Wiki par requête — donc **les modèles à long contexte gagnent**. Le tableau complet des niveaux (cloud + local) se trouve dans [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md), vérifié par recoupement avec [models.dev](https://models.dev/) pour que les choix restent à jour.
 
 ### Ce qui compte
 
@@ -253,7 +253,7 @@ Ce plugin alimente le LLM avec le contexte complet de votre Wiki par requête �
 - **OpenAI** — clé API OpenAI Platform facturée séparément.
 - **ChatGPT Plan (Codex OAuth)** — fournisseur expérimental distinct qui utilise une allocation Codex éligible après connexion par navigateur ou code d'appareil ; la disponibilité suit les politiques d'authentification et d'allocation OpenAI Codex, pas le nom du forfait. Compatibilité tierce Codex, pas un partenariat OpenAI ou une API ChatGPT générale.
 
-> 📖 **Tableau de sélection complet** (cloud + local + PDF OCR + Codex OAuth + quantification + niveaux matériels) → [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)
+> 📖 **Tableau de sélection complet** (cloud + local + PDF OCR + Codex OAuth + quantification + niveaux matériels) → [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
 
 ## 🌐 Écosystème
 
@@ -295,7 +295,7 @@ Installez depuis les Plugins communautaires Obsidian → choisissez un fournisse
 
 ### Quel LLM dois-je utiliser ?
 
-Les modèles à long contexte (≥200K tokens) fonctionnent le mieux. La [section Modèles](#-modèles) couvre les principes ; le tableau complet des niveaux se trouve dans [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md).
+Les modèles à long contexte (≥200K tokens) fonctionnent le mieux. La [section Modèles](#-modèles) couvre les principes ; le tableau complet des niveaux se trouve dans [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md).
 
 ### Existe-t-il un benchmark publié ?
 

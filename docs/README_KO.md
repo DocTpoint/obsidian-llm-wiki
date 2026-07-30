@@ -10,7 +10,7 @@
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
-[English](../README.md) | [简体中文](README_CN.md) | [繁體中文](README_ZH-Hant.md) | [日本語](README_JA.md) | **한국어** | [Deutsch](README_DE.md) | [Français](README_FR.md) | [Español](README_ES.md) | [Português](README_PT.md) | [Italiano](README_IT.md)
+[English](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/README.md) | [简体中文](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_CN.md) | [繁體中文](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_ZH-Hant.md) | [日本語](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_JA.md) | **한국어** | [Deutsch](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_DE.md) | [Français](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_FR.md) | [Español](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_ES.md) | [Português](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_PT.md) | [Italiano](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_IT.md)
 
 [공식 사이트](https://llmwiki.greenerai.top/) | [옵시디언 마켓플레이스](https://community.obsidian.md/plugins/karpathywiki) | [블로그](https://llmwiki.greenerai.top/blog/) | [Discussions](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
@@ -142,7 +142,7 @@
 
 ### 📄 PDF 수집 (v1.25.0+)
 
-- **🔌 공급자 게이트** — Anthropic, OpenAI, Bedrock이 PDF를 네이티브로 처리합니다. 다른 OpenAI/Anthropic 호환 엔드포인트에서는 설정 → LLM Configuration → Advanced에서 **Force PDF Support**를 활성화하여 호출을 시도할 수 있습니다. Apple Silicon에서의 로컬 OCR, 서드파티 추출기(MinerU, Docling, Mathpix, Adobe), 전체 PDF 수집 워크스루에 대해서는 아래 [PDF OCR 경로](#-pdf-ocr-경로)와 [docs/PDF-OCR-GUIDE.md](./PDF-OCR-GUIDE.md)를 참조하세요.
+- **🔌 공급자 게이트** — Anthropic, OpenAI, Bedrock이 PDF를 네이티브로 처리합니다. 다른 OpenAI/Anthropic 호환 엔드포인트에서는 설정 → LLM Configuration → Advanced에서 **Force PDF Support**를 활성화하여 호출을 시도할 수 있습니다. Apple Silicon에서의 로컬 OCR, 서드파티 추출기(MinerU, Docling, Mathpix, Adobe), 전체 PDF 수집 워크스루에 대해서는 아래 [PDF OCR 경로](#-pdf-ocr-경로)와 [docs/PDF-OCR-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/PDF-OCR-GUIDE.md)를 참조하세요.
 - **🗄️ 제한된 캐시** — `.obsidian/plugins/karpathywiki/pdf-cache/`에 변환된 Markdown을 저장하며, 콘텐츠 해시 + 모델 + converter version으로 키가 지정됩니다. 3계층 방어 하우스키핑: 총 100MB / 1000개 항목 / 단일 10MB 상한, LRU-by-mtime 축출.
 - **📝 선택적 볼트 사이드카** — 설정 → Wiki Configuration → Wiki Folder → *Write PDF Markdown to Vault*를 켜면 소스 PDF 옆에 `<basename>.pdf.md`를 작성합니다 (기본값 꺼짐 — 캐시 전용이 기본).
 - **🛡️ Verbatim 트랜스크립터 프롬프트** — OCR 스타일 변환, `[illegible]` / `[figure: ...]` 반환각 마커 포함; 소형 로컬 모델의 markdown 펜스 래핑은 캐시 쓰기 전에 자동 정리됩니다.
@@ -155,7 +155,7 @@
 2. **🖥️ Apple Silicon 로컬 OCR** — [oMLX](https://github.com/jundot/omlx)가 Microsoft Markitdown을 내장 PDF→Markdown 백엔드로 통합합니다. oMLX에서 Markitdown 활성화, [Baidu Unlimited-OCR](https://huggingface.co/baidu/Unlimited-OCR) (3B / 570M 활성, 2026-06 오픈소스)을 비전 모델로 로드, 플러그인을 Custom OpenAI-Compatible 공급자로 oMLX에 연결, **Force PDF Support** 켜기, oMLX가 서빙하는 멀티모달 모델 선택. PDF가 기기를 떠나지 않습니다.
 3. **🛠️ 서드파티 추출기 (MinerU, Docling, Mathpix, Adobe)** — PDF에 대해 별도 추출기를 실행하여 `.md` 파일을 생성한 다음, 플러그인의 표준 파이프라인을 통해 일반 Markdown 노트로 수집합니다. 과학 논문, 스캔 문서, 수학 중심 PDF에 가장 안정적입니다.
 
-📖 **세 가지 경로 모두에 대한 전체 설정 워크스루** (클라우드 공급자, oMLX 하드웨어 계층, MinerU 설치, 캐시 하우스키핑) → [docs/PDF-OCR-GUIDE.md](./PDF-OCR-GUIDE.md)
+📖 **세 가지 경로 모두에 대한 전체 설정 워크스루** (클라우드 공급자, oMLX 하드웨어 계층, MinerU 설치, 캐시 하우스키핑) → [docs/PDF-OCR-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/PDF-OCR-GUIDE.md)
 
 ### 💬 조회 및 유지관리
 
@@ -238,7 +238,7 @@ Monte Carlo PPR (Fogaras 2005)을 사용합니다 — 3,000개의 랜덤 워크 
 | **ChatGPT Plan (Codex OAuth)** | Codex Responses API | 브라우저/기기 코드 로그인; SecretStorage |
 | **로컬: Ollama, LM Studio, OpenRouter, Anthropic-Compatible** | 모든 OpenAI/Anthropic 프로토콜 모델 | Custom OpenAI-Compatible + Anthropic-Compatible (Token Plan / Coding Plan) |
 
-이 플러그인은 LLM에 전체 Wiki 컨텍스트를 제공하므로 — **긴 컨텍스트 모델이 유리합니다**. 전체 계층형 표 (클라우드 + 로컬)는 [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)에 있으며, [models.dev](https://models.dev/)와 교차 확인되어 최신 상태를 유지합니다.
+이 플러그인은 LLM에 전체 Wiki 컨텍스트를 제공하므로 — **긴 컨텍스트 모델이 유리합니다**. 전체 계층형 표 (클라우드 + 로컬)는 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)에 있으며, [models.dev](https://models.dev/)와 교차 확인되어 최신 상태를 유지합니다.
 
 ### 중요한 요소
 
@@ -253,7 +253,7 @@ Monte Carlo PPR (Fogaras 2005)을 사용합니다 — 3,000개의 랜덤 워크 
 - **OpenAI** — 별도 청구되는 OpenAI Platform API 키.
 - **ChatGPT Plan (Codex OAuth)** — 실험적, 별도 공급자로 브라우저 또는 기기 코드 로그인 후 적격 Codex 사용 한도를 사용합니다. 사용 가능 여부는 OpenAI Codex 인증 및 사용 한도 정책을 따르며, 플랜 이름으로 보장되지 않습니다. 서드파티 Codex 호환 기능이며, OpenAI 파트너십이나 범용 ChatGPT API가 아닙니다.
 
-> 📖 **전체 선택 표** (클라우드 + 로컬 + PDF OCR + Codex OAuth + 양자화 + 하드웨어 계층) → [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)
+> 📖 **전체 선택 표** (클라우드 + 로컬 + PDF OCR + Codex OAuth + 양자화 + 하드웨어 계층) → [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
 
 ---
 
@@ -299,7 +299,7 @@ Obsidian 커뮤니티 플러그인에서 설치 → 공급자 선택 → **Test 
 
 ### 어떤 LLM을 사용해야 하나요?
 
-긴 컨텍스트 모델(≥200K 토큰)이 가장 적합합니다. [모델 섹션](#-모델)에서 원칙을 다루고, 전체 계층형 표는 [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)에 있습니다.
+긴 컨텍스트 모델(≥200K 토큰)이 가장 적합합니다. [모델 섹션](#-모델)에서 원칙을 다루고, 전체 계층형 표는 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)에 있습니다.
 
 ### 공개된 벤치마크가 있나요?
 
