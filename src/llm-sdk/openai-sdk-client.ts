@@ -188,7 +188,7 @@ export class OpenAISdkClient implements LLMClient {
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
           ...(temperature !== undefined ? { temperature } : {}),
           ...(top_p !== undefined ? { topP: top_p } : {}),
-        ...(seed !== undefined ? { seed } : {}),
+          ...(seed !== undefined ? { seed } : {}),
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
@@ -364,7 +364,7 @@ export class OpenAISdkClient implements LLMClient {
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
           ...(temperature !== undefined ? { temperature } : {}),
           ...(top_p !== undefined ? { topP: top_p } : {}),
-        ...(seed !== undefined ? { seed } : {}),
+          ...(seed !== undefined ? { seed } : {}),
         });
 
         let fullText = '';
