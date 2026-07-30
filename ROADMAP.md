@@ -44,7 +44,26 @@
 - **PR #350** eucher — translation-hint gated on source frontmatter language
 - **PR #352** eucher — silent-truncation finish-reason (closes #305 follow-on)
 
-## Next: v1.26.0 MINOR (after v1.25.10 ships)
+## Next: v1.25.10 PATCH follow-ups (post-publish, before v1.26.0 kickoff)
+
+**Milestone:** [v1.25.10 PATCH #12](https://github.com/green-dalii/obsidian-llm-wiki/milestone/12). 4-item bug-fix-only scope locked 2026-07-29:
+
+*Composition*:
+
+| Issue | What | Effort |
+|---|---|---|
+| **#375** | README links non-functional in Obsidian community plugin browser — replace ~12 anchor links + 9 language switchers + ~10 doc/file refs in EN README + 9 locale mirrors with absolute GitHub URLs (`https://github.com/green-dalii/obsidian-llm-wiki/blob/main/...`). Heading anchors remain unchanged (GitHub GFM still generates `-why-this-plugin` etc.); only the navigation mechanism changes. i18n parity test extension for switcher URLs | ~2h |
+| **#365** | `createNewPage` (`src/wiki/page-factory/create-page.ts`) does not stamp `sources:` like `merge-page.ts` does — 18/177 pages lose provenance (8/177 completely silent). Fix: call `mergeFrontmatter(..., sources/${sourceSlug})` after the link corrector, matching merge path. Add 3-5 wiring tests | ~1.5h |
+| **#168** | `singleFileGranularity` + `batchGranularity` two-dropdown design (replacing auto-curve) — 38-day slip from v1.25.0 → v1.25.2 → v1.25.10. Implementation outline already in 2026-07-20 reply: `src/types.ts` + `src/ui/settings.ts` + 2 keys × 10 locales + `src/__tests__/types/settings.test.ts` | ~1h |
+| **#169 ETA** | Velocity-based ETA: `(start time + items completed) / elapsed × items remaining` with rolling window over recent batches. ~2h work, status-bar surface only (NOT live preview, NOT sound) | ~2h |
+
+**Total effort:** ~7h (one focused session).
+
+**Out of this PATCH:** #372 (eucher CLI) — scope split needed; CLI direction accepted, but per-comment concerns from DocTpoint require responder turnaround (see separate analysis in PR review).
+
+**Issue #356 follow-up (post-publish):** `mergeFrontmatter` was missed in the v1.25.10 sweep. The array-mutation helpers (`replaceOrInsertYamlListField`, `replaceFrontmatterArrayField`) were taught to thread `extractPassthroughLines` into `serializeFrontmatter`, but the full-page rewrite path (`mergePage` → `mergeFrontmatter`) was not. @borthwick's 2026-07-29 report on 4 entities losing `redirect_to:` after re-ingest of "The Nature of Technology" was the diagnostic. **Fix shipped as PR #377** (open, MERGEABLE) — single-line change in `mergeFrontmatter` + 4 regression tests in `frontmatter.test.ts`. +4 tests (2713 → 2717). Plan to merge into the same v1.25.10 PATCH follow-ups milestone (or v1.25.11 PATCH if #375/#365/#168/#169 ETA scope grows past the natural seam).
+
+## Next: v1.26.0 MINOR (after v1.25.10 PATCH follow-ups ship)
 
 **Design anchor:** [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358). Co-author @DocTpoint. Design doc in `docs/v1.26.0-design.md` (drafting after #358 receives community feedback).
 
@@ -82,6 +101,17 @@
 
 **i18n expansion to 11 languages:** add `ru` (Русский) to `WIKI_LANGUAGES` + `src/texts/ru.ts` + `docs/README_RU.md` + 11-way language switcher across all READMEs. Driven by recent RU user growth + @eucher's 3 ingest/LLM PRs (RU speaker). No new functionality beyond text strings + 11-locale parity test update. — *(status: still pending; not part of v1.25.10 PATCH; revisit at v1.26.0 kickoff or as a follow-up PATCH.)*
 
+**Long-term roadmap items (status only):**
+
+| Item | Issue | Status |
+|---|---|---|
+| MinerU Markdown parser integration | (#376, planning) | ⏳ v1.26.0+ — design track. Already documented as third-party extractor in `docs/PDF-OCR-GUIDE.md`. User explicitly recommends [MinerU online playground](https://mineru.net/OpenSourceTools/Extractor) for general users |
+| Multi-wiki isolation | [#142](https://github.com/green-dalii/obsidian-llm-wiki/issues/142) | ⏳ v1.27.0+ research — technically feasible (per-vault config slices OR per-vault plugin install), no fundamental blocker; deferred for priority/scope, not capability. Workaround: separate Obsidian vault per topic with its own plugin install |
+| Explicit event type | [#112](https://github.com/green-dalii/obsidian-llm-wiki/issues/112) | ⏳ v1.27.0+ research — `arc:` / `sequence:` frontmatter is the lighter alternative (DocTpoint's proposal) |
+| Scheduled ingest | [#295](https://github.com/green-dalii/obsidian-llm-wiki/issues/295) | ⏳ v1.27.0+ research — conflicts with v1.26.0 "external orchestration" philosophy |
+| Obsidian Bases for index | [#184](https://github.com/green-dalii/obsidian-llm-wiki/issues/184) | ⏳ v1.26.0+ — post-PPR integration; smaller scope now (one `.base` file vs full markdown-to-table) |
+| Slug-list prompt-share | [#306](https://github.com/green-dalii/obsidian-llm-wiki/issues/306) | ⏳ v1.27.0+ perf opt — design in place (2-stage pipeline) but DocTpoint self-corrected hypothesis: dead-link share is **not** correlated with vault size (Pearson r = +0.008). Pure perf savings (77% → 5% prompt share), no quality fix needed |
+
 Historic compositions (v1.25.7 and earlier) live in [CHANGELOG.md](./CHANGELOG.md) — kept brief here.
 
 ---
@@ -91,6 +121,7 @@ Historic compositions (v1.25.7 and earlier) live in [CHANGELOG.md](./CHANGELOG.m
 |---------|------|----------|
 | **1.25.10 PATCH** | 2026-07-29 | Sequential PATCH on v1.25.9 carrying bug fixes only: #363 Mentions `[[|]]` parser + formatter (DocTpoint PR #371), #364 folder ingest boundary (DocTpoint PR #370), #356 frontmatter-strip, #366 Turkish-aware slug fold (phase 1), #367 lint-perf P0-1 fix-runner parallelisation (P1-1/P1-2 helpers ship dead-code, controller wire deferred to v1.26.0), #368 schema docs + settings UI hint, DocTpoint §4 merge/contradictory route split, alias hardening (3-char → 2-char floor). 16 commits, 78 files, +3499 / −315, 2713 tests |
 | **1.26.0 MINOR** | TBD (in design) | Complementary memory model: per-type registration, typed edges, bidirectional frontmatter, identity ambiguity record, Preview-Confirm gate, stable mutation interface. Anchored at [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358) |
+| **1.25.10 PATCH follow-ups** | 2026-08-02 (target) | #375 README links absolute-URL, #365 sources: provenance stamp, #168 granularity split (38-day slip), #169 ETA. Bug-fix only, ~7h |
 | **1.25.9** | 2026-07-25 | PATCH: Re-publish v1.25.8 to recover from a release-engineering incident where the v1.25.8 GitHub release record was inadvertently deleted while Obsidian's automated community plugin review bot was mid-review. No code changes vs v1.25.8. Also fixes `versions.json` trailing-comma JSON syntax error introduced in v1.25.8 bump commit |
 | **1.25.8** | 2026-07-25 | PATCH Hotfix: `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only `hide()`). Fixes v1.25.7 regression where provider switching made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header". +7 tests (6 against real `LLMWikiSettingTab.commitTempSettings` via `Object.create(prototype)` + 1 mock signature update). Bot 0/0 preserved. 2572 tests / 193 files |
 | **1.25.7** | 2026-07-25 | PATCH: API key switching bug fix (regression since v1.25.3 #182, PR #346) + DocTpoint dedup perf PRs #344+#345. Cache-stable prompt layout (54s→1.2s repeat) + slim dedup + top-K candidate pre-filter (660K→372K prompt tokens, −44%). 19 new tests since v1.25.6. Bot 0/0 preserved. 2566 tests / 192 files |
