@@ -102,9 +102,19 @@ export class OpenAICodexSdkClient implements LLMClient {
   }
   // `seed` and `max_output_tokens` are deliberately absent: the Codex backend
   // accepts neither, so a setting for them is honoured everywhere else and
-  // silently does nothing here. `top_p` and `temperature` it does accept, and
-  // both are forwarded — a preset is the pair, and sending half of one is the
-  // failure this comment exists to prevent repeating.
+  // silently does nothing here. `top_p` and `temperature` are also stripped by
+  // `normalizeResponsesBody` in `openai-codex/request-adapter.ts` (which calls
+  // `delete normalized.top_p` / `temperature` before the wire request) — so
+  // even though we forward them through the SDK here, they never reach the
+  // Codex endpoint. Comment updated 2026-07-30 (PR #372 review): the previous
+  // wording claimed the pair was forwarded, but the adapter strip predates
+  // this client and is the authoritative behaviour. Restoring the strip
+  // removal would re-test Codex's actual response shape, which is out of scope
+  // for this PR.
+  //
+  // The pairing invariant still holds: a preset is the pair, and sending half
+  // of one is the failure this code path exists to absorb — it now does so by
+  // stripping both, not by forwarding both.
   async createMessage(params: Parameters<LLMClient['createMessage']>[0]): Promise<string> {
     const model = this.getModel(params.model, this.streamFetchImpl);
     try {
