@@ -493,6 +493,13 @@ export function mergeFrontmatter(
   const updated = new Date().toISOString().split('T')[0];
 
   // Always emit a `tags:` line (bare when empty) to preserve prior behavior.
+  // Issue #356 follow-up: also pass through unknown top-level fields
+  // (`redirect_to:`, `parent_org:`, user-authored metadata) so the full-page
+  // rewrite path through `mergePage` (which re-serializes the frontmatter
+  // from this helper's output) preserves user-owned keys the same way the
+  // array-only helpers do. Without this, re-ingest on an existing entity
+  // rewrites the frontmatter block and strips every custom field.
+  const passthroughLines = extractPassthroughLines(existingContent);
   const frontmatter = serializeFrontmatter(
     {
       type: fm.type,
@@ -503,7 +510,7 @@ export function mergeFrontmatter(
       reviewed: fm.reviewed,
       aliases: Array.isArray(fm.aliases) ? fm.aliases : undefined,
     },
-    { tagStyle: 'block', emitEmptyTags: true }
+    { tagStyle: 'block', emitEmptyTags: true, passthroughLines }
   );
 
   return { frontmatter, body, wasMerged: true };
