@@ -14,6 +14,7 @@ import { resolveModelForTask } from '../core/model-resolver';
 import { isLocalNoKeyProvider } from '../core/local-no-key-provider';
 import { resolveProviderApiKey } from '../llm-sdk/provider-api-key-resolver';
 import type { LLMClient } from '../types';
+import { isInFolderScope } from '../core/folder-scope';
 
 export class AutoMaintainManager {
   private app: App;
@@ -404,7 +405,7 @@ export class AutoMaintainManager {
     let sourcesFilesPolluted = 0;
     try {
       const wikiFiles = this.app.vault.getMarkdownFiles()
-        .filter(f => f.path.startsWith(wikiFolder));
+        .filter(f => isInFolderScope(f.path, wikiFolder, false));
       console.debug(`[QuickFixes] Phase 2: scanning ${wikiFiles.length} files in "${wikiFolder}"`);
       const sourcesPreserveCase = this.settings.slugCase === 'preserve';
       for (const file of wikiFiles) {

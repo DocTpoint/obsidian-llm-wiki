@@ -1,13 +1,14 @@
 import { EngineContext } from '../../types';
 import { parseFrontmatter } from '../../core/frontmatter';
 import { isPageEmpty } from './utils';
+import { isInFolderScope } from '../../core/folder-scope';
 
 export async function deleteEmptyStubs(
   ctx: EngineContext,
   wikiFolder: string
 ): Promise<{ deleted: number; failed: number; errors: string[] }> {
   const files = ctx.app.vault.getMarkdownFiles()
-    .filter(f => f.path.startsWith(wikiFolder) &&
+    .filter(f => isInFolderScope(f.path, wikiFolder, false) &&
                  !f.path.endsWith('/index.md') &&
                  !f.path.includes('/schema/') &&
                  !f.path.includes('/sources/') &&

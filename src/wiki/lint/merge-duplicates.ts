@@ -8,6 +8,7 @@ import { cleanMarkdownResponse } from '../../core/markdown';
 import { escapeRegex } from './utils';
 import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
+import { isInFolderScope } from '../../core/folder-scope';
 
 export async function mergeDuplicatePages(
   ctx: EngineContext,
@@ -165,7 +166,7 @@ export async function mergeDuplicatePages(
   const sourceRel = sourcePath.replace(wikiFolder + '/', '').replace('.md', '');
   const targetRel = targetPath.replace(wikiFolder + '/', '').replace('.md', '');
   const allWikiFiles = ctx.app.vault.getMarkdownFiles().filter(
-    f => f.path.startsWith(wikiFolder) && f.path !== sourcePath
+    f => isInFolderScope(f.path, wikiFolder, false) && f.path !== sourcePath
   );
   for (const file of allWikiFiles) {
     const content = await ctx.app.vault.read(file);
