@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.25.11] - 2026-07-31
 
 ### Fixed
 
@@ -13,15 +13,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Relative cross-file links in README files break in Obsidian's community plugin browser (#375).** When a `](docs/README_CN.md)` markdown anchor resolves correctly on GitHub, the marketplace render strips relative paths, so users lose navigation between locales and to the companion PDF-OCR / MODEL guides. Rewrote every cross-file URL in all 10 README files (EN + 9 locales) to the absolute form `https://github.com/green-dalii/obsidian-llm-wiki/blob/main/…`. (Image refs `![…](…)` are exempted — Obsidian renders them correctly inline.) A new `src/__tests__/root/readme-links.test.ts` (12 cases) pins the contract: 10 files × no relative cross-file link + 1 switcher-count parity + 1 canonical-prefix check.
 
+- **4× frontmatter re-parse on every freshly generated page (simplify follow-up, F2).** The initial #365 fix called `mergeFrontmatter` for the source-stamp, but `mergeFrontmatter` internally runs `parseFrontmatter` + `extractBody` + `extractPassthroughLines` + `serializeFrontmatter` — 4× regex passes over the content. `enforceFrontmatterConstraints` (called ~60 lines earlier) had already produced a canonical YAML block; the work was duplicated. Replaced with a local `appendSourceSlugToFrontmatter` helper that uses substring slicing + `split('\n')` + `join('\n')` — single linear scan, no re-serialization. Output byte-shape is bit-identical to `mergeFrontmatter`'s (same `[[sources/<slug>]]` wikilink form, same Set dedup contract from `frontmatter.ts:484-490`). On a 200-page vault ingest this saves ~200 redundant YAML parses+serializes.
+
+- **Dead `lintStatus*` i18n keys retained after rename (simplify follow-up, F5).** The diff renamed active call sites from `lintStatusReading` / `lintStatusDuplicates` / `lintStatusScanningLinks` to `lintStagePrep` / `lintStageDedup` / `lintStageProgrammatic`; the old keys remained defined in all 10 locales with their old string values. Deleted 30 dead entries (3 keys × 10 locales).
+
+- **Dead `fitIndicatorToContainer` alias export (simplify follow-up, F6).** `src/wiki/turn-indicator.ts:312` re-exported `fitIndicatorToContainer = updateIndicatorTranslation` "to preserve older callers" — but zero callers existed anywhere in `src/`. Dead exports mislead future contributors.
+
 ### Added
 
-- **Fine-grained pipeline stage hints in the bottom-right status bar (#169).** The v3 plan moved fine-grained progress (e.g. "Generating summary", "Detecting duplicates", "Reading PDF") from Notice popups to the status bar. The always-visible cancel base label (e.g. "Ingesting… (click to cancel)") stays put — stage labels are ADD-only emission sandwiched between the page name and the base label. Coverage: 7 ingest stages (analyze / summary / entity / concept / retry / save / index), 3 PDF stages (reading / converting / sidecar), 4 lint SCAN stages (prep / programmatic / dedup / contradiction). Lint fix-all is unchanged (already dual-channel via `makeMirroredNotice`). 14 new i18n keys across all 10 locales (EN + 9 i18n). Tests: 2713 → 2739 (+26: 7 new Phase 4 + 12 Phase 2 readme-links + 5 Phase 1 sources-stamp + new frontmatter-fence structural guard after simplify).
+- **Fine-grained pipeline stage hints in the bottom-right status bar (#169).** The v3 plan moved fine-grained progress (e.g. "Generating summary", "Detecting duplicates", "Reading PDF") from Notice popups to the status bar. The always-visible cancel base label (e.g. "Ingesting… (click to cancel)") stays put — stage labels are ADD-only emission sandwiched between the page name and the base label. Coverage: 7 ingest stages (analyze / summary / entity / concept / retry / save / index), 3 PDF stages (reading / converting / sidecar), 5 lint SCAN stages (prep / programmatic / analyzing / dedup / contradiction). Lint fix-all is unchanged (already dual-channel via `makeMirroredNotice`). 15 new i18n keys across all 10 locales (EN + 9 i18n). NOT ETA per user constraint.
+
+- **EN README banner — official Obsidian authority signal + privacy positioning.** Replaced the generic tagline with a two-line banner surfacing the verified Obsidian Community Plugins "Health Excellent" + "Review Passed" badges ("Obsidian Review Perfect Score") plus a privacy line ("Local-first • No backend • GDPR-Friendly") aimed at EU users concerned about data sovereignty. Synced to all 9 locale READMEs.
+
+- **Comparison table deduplication (12 → 8 rows).** Merged the "Delivery form / Setup effort / Install path" cluster into one row, the "Architecture complexity / Embeddings required" cluster into one row, and the "Retrieval algorithm / Query pipeline" cluster into one row. Same info, more scannable. Synced to all 9 locale READMEs.
+
+- **Star CTA in Quick Start + MinerU online conversion in Ecosystem.** Single-line star reminder at the end of Quick Start (mirrors the AFFiNE/Dify pattern of surfacing the ask at this scroll depth). MinerU online conversion (`mineru.net/OpenSourceTools/Extractor`) added as the FIRST item in the Ecosystem section of all 10 READMEs, with links to the official online service, the self-host GitHub repo, and Issue #376 for future native integration. Synced to all 9 locale READMEs.
+
+- **PDF-OCR-GUIDE.md — MinerU section rewritten with three fixes.** Online service URL corrected from `mineru.net/` root to `mineru.net/OpenSourceTools/Extractor`. Workflow language no longer tells users to drop converted `.md` files into the plugin's auto-generated `sources/` output directory (confirmed via code search in `src/constants.ts:20`, `src/wiki/conversation-ingest.ts:196` that `sources/` is the plugin's output subdirectory, NOT a user input folder). Added a privacy-sensitive self-host path linking to the MinerU GitHub repo and a "Native integration roadmap" note pointing at Issue #376 (reopened as future-consideration).
 
 ### Internal
 
-- `src/core/ingest-stages.ts` — new module holding `STAGE_KEYS` (canonical ordered list of all 14 stage key names, `as const` tuple) and the derived `StageKey` union type. Production callers resolve stage labels through the standard `getText()` access pattern.
+- `src/core/ingest-stages.ts` — new module holding `STAGE_KEYS` (canonical ordered list of all 15 stage key names, `as const` tuple) and the derived `StageKey` union type. Production callers resolve stage labels through the standard `getText()` access pattern.
 - `buildIngestStatusBarText` gained an optional 4th `stage` parameter sandwiched between filename and base label. Absent / empty / whitespace = omitted (backward-compatible).
-- `mergeFrontmatter` splice in `create-page.ts` no longer double-wraps the frontmatter fences (regression from initial Phase 1 implementation).
+- `appendSourceSlugToFrontmatter` (create-page.ts private helper) handles the source-stamp splice without going through `mergeFrontmatter`'s 4× re-parse path. Original `mergeFrontmatter` unchanged for `merge-page.ts` callers (which need the `updated:` reset + full re-serialization).
+- `src/wiki/lint/llm-phases/analysis-phase.ts:140` migrated from `lintStatusAnalyzing` to `lintStageAnalyzing` — closes the v3 plan coverage gap (analysis was the only lint phase still using the old generic key).
+- 3 test files added (`src/__tests__/core/ingest-stages.test.ts`, `src/__tests__/core/status-bar.test.ts`, `src/__tests__/root/readme-links.test.ts`).
+- 4 agent-driven simplify follow-up (`e02a33d`) audited the entire v1.25.11 PATCH diff with 5 parallel sub-agents (4× simplify angle + 1× code-review max-effort). F1 (indicator `position: relative`) and F7 (false ResizeObserver comment claim) reverted after user e2e showed the `position: relative` change broke indicator layout — needs deeper investigation before retry.
 
 ## [1.25.10] - 2026-07-29
 

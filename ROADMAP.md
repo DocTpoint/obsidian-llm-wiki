@@ -2,11 +2,34 @@
 
 > Feature planning and improvement proposals
 
-**Version:** 1.25.10 PATCH (in release, awaiting publish). | **Updated:** 2026-07-29
+**Version:** 1.25.11 PATCH (post-merge, release notes drafting). | **Updated:** 2026-07-31
 
 ## Current Status
 
-**v1.25.10 — RELEASED 2026-07-29 (in release).** Sequential PATCH on v1.25.9 carrying bug fixes only — 10-item scope locked 2026-07-28:
+**v1.25.11 — POST-MERGE 2026-07-31 (awaiting release notes + tag).** Sequential PATCH on v1.25.10 carrying 3 locked items (#365 sources stamp + #375 README absolute URLs + #169 fine-grained stage hints) plus docs polish. main @ `c73b9af` after PR #379 merge.
+
+*Composition (8 commits, oldest → newest)*:
+- `9289bdd` fix(page-factory): stamp sources: provenance on freshly generated pages (Closes #365 partial)
+- `7588034` docs(readme): rewrite relative cross-file links as absolute https://github.com URLs (Closes #375)
+- `98f180c` feat(status): fine-grained stage labels in status bar (Closes #169)
+- `c191878` refactor(status): simplify cleanup of v1.25.11 PATCH (4 agents review)
+- `94c4c72` docs: v1.25.11 PATCH finalization — CHANGELOG + CLAUDE + CONTRIBUTING + ROADMAP
+- `a300d1d` fix(ui): restore turn indicator UX and settings infobox
+- `5b18655` docs(readme): optimize EN README banner + comparison table + Ecosystem MinerU
+- `e02a33d` refactor(status): simplify follow-up — 4 cleanups from 5-agent audit (F1+F7 reverted after user e2e)
+
+*Stats*: 44 files changed, +1498 / −329, **2744 tests passing** (204 files), +31 net since v1.25.10.
+
+*Docs polish in this PATCH*:
+- EN README banner restored ("Obsidian Review Perfect Score" + "Local-first • No backend • GDPR-Friendly" privacy line); comparison table 12 → 8 rows; star CTA added.
+- MinerU online conversion added as first item in Ecosystem section of all 10 READMEs.
+- PDF-OCR-GUIDE.md MinerU section rewritten (URL fix + `sources/` misconception correction + privacy self-host path + Issue #376 tracking reopened).
+
+*Simplify follow-up* (`e02a33d`): 5-agent audit (Reuse + Simplification + Efficiency + Altitude + code-review max-effort) applied 4 fixes (F2 4× frontmatter re-parse eliminated; F4 analysis-phase migrated to lintStageAnalyzing; F5 30 dead i18n entries deleted; F6 dead `fitIndicatorToContainer` alias removed). 2 indicator-related findings (F1, F7) reverted after user e2e showed `position: relative` change broke layout — deferred to v1.25.12.
+
+*What's NOT in this PATCH (deferred)*: #168 (status label granularity in Notice popups); #357 + #372 (still HOLD per CLAUDE.md, v1.26.0 design track).
+
+**v1.25.10 — RELEASED 2026-07-29.** Sequential PATCH on v1.25.9 carrying bug fixes only — 10-item scope locked 2026-07-28:
 
 *Composition (16 commits, oldest → newest)*:
 - `f9a680e` feat(slug): alias hardening — 3-char floor + cross-page uniqueness (later revised to 2-char floor)
@@ -134,9 +157,9 @@ Historic compositions (v1.25.7 and earlier) live in [CHANGELOG.md](./CHANGELOG.m
 ## Version Timeline
 | Version | Date | Headline |
 |---------|------|----------|
+| **1.25.11 PATCH** | 2026-07-31 | Sequential PATCH on v1.25.10 carrying bug fixes only: #365 sources provenance stamp (Plan A; `appendSourceSlugToFrontmatter` helper, byte-shape identical to `merge-page.ts:93`), #375 README absolute URLs (10 READMEs × language-switcher + PDF-OCR-GUIDE refs; image refs exempted), #169 fine-grained status-bar stage hints (15 keys × 10 locales: 7 ingest + 3 PDF + 5 lint SCAN; NOT ETA). Docs polish: EN banner restored ("Obsidian Review Perfect Score" + "Local-first • No backend • GDPR-Friendly"); comparison table 12→8 rows; star CTA; MinerU online conversion in Ecosystem (Issue #376 tracking reopened). Simplify follow-up: 5-agent audit applied 4 fixes (F2 4× frontmatter re-parse eliminated; F4 analysis-phase migrated to `lintStageAnalyzing`; F5 30 dead i18n entries deleted; F6 dead `fitIndicatorToContainer` alias removed); 2 indicator-related findings (F1+F7) reverted after user e2e. 8 commits, 44 files, +1498 / −329, 2744 tests |
 | **1.25.10 PATCH** | 2026-07-29 | Sequential PATCH on v1.25.9 carrying bug fixes only: #363 Mentions `[[|]]` parser + formatter (DocTpoint PR #371), #364 folder ingest boundary (DocTpoint PR #370), #356 frontmatter-strip, #366 Turkish-aware slug fold (phase 1), #367 lint-perf P0-1 fix-runner parallelisation (P1-1/P1-2 helpers ship dead-code, controller wire deferred to v1.26.0), #368 schema docs + settings UI hint, DocTpoint §4 merge/contradictory route split, alias hardening (3-char → 2-char floor). 16 commits, 78 files, +3499 / −315, 2713 tests |
 | **1.26.0 MINOR** | TBD (in design) | Complementary memory model: per-type registration, typed edges, bidirectional frontmatter, identity ambiguity record, Preview-Confirm gate, stable mutation interface. Anchored at [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358) |
-| **1.25.10 PATCH follow-ups** | 2026-08-02 (target) | #375 README links absolute-URL, #365 sources: provenance stamp, #168 granularity split (38-day slip), #169 ETA. Bug-fix only, ~7h |
 | **1.25.9** | 2026-07-25 | PATCH: Re-publish v1.25.8 to recover from a release-engineering incident where the v1.25.8 GitHub release record was inadvertently deleted while Obsidian's automated community plugin review bot was mid-review. No code changes vs v1.25.8. Also fixes `versions.json` trailing-comma JSON syntax error introduced in v1.25.8 bump commit |
 | **1.25.8** | 2026-07-25 | PATCH Hotfix: `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only `hide()`). Fixes v1.25.7 regression where provider switching made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header". +7 tests (6 against real `LLMWikiSettingTab.commitTempSettings` via `Object.create(prototype)` + 1 mock signature update). Bot 0/0 preserved. 2572 tests / 193 files |
 | **1.25.7** | 2026-07-25 | PATCH: API key switching bug fix (regression since v1.25.3 #182, PR #346) + DocTpoint dedup perf PRs #344+#345. Cache-stable prompt layout (54s→1.2s repeat) + slim dedup + top-K candidate pre-filter (660K→372K prompt tokens, −44%). 19 new tests since v1.25.6. Bot 0/0 preserved. 2566 tests / 192 files |
