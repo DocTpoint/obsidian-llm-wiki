@@ -485,10 +485,27 @@ export const ZH_TEXTS = {
     ingestionStatusBar: '提取中... 点击取消',
     lintStatusBar: '维护中... 点击取消',
     ingestStatusAnalyzing: '提取中… (点击取消)',
-    lintStatusReading: '维护中… (点击取消)',
-    lintStatusDuplicates: '维护中… (点击取消)',
-    lintStatusScanningLinks: '维护中… (点击取消)',
     lintStatusAnalyzing: '维护中… (点击取消)',
+    // v1.25.11 PATCH #169 — fine-grained stage hints for the status bar.
+    // These labels are ADD-only emission sandwiched between the page name
+    // and the always-visible base label (e.g. "My Note · Generating summary ·
+    // Ingesting… (click to cancel)"). They never replace the base label, so
+    // the cancel affordance is preserved through every long-running stage.
+    ingestStageAnalyze: '正在分析源',
+    ingestStageSummary: '正在生成摘要',
+    ingestStageEntity: '正在创建实体',
+    ingestStageConcept: '正在创建概念',
+    ingestStageRetry: '正在重试失败的页面',
+    ingestStageSave: '正在保存页面',
+    ingestStageIndex: '正在生成索引',
+    pdfStageReading: '正在读取 PDF',
+    pdfStageConverting: '正在转换 PDF',
+    pdfStageSidecar: '正在写入附属文件',
+    lintStagePrep: '正在读取页面',
+    lintStageProgrammatic: '正在扫描链接',
+    lintStageAnalyzing: '正在运行 LLM 分析',
+    lintStageDedup: '正在检测重复',
+    lintStageContradiction: '正在检测矛盾',
     ingestionCancelling: '正在取消 — 当前批次完成后将停止',
     ingestionCancelled: '提取已取消',
     crossTypeCollisionNotice: '{count} 个条目合并为跨类型别名（实体 ↔ 概念重复已防止）',

@@ -75,17 +75,24 @@ Whichever you pick, set the plugin's Base URL to the server's endpoint and the m
 
 If you need professional-grade PDF extraction (complex scientific layouts, scanned documents, mixed languages) without running your own OCR stack, route the converted Markdown through the plugin as a normal text source. Two services worth knowing:
 
-### [MinerU](https://mineru.net/OpenSourceTools/Extractor) — open-source PDF extractor
+### [MinerU](https://mineru.net/OpenSourceTools/Extractor) — open-source PDF/Office/HTML → Markdown converter
 
-[MinerU](https://mineru.net/OpenSourceTools/Extractor) is an open-source PDF extraction tool from Shanghai AI Lab's OpenDataLab team (17.4k GitHub stars, Apache-2.0). It handles complex multi-modal PDFs (text + images + formulas + tables), preserves structure, and converts formulas to LaTeX. Works on CPU and GPU, cross-platform (Windows/Linux/Mac).
+[MinerU](https://mineru.net/OpenSourceTools/Extractor) is an open-source document extraction tool from Shanghai AI Lab's OpenDataLab team (17.4k GitHub stars, Apache-2.0). It handles complex multi-modal PDFs (text + images + formulas + tables) as well as **Word, PowerPoint, Excel, HTML, and images**, preserves structure, and converts formulas to LaTeX. Works on CPU and GPU, cross-platform (Windows/Linux/Mac).
 
-**How to use with the plugin:**
+**For most users — use the official online conversion service:**
 
-1. Run MinerU on your PDFs (CLI: `magic-pdf -p input.pdf -o output/`) or via the [online playground](https://mineru.net/).
-2. Drop the resulting `.md` files into your vault under `sources/`.
-3. Run `Cmd+P/Ctrl+P` → "Ingest from folder" on that folder. The plugin sees them as regular Markdown notes — no PDF path involved.
+1. Open the [MinerU Extractor online service](https://mineru.net/OpenSourceTools/Extractor) and upload your document (PDF, Word, PPT, Excel, HTML, or image).
+2. Download the converted `.md` file.
+3. In Obsidian, drop the `.md` file anywhere in your vault **outside the wiki folder** (the wiki folder is the plugin's auto-generated output directory configured in Settings → Wiki Configuration → Wiki Folder — default `wiki/`; do not place input notes inside it).
+4. Run `Cmd+P/Ctrl+P` → "Ingest single source" on that file. The plugin ingests it as a regular Markdown note.
 
-This is the **most reliable** path for scientific papers, multi-column academic PDFs, and PDFs with embedded equations. Trade-off: MinerU is a separate tool, not integrated with the plugin's cache; you re-run MinerU on PDF changes yourself.
+This is the **easiest** path for most users — no CLI, no Python, no GPU. No file ever leaves your local machine beyond the upload to the conversion service.
+
+**For privacy-sensitive users — self-host MinerU:**
+
+If you require strict data sovereignty, deploy MinerU yourself by following the [MinerU GitHub repository](https://github.com/opendatalab/mineru). The CLI is `magic-pdf -p input.pdf -o output/`. Drop the resulting `.md` into your vault and ingest as above.
+
+**Native integration roadmap:** future versions of the plugin may integrate MinerU as a built-in extractor so users won't need to run it manually — see [Issue #376](https://github.com/green-dalii/obsidian-llm-wiki/issues/376) for the original feature request and roadmap status.
 
 ### Other options
 
@@ -93,7 +100,7 @@ This is the **most reliable** path for scientific papers, multi-column academic 
 - **Mathpix** — paid, best-in-class for math-heavy PDFs (arXiv papers, textbooks).
 - **Docling** (IBM) — open-source alternative to MinerU, more focused on document AI pipelines.
 
-For the plugin's purposes, all of these reduce to "convert PDF to `.md` then drop in `sources/`". Pick whichever fits your budget and accuracy bar.
+For the plugin's purposes, all of these reduce to "convert your document to `.md`, drop it anywhere in your vault **outside the wiki folder**, then ingest as a Markdown note". Pick whichever fits your budget, privacy needs, and accuracy bar.
 
 ---
 
@@ -123,5 +130,5 @@ Turn on **Write PDF Markdown to Vault** in Settings → Wiki Configuration → W
 | Offline / flight mode | Local oMLX on Apple Silicon |
 | Linux/Windows with consumer GPU | Local llama.cpp multimodal + Force PDF Support |
 
-The plugin handles all paths identically. The local-vs-cloud-vs-third-party decision is just which `Base URL` you point at, or which `.md` files you drop in `sources/`.
+The plugin handles all paths identically. The local-vs-cloud-vs-third-party decision is just which `Base URL` you point at, or which `.md` files you ingest from your vault.
 **Last updated:** 2026-07-23 — provider PDF support and local OCR model recommendations change frequently.

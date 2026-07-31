@@ -145,7 +145,7 @@ export async function runDedupPhase(
     // accidentally moved the UI updates inside the verify loop, leaving
     // "wiki is clean" runs without any visible "Checking duplicates"
     // feedback. This regression-fix restores the OLD observable behavior.
-    ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStatusDuplicates'));
+    ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStageDedup'));
     ctx.stageNotice?.setMessage(t.lintCheckingDuplicates);
 
     // Layer 1: Programmatic candidates (3 signals: crossLang, bigram, sharedLinks)

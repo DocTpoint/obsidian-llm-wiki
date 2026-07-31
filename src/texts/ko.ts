@@ -503,10 +503,27 @@ export const KO_TEXTS = {
     ingestionStatusBar: '수집 중... 클릭하여 취소',
     lintStatusBar: '점검 중... 클릭하여 취소',
     ingestStatusAnalyzing: '수집 중… (클릭하여 취소)',
-    lintStatusReading: '점검 중… (클릭하여 취소)',
-    lintStatusDuplicates: '점검 중… (클릭하여 취소)',
-    lintStatusScanningLinks: '점검 중… (클릭하여 취소)',
     lintStatusAnalyzing: '점검 중… (클릭하여 취소)',
+    // v1.25.11 PATCH #169 — fine-grained stage hints for the status bar.
+    // These labels are ADD-only emission sandwiched between the page name
+    // and the always-visible base label (e.g. "My Note · Generating summary ·
+    // Ingesting… (click to cancel)"). They never replace the base label, so
+    // the cancel affordance is preserved through every long-running stage.
+    ingestStageAnalyze: '소스 분석 중',
+    ingestStageSummary: '요약 생성 중',
+    ingestStageEntity: '엔티티 생성 중',
+    ingestStageConcept: '컨셉 생성 중',
+    ingestStageRetry: '실패한 페이지 재시도 중',
+    ingestStageSave: '페이지 저장 중',
+    ingestStageIndex: '인덱스 생성 중',
+    pdfStageReading: 'PDF 읽는 중',
+    pdfStageConverting: 'PDF 변환 중',
+    pdfStageSidecar: '사이드카 파일 쓰는 중',
+    lintStagePrep: '페이지 읽는 중',
+    lintStageProgrammatic: '링크 스캔 중',
+    lintStageAnalyzing: 'LLM 분석 실행 중',
+    lintStageDedup: '중복 감지 중',
+    lintStageContradiction: '모순 감지 중',
     ingestionCancelling: '취소 중 — 현재 배치 완료 후 중지됩니다',
     ingestionCancelled: '수집이 취소되었습니다',
     crossTypeCollisionNotice: '{count}개 항목이 크로스타입 별칭으로 병합됨（엔티티 ↔ 컨셉 중복 방지）',

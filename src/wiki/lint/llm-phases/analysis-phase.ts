@@ -137,7 +137,7 @@ export async function runAnalysisPhase(
 
   // Status updates — mirrors controller.ts:runLintWiki lines 460-461
   ctx.stageNotice?.setMessage(t.lintAnalyzingLLM);
-  ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStatusAnalyzing'));
+  ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStageAnalyzing'));
 
   // v1.24.0 (B2): cancel check again right before the LLM call
   // because tryReadFile could have taken noticeable time on a slow vault.

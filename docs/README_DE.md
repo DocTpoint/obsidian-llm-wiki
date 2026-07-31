@@ -4,13 +4,14 @@
 
 > KI-gestützte strukturierte Wissensbasis — wandelt Notizen automatisch in ein Wiki um. Basierend auf [Andrej Karpathys LLM Wiki-Konzept](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
-> **Obsidian-offizielle Bewertung 95/100 | Native Unterstützung für 10 Sprachen | Null-Embedding-Graph-Suche | Volle Datensouveränität | Kompatibel mit jedem LLM-Anbieter**
+> **Obsidian-Review Perfekte Bewertung • Null-Embedding-Graph-Suche • Native Unterstützung für 10 Sprachen • Kompatibel mit jedem LLM-Anbieter**
+> **Lokal zuerst • Kein Backend • DSGVO-freundlich**
 
 ![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
-[English](../README.md) | [简体中文](README_CN.md) | [繁體中文](README_ZH-Hant.md) | [日本語](README_JA.md) | [한국어](README_KO.md) | **Deutsch** | [Français](README_FR.md) | [Español](README_ES.md) | [Português](README_PT.md) | [Italiano](README_IT.md)
+[English](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/README.md) | [简体中文](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_CN.md) | [繁體中文](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_ZH-Hant.md) | [日本語](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_JA.md) | [한국어](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_KO.md) | **Deutsch** | [Français](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_FR.md) | [Español](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_ES.md) | [Português](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_PT.md) | [Italiano](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_IT.md)
 
 [Offizielle Website](https://llmwiki.greenerai.top/) | [Obsidian-Marktplatz](https://community.obsidian.md/plugins/karpathywiki) | [Blog](https://llmwiki.greenerai.top/blog/) | [Diskussionen](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
@@ -46,17 +47,13 @@ Du schreibst Notizen. Sie liegen in Ordnern. Zusammenhänge zu finden bedeutet, 
 
 ### Wie wir abschneiden
 
-|  | Karpathy LLM Wiki (dieses Plugin) | nashsu / llm_wiki | SamurAIGPT / llm-wiki-agent | sdyckjq / llm-wiki-skill | atomicstrata / llm-wiki-compiler |
+|  | **Karpathy LLM Wiki** (dieses Plugin) | nashsu / llm_wiki | SamurAIGPT / llm-wiki-agent | sdyckjq / llm-wiki-skill | atomicstrata / llm-wiki-compiler |
 |---|---|---|---|---|---|
-| **Lieferform** | ✅ One-Click-Obsidian-Plugin | ❌ Separate Tauri-Desktop-App | ❌ Claude-Code-Skill | ❌ Claude-Code-/Codex-Skill | ❌ CLI + SDK + MCP-Server |
-| **Einrichtungsaufwand** | ✅ **5 Minuten** — Community Plugins → Installieren → Provider wählen → Ingest | ❌ 30 Min.+ — Binary kompilieren/herunterladen, CLI konfigurieren | ❌ 15 Min. — benötigt Claude-Code-Abo + Skill-Installation | ❌ 10 Min. — benötigt Claude-Code-/Codex-Abo + Skill-Einrichtung | ❌ 30 Min.+ — pip install + SDK + MCP-Konfiguration |
-| **Installationsweg** | ✅ Obsidian → Community Plugins → Suchen → Installieren | ❌ Separates Binary kompilieren oder herunterladen, dann CLI konfigurieren | ❌ Benötigt Claude-Code-Abo + Installationsanleitung | ❌ Benötigt Claude-Code- oder Codex-Abo + Einrichtungsschritte | ❌ pip install + Python SDK + lokaler Server |
-| **Architekturkomplexität** | ✅ **Keine Abhängigkeiten** — keine Vektor-DB, kein Embedding-Modell, keine externen Prozesse | 🟡 Eigenes Python-Runtime + sigma.js + sqlite | 🟡 Nutzt Claude-Code-Umgebung — nicht eigenständig | 🟡 Erfordert separate Plattform-Laufzeitumgebung | ❌ Erfordert Python, Embedding-Modell, Vektor-DB |
+| **Lieferung & Installation** | ✅ **5 Min.** — One-Click-Obsidian-Plugin: Community Plugins → Installieren → Provider wählen → Ingest | ❌ 30 Min.+ — Tauri-Binary kompilieren/herunterladen, CLI konfigurieren | ❌ 15 Min. — benötigt Claude-Code-Abo + Skill-Installation | ❌ 10 Min. — benötigt Claude-Code-/Codex-Abo + Skill-Einrichtung | ❌ 30 Min.+ — pip install + Python SDK + lokaler Server |
+| **Architektur & Abhängigkeiten** | ✅ **Keine Abhängigkeiten** — keine Vektor-DB, kein Embedding-Modell, keine externen Prozesse (PPR über `[[wiki-link]]`-Graph, bewusst so gewählt) | 🟡 Eigenes Python-Runtime + sigma.js + sqlite; Embeddings optional, standardmäßig aus | 🟡 Nutzt Claude-Code-Umgebung — nicht eigenständig; keine Embeddings | 🟡 Erfordert separate Plattform-Laufzeitumgebung; keine Embeddings | ❌ Erfordert Python + Embedding-Modell + Vektor-DB (zwingend) |
 | **i18n (UI + Wiki-Ausgabe)** | ✅ 10 Sprachen (unabhängige UI/Ausgabe) | 🟡 2 (EN / 中文) | ❌ Nur Englisch | ❌ Nur Englisch | ❌ Nur Englisch |
 | **LLM-Anbieter** | ✅ 12+ (inkl. Codex OAuth, Bedrock, LM Studio, Ollama, Anthropic-kompatibel, Kimi, GLM, MiniMax, DeepSeek) | 🟡 OpenAI-kompatibel | 🟡 Abo über Claude Code | 🟡 Abo über Claude Code / Codex | 🟡 OpenAI-kompatibel |
-| **Suchalgorithmus** | ✅ Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 4-Signal-Heuristik (Adamic-Adar + 2-Hop-Decay) | ❌ Nur Louvain-Community-Erkennung | ❌ Louvain + k-Hop-Vorschauen | ❌ Hybrid: BM25 + semantisch + Wikilink |
-| **Query-Pipeline (5-Stufen-Kaskade)** | ✅ Lex → LLM-Keywords → Substring-Scan → LLM-KB-Fallback → PPR-Expansion (bricht bei erstem ausreichendem Signal ab) | 🟡 Nur 2-Hop-Decay | ❌ Nur Louvain-Clustering | ❌ k-Hop-Vorschauen (keine LLM-Erweiterung) | ❌ BM25 + semantisch über Chunks (kein Graph) |
-| **Embeddings erforderlich** | ✅ Nein (null Embedding-Kosten, bewusst so gewählt) | 🟡 Optional, standardmäßig aus | ✅ Nein | ✅ Nein | ❌ **Ja — zwingend erforderlich** |
+| **Suche & Query-Pipeline** | ✅ **5-Stufen-Kaskade** — Lex → LLM-Keywords → Substring-Scan → LLM-KB-Fallback → PPR-Expansion (bricht bei erstem ausreichendem Signal ab). Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 Nur 2-Hop-Decay (4-Signal-Heuristik: Adamic-Adar + 2-Hop) | ❌ Nur Louvain-Community-Erkennung | ❌ Nur k-Hop-Vorschauen (keine LLM-Erweiterung) | ❌ BM25 + semantisch über Chunks (kein Graph) |
 | **Graph-Visualisierung** | ✅ Obsidians nativer Graph View (integriert, null zusätzliche Größe) | ❌ Benutzerdefiniertes sigma.js + graphology in Desktop-App | 🟡 vis.js graph.html (separate Datei) | ❌ Benutzerdefiniertes sigma.js offline HTML | ❌ Read-only-Browser-Viewer |
 | **Wiki-Ehrlichkeit** | ✅ „Stage FALLBACK"-Banner, wenn keine Wiki-Quelle zur Abfrage passt | ❌ Kein Äquivalent | ❌ Kein Äquivalent | ❌ Kein Äquivalent | ❌ Kein Äquivalent |
 | **Veröffentlichter Such-Benchmark** | ✅ PPR @5 = 27,1 % vs. reine-kNN 24,1 % (einzige veröffentlichte Zahl in diesem Bereich) | ❌ 58 % → 71 % *nur mit aktivierten Embeddings*, nicht in unserem Apples-to-Apples-Format | ❌ Nicht veröffentlicht | ❌ Nicht veröffentlicht | ❌ Nicht veröffentlicht |
@@ -130,6 +127,8 @@ Das war's. Das Plugin ändert nichts an deinen ursprünglichen Notizen — es er
 > 💡 **Bleib auf dem neuesten Stand.** Neue Funktionen, Fehlerbehebungen und Leistungsverbesserungen erscheinen häufig. Einstellungen → Community-Plugins → Nach Updates suchen, oder aktiviere automatische Plugin-Updates.
 > 📖 Ausführliche Anleitungen (Installation, PDF-Einrichtung, Multi-Provider-Hinweise, Upgrades) werden in [GitHub Discussions → Guides](https://github.com/green-dalii/obsidian-llm-wiki/discussions/categories/guides) gepflegt.
 
+> 🌟 **Wenn dir dieses Plugin Einrichtungszeit gespart hat, gib uns einen [Star auf GitHub](https://github.com/green-dalii/obsidian-llm-wiki) — es hilft anderen, es zu finden.**
+
 ---
 
 ## ✨ Funktionen
@@ -144,7 +143,7 @@ Das war's. Das Plugin ändert nichts an deinen ursprünglichen Notizen — es er
 
 ### 📄 PDF-Ingest (v1.25.0+)
 
-- **🔌 Provider-Gate** — Anthropic, OpenAI und Bedrock verarbeiten PDF nativ. Für jeden anderen OpenAI/Anthropic-kompatiblen Endpunkt aktiviere **Force PDF Support** in Einstellungen → LLM Configuration → Advanced, damit das Plugin den Aufruf versucht. Für lokale OCR auf Apple Silicon, Drittanbieter-Extraktoren (MinerU, Docling, Mathpix, Adobe) und die vollständige PDF-Ingest-Anleitung siehe [PDF-OCR-Pfade](#-pdf-ocr-pfade) unten und [docs/PDF-OCR-GUIDE.md](./PDF-OCR-GUIDE.md).
+- **🔌 Provider-Gate** — Anthropic, OpenAI und Bedrock verarbeiten PDF nativ. Für jeden anderen OpenAI/Anthropic-kompatiblen Endpunkt aktiviere **Force PDF Support** in Einstellungen → LLM Configuration → Advanced, damit das Plugin den Aufruf versucht. Für lokale OCR auf Apple Silicon, Drittanbieter-Extraktoren (MinerU, Docling, Mathpix, Adobe) und die vollständige PDF-Ingest-Anleitung siehe [PDF-OCR-Pfade](#-pdf-ocr-pfade) unten und [docs/PDF-OCR-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/PDF-OCR-GUIDE.md).
 - **🗄️ Begrenzter Cache** — `.obsidian/plugins/karpathywiki/pdf-cache/` speichert konvertiertes Markdown, keyed by Content-Hash + Modell + Converter-Version. Drei-Schichten-Housekeeping: 100 MB gesamt / 1000 Einträge / 10 MB Einzel-Limit mit LRU-by-mtime-Eviction.
 - **📝 Optionaler Vault-Sidecar** — Einstellungen → Wiki Configuration → Wiki Folder → *Write PDF Markdown to Vault* schreibt `<basename>.pdf.md` neben die Quell-PDF (standardmäßig aus — Nur-Cache ist der Standard).
 - **🛡️ Verbatim-Transcriber-Prompt** — OCR-artige Konvertierung mit `[illegible]` / `[figure: ...]`-Anti-Halluzinations-Markern; Markdown-Fence-Einschluss von kleinen lokalen Modellen wird vor dem Cache-Schreiben automatisch bereinigt.
@@ -157,7 +156,7 @@ Drei Pfade — wähle, was zu deinem Setup passt:
 2. **🖥️ Lokale OCR auf Apple Silicon** — [oMLX](https://github.com/jundot/omlx) integriert Microsoft Markitdown als eingebautes PDF→Markdown-Backend. Aktiviere Markitdown in oMLX, lade [Baidu Unlimited-OCR](https://huggingface.co/baidu/Unlimited-OCR) (3B / 570M-aktiv, Open-Source seit 2026-06) als Vision-Modell, richte das Plugin auf oMLX als benutzerdefinierten OpenAI-kompatiblen Provider aus, aktiviere **Force PDF Support** und wähle das multimodale Modell, das oMLX bereitstellt. Die PDF verlässt niemals deinen Rechner.
 3. **🛠️ Drittanbieter-Extraktor (MinerU, Docling, Mathpix, Adobe)** — führe einen separaten Extraktor auf deinen PDFs aus, um `.md`-Dateien zu erzeugen, und ingestiere sie dann als reguläre Markdown-Notizen über die Standard-Pipeline des Plugins. Am zuverlässigsten für wissenschaftliche Arbeiten, gescannte Dokumente und mathematiklastige PDFs.
 
-📖 **Vollständige Einrichtungsanleitungen** für alle drei Pfade (Cloud-Provider, oMLX-Hardware-Stufen, MinerU-Installation, Cache-Housekeeping) → [docs/PDF-OCR-GUIDE.md](./PDF-OCR-GUIDE.md)
+📖 **Vollständige Einrichtungsanleitungen** für alle drei Pfade (Cloud-Provider, oMLX-Hardware-Stufen, MinerU-Installation, Cache-Housekeeping) → [docs/PDF-OCR-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/PDF-OCR-GUIDE.md)
 
 ### 💬 Abfrage & Wartung
 
@@ -240,7 +239,7 @@ Wir haben den Embedding-Pfad in [Issue #175](https://github.com/green-dalii/obsi
 | **ChatGPT Plan (Codex OAuth)** | Codex Responses API | Browser-/Gerätecode-Anmeldung; SecretStorage |
 | **Lokal: Ollama, LM Studio, OpenRouter, Anthropic-Compatible** | Jedes OpenAI-/Anthropic-Protokoll-Modell | Custom OpenAI-Compatible + Anthropic-Compatible (Token Plan / Coding Plan) |
 
-Dieses Plugin füttert dem LLM pro Abfrage den gesamten Wiki-Kontext — daher gewinnen **Modelle mit langem Kontextfenster**. Die vollständige Tabelle (Cloud + Lokal) befindet sich in [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md), geprüft gegen [models.dev](https://models.dev/), damit die Empfehlungen aktuell bleiben.
+Dieses Plugin füttert dem LLM pro Abfrage den gesamten Wiki-Kontext — daher gewinnen **Modelle mit langem Kontextfenster**. Die vollständige Tabelle (Cloud + Lokal) befindet sich in [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md), geprüft gegen [models.dev](https://models.dev/), damit die Empfehlungen aktuell bleiben.
 
 ### Was zählt
 
@@ -255,7 +254,7 @@ Dieses Plugin füttert dem LLM pro Abfrage den gesamten Wiki-Kontext — daher g
 - **OpenAI** — separat abgerechneter OpenAI-Platform-API-Key.
 - **ChatGPT Plan (Codex OAuth)** — experimenteller, eigenständiger Anbieter, der nach Browser- oder Gerätecode-Anmeldung berechtigtes Codex-Kontingent nutzt; die Verfügbarkeit folgt den OpenAI-Codex-Authentifizierungs- und Kontingentrichtlinien, nicht dem Plannamen. Drittanbieter-Codex-Kompatibilität, keine OpenAI-Partnerschaft oder allgemeine ChatGPT-API.
 
-> 📖 **Vollständige Auswahltabelle** (Cloud + Lokal + PDF-OCR + Codex OAuth + Quantisierung + Hardware-Stufen) → [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)
+> 📖 **Vollständige Auswahltabelle** (Cloud + Lokal + PDF-OCR + Codex OAuth + Quantisierung + Hardware-Stufen) → [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
 
 ---
 
@@ -263,6 +262,7 @@ Dieses Plugin füttert dem LLM pro Abfrage den gesamten Wiki-Kontext — daher g
 
 Das Plugin ergänzt sich mit dem Rest Ihres Obsidian-Stacks — jedes der folgenden Tools bindet sich ohne Code-Änderungen in den `[[wiki-link]]`-Graphen ein.
 
+- **📄 [MinerU Online-Konvertierung](https://mineru.net/OpenSourceTools/Extractor)** — kostenloser PDF/Word/PPT/Excel/HTML/Bild → Markdown Konverter des OpenDataLab-Teams von Shanghai AI Lab. Dokument hochladen, `.md` herunterladen, außerhalb des Wiki-Ordners im Vault ablegen und **Einzelne Quelle aufnehmen** ausführen. Bester Pfad für wissenschaftliche Arbeiten, gescannte Dokumente und komplexe multimodale PDFs mit Formeln/Tabellen. Datenschutzsensible Nutzer können [MinerU selbst hosten](https://github.com/opendatalab/mineru); zukünftige Versionen könnten MinerU nativ integrieren — siehe [#376](https://github.com/green-dalii/obsidian-llm-wiki/issues/376).
 - **🕸️ Obsidian Graph View** — öffnen Sie die native Graphenansicht auf jeder Wiki-Seite; jeder `[[wiki-link]]` wird zu einem Knoten, jeder Backlink zu einer Kante. Bereits eingebaut, null zusätzliche Bundle-Größe.
 - **✂️ [Obsidian Web Clipper](https://obsidian.md/clipper)** — offizielle Browser-Erweiterung. Speichern Sie Webseiten (Artikel, Blogbeiträge, Reddit-Threads, Hacker News, Rezepte, Forschungsarbeiten, YouTube-Transkripte via Interpreter) in einem beliebigen Ordner Ihres Vaults und führen Sie anschließend den Plugin-Befehl „Aus Ordner aufnehmen" aus, um Entitäten und Konzepte stapelweise zu extrahieren.
 - **📊 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)** — durchsuchen Sie das Wiki wie eine Datenbank mit DQL (`LIST FROM "wiki/entities" WHERE contains(tags, "person")`) oder der JS-API. Das Plugin schreibt standardmäßige Frontmatter (`tags:`, `type:`, `aliases:`) auf jede Seite, sodass Dataview-Abfragen sofort funktionieren.
@@ -301,7 +301,7 @@ Aus Obsidian Community-Plugins installieren → Provider wählen → **Test Conn
 
 ### Welchen LLM soll ich wählen?
 
-Modelle mit langem Kontext (≥200K Tokens) funktionieren am besten. Der Abschnitt [Modelle](#-modelle) erklärt die Prinzipien; die vollständige Tabelle befindet sich in [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md).
+Modelle mit langem Kontext (≥200K Tokens) funktionieren am besten. Der Abschnitt [Modelle](#-modelle) erklärt die Prinzipien; die vollständige Tabelle befindet sich in [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md).
 
 ### Gibt es einen veröffentlichten Benchmark?
 
