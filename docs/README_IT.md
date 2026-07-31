@@ -4,7 +4,8 @@
 
 > Un plugin Obsidian che trasforma le tue note in una base di conoscenza connessa e interrogabile — il concetto di [Karpathy LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), integrato nell'editor dove già scrivi.
 
-> **Recupero su grafo senza embedding • 10 lingue native • Funziona con qualsiasi provider**
+> **Punteggio perfetto nella revisione Obsidian • Recupero su grafo senza embedding • 10 lingue native • Funziona con qualsiasi provider**
+> **Prima di tutto locale • Nessun backend • Conforme GDPR**
 
 ![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
@@ -44,17 +45,13 @@ Prendi appunti. Loro restano in cartelle. Trovare cosa è collegato a cosa signi
 
 ### Confronto
 
-| | Karpathy LLM Wiki (questo plugin) | nashsu / llm_wiki | SamurAIGPT / llm-wiki-agent | sdyckjq / llm-wiki-skill | atomicstrata / llm-wiki-compiler |
+| | **Karpathy LLM Wiki** (questo plugin) | nashsu / llm_wiki | SamurAIGPT / llm-wiki-agent | sdyckjq / llm-wiki-skill | atomicstrata / llm-wiki-compiler |
 |---|---|---|---|---|---|
-| **Forma di distribuzione** | ✅ Plugin Obsidian con un clic | ❌ App desktop Tauri separata | ❌ Skill Claude Code | ❌ Skill Claude Code / Codex | ❌ CLI + SDK + server MCP |
-| **Sforzo di configurazione** | ✅ **5 minuti** — Community Plugins → Installa → scegli provider → Ingest | ❌ 30 min+ — compila/scarica binario, configura CLI | ❌ 15 min — richiede abbonamento Claude Code + installazione skill | ❌ 10 min — richiede abbonamento Claude Code / Codex + configurazione skill | ❌ 30 min+ — pip install + SDK + configurazione MCP |
-| **Percorso di installazione** | ✅ Obsidian → Community Plugins → cerca → Installa | ❌ Compila o scarica un binario separato, poi configura CLI | ❌ Richiede abbonamento Claude Code + guida all'installazione | ❌ Richiede abbonamento Claude Code o Codex + passaggi di configurazione | ❌ pip install + Python SDK + server locale |
-| **Complessità architetturale** | ✅ **Zero dipendenze** — niente DB vettoriale, niente modello di embedding, niente processi esterni | 🟡 Incorpora il proprio runtime Python + sigma.js + sqlite | 🟡 Usa l'ambiente di Claude Code — non autonomo | 🟡 Richiede piattaforma runtime separata | ❌ Richiede Python, modello di embedding, DB vettoriale |
+| **Distribuzione e installazione** | ✅ **5 min** — Plugin Obsidian con un clic: Community Plugins → Installa → scegli provider → Ingest | ❌ 30 min+ — Compila/scarica il binario Tauri, configura CLI | ❌ 15 min — richiede abbonamento Claude Code + installazione skill | ❌ 10 min — richiede abbonamento Claude Code / Codex + configurazione skill | ❌ 30 min+ — pip install + Python SDK + server locale |
+| **Architettura e dipendenze** | ✅ **Zero dipendenze** — niente DB vettoriale, niente modello di embedding, niente processi esterni (PPR sul grafo `[[wiki-link]]`, per progettazione) | 🟡 Incorpora il proprio runtime Python + sigma.js + sqlite; embedding opzionali, disattivati per default | 🟡 Usa l'ambiente di Claude Code — non autonomo; nessun embedding | 🟡 Richiede piattaforma runtime separata; nessun embedding | ❌ Richiede Python + modello di embedding + DB vettoriale (obbligatorio) |
 | **i18n (interfaccia + output wiki)** | ✅ 10 lingue (interfaccia / output indipendenti) | 🟡 2 (EN / 中文) | ❌ Solo inglese | ❌ Solo inglese | ❌ Solo inglese |
 | **Provider LLM** | ✅ 12+ (incl. Codex OAuth, Bedrock, LM Studio, Ollama, Anthropic-compatibile, Kimi, GLM, MiniMax, DeepSeek) | 🟡 Compatibile OpenAI | 🟡 Abbonamento via Claude Code | 🟡 Abbonamento via Claude Code / Codex | 🟡 Compatibile OpenAI |
-| **Algoritmo di recupero** | ✅ Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 Euristica a 4 segnali (Adamic-Adar + decadimento 2-hop) | ❌ Solo rilevamento comunità Louvain | ❌ Solo Louvain + anteprime k-hop | ❌ Ibrido: BM25 + semantico + wikilink |
-| **Pipeline di interrogazione (cascata a 5 stadi)** | ✅ Lex → keyword LLM → scansione sottostringhe → fallback KB LLM → espansione PPR (si interrompe al primo segnale sufficiente) | 🟡 Solo decadimento 2-hop | ❌ Solo clustering Louvain | ❌ Anteprime k-hop (senza augment LLM) | ❌ BM25 + semantico su chunk (senza grafo) |
-| **Richiede embedding** | ✅ No (costo embedding zero, per progettazione) | 🟡 Opzionale, disattivato per default | ✅ No | ✅ No | ❌ **Sì — obbligatorio** |
+| **Recupero e pipeline di interrogazione** | ✅ **Cascata a 5 stadi** — Lex → keyword LLM → scansione sottostringhe → fallback KB LLM → espansione PPR (si interrompe al primo segnale sufficiente). Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 Solo decadimento 2-hop (euristica a 4 segnali: Adamic-Adar + 2-hop) | ❌ Solo rilevamento comunità Louvain | ❌ Solo anteprime k-hop (senza augment LLM) | ❌ BM25 + semantico su chunk (senza grafo) |
 | **Visualizzazione grafo** | ✅ Graph View nativa di Obsidian (integrata, dimensione zero aggiuntiva) | ❌ sigma.js + graphology personalizzati in app desktop | 🟡 vis.js graph.html (file separato) | ❌ sigma.js offline HTML personalizzato | ❌ Visualizzatore browser sola lettura |
 | **Onestà del wiki** | ✅ Banner "STADIO FALLBACK" quando nessuna fonte wiki corrisponde alla tua domanda | ❌ Nessun equivalente | ❌ Nessun equivalente | ❌ Nessun equivalente | ❌ Nessun equivalente |
 | **Benchmark di recupero pubblicato** | ✅ PPR @5 = 27,1% vs pura kNN 24,1% (unico numero pubblicato in questo spazio) | ❌ 58% → 71% *solo con embedding attivati*, non nel nostro formato mela-mela | ❌ Non pubblicato | ❌ Non pubblicato | ❌ Non pubblicato |
@@ -127,6 +124,8 @@ Questo è tutto. Il plugin non modifica nulla nelle tue note originali — crea 
 
 > 💡 **Resta aggiornato.** Nuove funzionalità, correzioni e miglioramenti delle prestazioni vengono rilasciati frequentemente. Impostazioni → Plugin della community → Verifica aggiornamenti, o abilita l'aggiornamento automatico dei plugin.
 > 📖 Guide dettagliate (installazione, configurazione PDF, note multi-provider, aggiornamenti) sono mantenute in [GitHub Discussions → Guides](https://github.com/green-dalii/obsidian-llm-wiki/discussions/categories/guides).
+
+> 🌟 **Se questo plugin ti ha fatto risparmiare tempo di configurazione, una [stella su GitHub](https://github.com/green-dalii/obsidian-llm-wiki) aiuta altri a trovarlo.**
 
 ---
 
@@ -261,6 +260,7 @@ Questo plugin alimenta l'LLM con il contesto completo del tuo Wiki per ogni quer
 
 Il plugin si compone con il resto del tuo stack Obsidian — ciascuno degli strumenti seguenti si integra nel grafo `[[wiki-link]]` senza modifiche al codice.
 
+- **📄 [Conversione online MinerU](https://mineru.net/OpenSourceTools/Extractor)** — convertitore gratuito PDF/Word/PPT/Excel/HTML/immagine → Markdown del team OpenDataLab di Shanghai AI Lab. Carica un documento, scarica il `.md`, inseriscilo nel vault fuori dalla cartella wiki ed esegui **Ingest singola sorgente**. Percorso migliore per articoli scientifici, documenti scansionati e PDF multi-modali complessi con formule/tabelle. Gli utenti attenti alla privacy possono [auto-ospitare MinerU](https://github.com/opendatalab/mineru); versioni future potrebbero integrare MinerU nativamente — vedi [#376](https://github.com/green-dalii/obsidian-llm-wiki/issues/376).
 - **🕸️ Obsidian Graph View** — apri la vista grafo nativa su qualsiasi pagina wiki; ogni `[[wiki-link]]` diventa un nodo, ogni backlink un arco. Integrato, dimensione del bundle aggiuntiva pari a zero.
 - **✂️ [Obsidian Web Clipper](https://obsidian.md/clipper)** — estensione ufficiale del browser. Salva pagine web (articoli, post di blog, thread di Reddit, Hacker News, ricette, articoli di ricerca, trascrizioni YouTube tramite Interpreter) in una qualsiasi cartella del tuo vault, poi esegui il comando «Ingerisci dalla cartella» del plugin per estrarre in batch entità e concetti.
 - **📊 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)** — interroga il wiki come un database con DQL (`LIST FROM "wiki/entities" WHERE contains(tags, "person")`) o l'API JS. Il plugin scrive frontmatter standard (`tags:`, `type:`, `aliases:`) su ogni pagina, quindi le query Dataview funzionano senza configurazione.

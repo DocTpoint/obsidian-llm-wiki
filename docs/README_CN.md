@@ -4,7 +4,8 @@
 
 > 一个 Obsidian 插件，把你的笔记变成互联可查的知识库——[Karpathy LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 概念，直接集成在你已有的编辑器中。
 
-> **零嵌入图谱检索 • 原生 10 种语言 • 兼容所有 LLM 提供商**
+> **Obsidian 官方市场满分评分 • 零嵌入图谱检索 • 原生 10 种语言 • 兼容所有 LLM 提供商**
+> **本地优先 • 无后端 • GDPR 友好**
 
 ![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
@@ -47,17 +48,13 @@
 
 ### 竞品对比
 
-| | Karpathy LLM Wiki (本插件) | nashsu / llm_wiki | SamurAIGPT / llm-wiki-agent | sdyckjq / llm-wiki-skill | atomicstrata / llm-wiki-compiler |
+| | **Karpathy LLM Wiki**（本插件） | nashsu / llm_wiki | SamurAIGPT / llm-wiki-agent | sdyckjq / llm-wiki-skill | atomicstrata / llm-wiki-compiler |
 |---|---|---|---|---|---|
-| **交付形态** | ✅ 一键 Obsidian 插件 | ❌ 独立 Tauri 桌面应用 | ❌ Claude Code skill | ❌ Claude Code / Codex skill | ❌ CLI + SDK + MCP 服务 |
-| **上手时间** | ✅ **5 分钟** — 社区插件市场 → 安装 → 选择 Provider → 摄入 | ❌ 30 分钟以上 — 编译/下载二进制、配置 CLI | ❌ 15 分钟 — 需要 Claude Code 订阅 + 安装技能 | ❌ 10 分钟 — 需要 Claude Code/Codex 订阅 + 配置 | ❌ 30 分钟以上 — pip install + SDK + MCP 配置 |
-| **安装路径** | ✅ Obsidian → 社区插件 → 搜索 → 安装 | ❌ 编译或下载独立二进制，再配置 CLI | ❌ 需要 Claude Code 订阅 + 安装指南 | ❌ 需要 Claude Code 或 Codex 订阅 + 配置步骤 | ❌ pip install + Python SDK + 本地服务 |
-| **架构复杂度** | ✅ **零依赖** — 无需向量数据库、无需嵌入模型、无需外部进程 | 🟡 自带 Python 运行时 + sigma.js + sqlite | 🟡 依赖 Claude Code 环境 — 非自包含 | 🟡 需要独立平台运行时 | ❌ 需要 Python、嵌入模型、向量数据库 |
-| **国际化 (界面 + Wiki 输出)** | ✅ 10 种语言（界面/Wiki 独立设置） | 🟡 2 种（英文/中文） | ❌ 仅英文 | ❌ 仅英文 | ❌ 仅英文 |
+| **交付与安装** | ✅ **5 分钟** — 一键 Obsidian 插件：社区插件市场 → 安装 → 选择 Provider → 摄入 | ❌ 30 分钟以上 — 编译/下载 Tauri 二进制、配置 CLI | ❌ 15 分钟 — 需要 Claude Code 订阅 + 安装技能 | ❌ 10 分钟 — 需要 Claude Code/Codex 订阅 + 配置 | ❌ 30 分钟以上 — pip install + Python SDK + 本地服务 |
+| **架构与依赖** | ✅ **零依赖** — 无需向量数据库、无需嵌入模型、无需外部进程（按设计采用 PPR 检索 `[[wiki-link]]` 图谱） | 🟡 自带 Python 运行时 + sigma.js + sqlite；嵌入模型可选，默认关闭 | 🟡 依赖 Claude Code 环境 — 非自包含；无嵌入 | 🟡 需要独立平台运行时；无嵌入 | ❌ 需要 Python + 嵌入模型 + 向量数据库（强制） |
+| **国际化（界面 + Wiki 输出）** | ✅ 10 种语言（界面/Wiki 独立设置） | 🟡 2 种（英文/中文） | ❌ 仅英文 | ❌ 仅英文 | ❌ 仅英文 |
 | **LLM 提供商** | ✅ 12+（含 Codex OAuth、Bedrock、LM Studio、Ollama、Anthropic 兼容、Kimi、GLM、MiniMax、DeepSeek） | 🟡 OpenAI 兼容 | 🟡 通过 Claude Code 订阅 | 🟡 通过 Claude Code / Codex 订阅 | 🟡 OpenAI 兼容 |
-| **检索算法** | ✅ Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 4 信号启发式（Adamic-Adar + 2 跳衰减） | ❌ 仅 Louvain 社区检测 | ❌ 仅 Louvain + k 跳预览 | ❌ 混合：BM25 + 语义 + wiki 链接 |
-| **查询管线（5 级级联）** | ✅ Lex → LLM 关键词 → 子串扫描 → LLM KB 回退 → PPR 扩展（首个充分信号即截断） | 🟡 仅 2 跳衰减 | ❌ 仅 Louvain 聚类 | ❌ k 跳预览（无 LLM 增强） | ❌ BM25 + 语义分块（无图） |
-| **需要嵌入模型** | ✅ 不需要（零嵌入成本，有意为之） | 🟡 可选，默认关闭 | ✅ 不需要 | ✅ 不需要 | ❌ **必须 — 强制要求** |
+| **检索与查询管线** | ✅ **5 级级联** — Lex → LLM 关键词 → 子串扫描 → LLM KB 回退 → PPR 扩展（首个充分信号即截断）。Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 仅 2 跳衰减（4 信号启发式：Adamic-Adar + 2 跳） | ❌ 仅 Louvain 社区检测 | ❌ 仅 k 跳预览（无 LLM 增强） | ❌ BM25 + 语义分块（无图谱） |
 | **图谱可视化** | ✅ Obsidian 原生图谱视图（内建，零额外体积） | ❌ 桌面应用中自定义 sigma.js + graphology | 🟡 vis.js graph.html（独立文件） | ❌ 自定义 sigma.js 离线 HTML | ❌ 只读浏览器查看器 |
 | **Wiki 诚实度** | ✅ 当没有 Wiki 源匹配查询时显示"阶段回退"提示 | ❌ 无等效功能 | ❌ 无等效功能 | ❌ 无等效功能 | ❌ 无等效功能 |
 | **已发布检索基准** | ✅ PPR @5 = 27.1% vs 纯 knn 基线 24.1%（该领域唯一公开基准） | ❌ 58% → 71% *仅在启用嵌入时*，非同类对比 | ❌ 未公开 | ❌ 未公开 | ❌ 未公开 |
@@ -133,6 +130,8 @@
 
 > 💡 **保持更新。** 新功能、修复和性能改进频繁发布。设置 → 第三方插件 → 检查更新，或开启自动插件更新。
 > 📖 详细教程（安装、PDF 配置、多 Provider 说明、升级指南）见 [GitHub Discussions → 指南](https://github.com/green-dalii/obsidian-llm-wiki/discussions/categories/guides)。
+
+> 🌟 **如果这个插件帮你省了配置时间，请在 [GitHub](https://github.com/green-dalii/obsidian-llm-wiki) 上点个 Star**，让更多人看到。
 
 ---
 
@@ -267,6 +266,7 @@
 
 本插件与你的其他 Obsidian 工具无缝协作——以下工具皆可直接对接 `[[wiki-link]]` 图谱，无需任何代码改动。
 
+- **📄 [MinerU 在线转换](https://mineru.net/OpenSourceTools/Extractor)** —— 上海 AI Lab OpenDataLab 团队推出的免费 PDF/Word/PPT/Excel/HTML/图片 → Markdown 转换器。上传文档、下载 `.md`、放入 vault 内 wiki 文件夹之外的任意位置，然后运行「摄入单个源」。是科学论文、扫描件、含公式/表格的复杂多模态 PDF 的最佳路径。需要严格隐私保护的用户可 [自部署 MinerU](https://github.com/opendatalab/mineru)；未来版本可能原生集成，详见 [#376](https://github.com/green-dalii/obsidian-llm-wiki/issues/376)。
 - **🕸️ Obsidian 原生关系图谱** —— 在任意 Wiki 页面上打开原生图谱视图；每个 `[[wiki-link]]` 成为节点，每条反向链接成为边。内置功能，零额外体积。
 - **✂️ [Obsidian Web Clipper](https://obsidian.md/clipper)** —— 官方浏览器扩展。将网页（文章、博客、Reddit 帖子、Hacker News、食谱、研究论文、YouTube 字幕（通过 Interpreter 提取））保存到 vault 内任意文件夹，然后运行插件的「从文件夹摄入」命令批量提取实体与概念。
 - **📊 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)** —— 用 DQL（`LIST FROM "wiki/entities" WHERE contains(tags, "person")`）或 JS API 像查询数据库一样检索 Wiki。插件在每个页面写入标准 frontmatter（`tags:`、`type:`、`aliases:`），Dataview 查询开箱即用。

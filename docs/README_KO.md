@@ -4,7 +4,8 @@
 
 > 노트를 연결된 질의 가능한 지식베이스로 바꿔주는 Obsidian 플러그인 — [Andrej Karpathy의 LLM Wiki 개념](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)을, 여러분이 이미 글을 쓰고 있는 편집기에 구현했습니다.
 
-> **제로 임베딩 그래프 검색 • 10개 언어 네이티브 지원 • 모든 LLM 공급업체 호환**
+> **Obsidian 공식 마켓 만점 평가 • 제로 임베딩 그래프 검색 • 10개 언어 네이티브 지원 • 모든 LLM 공급업체 호환**
+> **로컬 우선 • 백엔드 없음 • GDPR 친화**
 
 ![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
@@ -44,17 +45,13 @@
 
 ### 경쟁 제품과의 비교
 
-|  | Karpathy LLM Wiki (이 플러그인) | nashsu / llm_wiki | SamurAIGPT / llm-wiki-agent | sdyckjq / llm-wiki-skill | atomicstrata / llm-wiki-compiler |
+|  | **Karpathy LLM Wiki** (이 플러그인) | nashsu / llm_wiki | SamurAIGPT / llm-wiki-agent | sdyckjq / llm-wiki-skill | atomicstrata / llm-wiki-compiler |
 |---|---|---|---|---|---|
-| **제공 형태** | ✅ 원클릭 Obsidian 플러그인 | ❌ 별도 Tauri 데스크톱 앱 | ❌ Claude Code 스킬 | ❌ Claude Code / Codex 스킬 | ❌ CLI + SDK + MCP 서버 |
-| **설정 시간** | ✅ **5분** — 커뮤니티 플러그인 → 설치 → 공급자 선택 → 수집 | ❌ 30분+ — 컴파일/바이너리 다운로드, CLI 설정 | ❌ 15분 — Claude Code 구독 + 스킬 설치 필요 | ❌ 10분 — Claude Code/Codex 구독 + 스킬 설정 필요 | ❌ 30분+ — pip 설치 + SDK + MCP 설정 |
-| **설치 경로** | ✅ Obsidian → 커뮤니티 플러그인 → 검색 → 설치 | ❌ 별도 바이너리 컴파일 또는 다운로드 후 CLI 설정 | ❌ Claude Code 구독 + 설치 가이드 필요 | ❌ Claude Code 또는 Codex 구독 + 설정 단계 필요 | ❌ pip install + Python SDK + 로컬 서버 |
-| **아키텍처 복잡도** | ✅ **의존성 제로** — 벡터 DB, 임베딩 모델, 외부 프로세스 불필요 | 🟡 자체 Python 런타임 + sigma.js + sqlite 내장 | 🟡 Claude Code 환경 사용 — 자체 완결적이지 않음 | 🟡 별도 플랫폼 런타임 필요 | ❌ Python, 임베딩 모델, 벡터 DB 필요 |
+| **제공 형태 및 설치** | ✅ **5분** — 원클릭 Obsidian 플러그인: 커뮤니티 플러그인 → 설치 → 공급자 선택 → 수집 | ❌ 30분+ — Tauri 바이너리 컴파일/다운로드, CLI 설정 | ❌ 15분 — Claude Code 구독 + 스킬 설치 필요 | ❌ 10분 — Claude Code/Codex 구독 + 스킬 설정 필요 | ❌ 30분+ — pip 설치 + Python SDK + 로컬 서버 |
+| **아키텍처 및 의존성** | ✅ **의존성 제로** — 벡터 DB, 임베딩 모델, 외부 프로세스 불필요 (설계상 `[[wiki-link]]` 그래프를 PPR로 탐색) | 🟡 자체 Python 런타임 + sigma.js + sqlite 내장; 임베딩은 선택 사항, 기본 꺼짐 | 🟡 Claude Code 환경 사용 — 자체 완결적이지 않음; 임베딩 불필요 | 🟡 별도 플랫폼 런타임 필요; 임베딩 불필요 | ❌ Python + 임베딩 모델 + 벡터 DB 필요 (필수) |
 | **i18n (UI + Wiki 출력)** | ✅ 10개 언어 (UI/출력 독립) | 🟡 2개 (EN / 中文) | ❌ 영어 전용 | ❌ 영어 전용 | ❌ 영어 전용 |
 | **LLM 공급자** | ✅ 12+ (Codex OAuth, Bedrock, LM Studio, Ollama, Anthropic-compatible, Kimi, GLM, MiniMax, DeepSeek 포함) | 🟡 OpenAI 호환 | 🟡 Claude Code를 통한 구독 | 🟡 Claude Code / Codex를 통한 구독 | 🟡 OpenAI 호환 |
-| **검색 알고리즘** | ✅ Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 4-신호 휴리스틱 (Adamic-Adar + 2홉 감쇠) | ❌ Louvain 커뮤니티 탐지만 사용 | ❌ Louvain + k홉 미리보기 | ❌ 하이브리드: BM25 + 시맨틱 + wikilink |
-| **쿼리 파이프라인 (5단계 캐스케이드)** | ✅ Lex → LLM 키워드 → 부분문자열 스캔 → LLM KB 폴백 → PPR 확장 (첫 충분 신호에서 절단) | 🟡 2홉 감쇠만 사용 | ❌ Louvain 클러스터링만 사용 | ❌ k홉 미리보기 (LLM 보강 없음) | ❌ BM25 + 시맨틱 (그래프 없음) |
-| **임베딩 필요 여부** | ✅ 아니오 (설계상 임베딩 비용 제로) | 🟡 선택 사항, 기본 꺼짐 | ✅ 아니오 | ✅ 아니오 | ❌ **예 — 필수** |
+| **검색 및 쿼리 파이프라인** | ✅ **5단계 캐스케이드** — Lex → LLM 키워드 → 부분문자열 스캔 → LLM KB 폴백 → PPR 확장 (첫 충분 신호에서 절단). Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 2홉 감쇠만 사용 (4-신호 휴리스틱: Adamic-Adar + 2홉) | ❌ Louvain 커뮤니티 탐지만 사용 | ❌ k홉 미리보기만 사용 (LLM 보강 없음) | ❌ BM25 + 시맨틱 (그래프 없음) |
 | **그래프 시각화** | ✅ Obsidian 네이티브 Graph View (내장, 추가 크기 제로) | ❌ 데스크톱 앱 내 커스텀 sigma.js + graphology | 🟡 vis.js graph.html (별도 파일) | ❌ 커스텀 sigma.js 오프라인 HTML | ❌ 읽기 전용 브라우저 뷰어 |
 | **Wiki 정직성** | ✅ 쿼리와 일치하는 Wiki 소스가 없을 때 "Stage FALLBACK" 배너 표시 | ❌ 동등 기능 없음 | ❌ 동등 기능 없음 | ❌ 동등 기능 없음 | ❌ 동등 기능 없음 |
 | **검색 벤치마크 공개** | ✅ PPR @5 = 27.1% vs 순수 kNN 24.1% (이 분야 유일한 공개 수치) | ❌ 임베딩 활성화 시에만 58% → 71%, 동등 비교 불가 | ❌ 미공개 | ❌ 미공개 | ❌ 미공개 |
@@ -127,6 +124,8 @@
 
 > 💡 **최신 상태 유지.** 새 기능, 수정 사항, 성능 개선이 자주 릴리스됩니다. 설정 → 커뮤니티 플러그인 → 업데이트 확인, 또는 플러그인 자동 업데이트를 활성화하세요.
 > 📖 상세 가이드 (설치, PDF 설정, 멀티 공급자, 업그레이드)는 [GitHub Discussions → Guides](https://github.com/green-dalii/obsidian-llm-wiki/discussions/categories/guides)에서 확인하세요.
+
+> 🌟 **설정 시간을 아끼셨다면, [GitHub](https://github.com/green-dalii/obsidian-llm-wiki)에 Star 한 번이 다른 분들께 도움이 됩니다.**
 
 ---
 
@@ -261,6 +260,7 @@ Monte Carlo PPR (Fogaras 2005)을 사용합니다 — 3,000개의 랜덤 워크 
 
 이 플러그인은 Obsidian의 다른 도구들과 함께 작동합니다 — 아래 도구들은 모두 코드 변경 없이 `[[wiki-link]]` 그래프와 연동됩니다.
 
+- **📄 [MinerU 온라인 변환](https://mineru.net/OpenSourceTools/Extractor)** — Shanghai AI Lab OpenDataLab 팀이 제공하는 무료 PDF/Word/PPT/Excel/HTML/이미지 → Markdown 변환기. 문서를 업로드하고 `.md`를 다운로드한 다음 vault 내 wiki 폴더가 아닌 아무 곳에나 둔 후 **단일 소스 수집**을 실행하세요. 과학 논문, 스캔 문서, 수식/표가 포함된 복잡한 멀티모달 PDF에 가장 적합한 경로입니다. 개인정보 보호가 중요한 사용자는 [MinerU를 자체 호스팅](https://github.com/opendatalab/mineru)할 수 있습니다. 향후 버전에서 MinerU를 네이티브 통합할 가능성도 있습니다 — 자세한 내용은 [#376](https://github.com/green-dalii/obsidian-llm-wiki/issues/376) 참조.
 - **🕸️ Obsidian Graph View** — 모든 Wiki 페이지에서 네이티브 그래프를 열 수 있습니다. 모든 `[[wiki-link]]` 가 노드가 되고, 모든 역방향 링크가 엣지가 됩니다. 기본 내장, 추가 번들 크기 0.
 - **✂️ [Obsidian Web Clipper](https://obsidian.md/clipper)** — 공식 브라우저 확장. 기사, 블로그 게시물, Reddit 스레드, Hacker News, 레시피, 연구 논문, YouTube 자막(Interpreter 경유)을 vault 내 임의 폴더에 저장한 다음, 플러그인의 「폴더에서 수집」 명령을 실행하여 엔티티와 개념을 일괄 추출합니다.
 - **📊 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)** — DQL(`LIST FROM "wiki/entities" WHERE contains(tags, "person")`) 또는 JS API로 Wiki를 데이터베이스처럼 쿼리할 수 있습니다. 플러그인은 모든 페이지에 표준 frontmatter(`tags:`, `type:`, `aliases:`)를 작성하므로 Dataview 쿼리는 별도 설정 없이 바로 작동합니다.
