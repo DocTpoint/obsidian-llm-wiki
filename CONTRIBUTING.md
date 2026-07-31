@@ -202,7 +202,7 @@ src/
 │   ├── tag-chip-input.ts
 │   └── schema-diff-modal.ts
 ├── texts/               # i18n (10 languages: EN/ZH/ZH-Hant/JA/KO/DE/FR/ES/PT/IT)
-└── __tests__/           # Unit tests (vitest, 2739 tests across 203 files; v1.25.11 PATCH WIP 2026-07-30, +26 net: +7 ingest-stages/status-bar #169 + 12 readme-links #375 + 5 create-page #365 + 2 frontmatter-fence guard)
+└── __tests__/           # Unit tests (vitest, 2744 tests across 204 files; v1.25.11 PATCH RELEASED 2026-07-31, +31 net: +7 ingest-stages/status-bar #169 + 12 readme-links #375 + 5 create-page #365 + 2 frontmatter-fence guard + 5 misc from simplify follow-up e02a33d)
 ```
 
 ## Internationalization

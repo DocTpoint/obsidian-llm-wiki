@@ -1,10 +1,10 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-07-30 (v1.25.10 PATCH RELEASED — 16 commits / 78 files / +3499 / −315 / 2713 tests / 202 files. main @ `fc0f1ce` after PR #373 merge. DocTpoint PRs #370 + #371 consolidated into commits `98afe42` + `292d42e` with `Co-authored-by: DocTpoint` trailer; both source PRs closed with thanks. v1.25.10 PATCH scope: 5 locked from #330/#356 + DocTpoint batch (#363 format+parser, #364 folder boundary) + Guru35 batch (#366 slug migration option d phase 1 helper, #367 lint-perf P0-1+P1-1+P1-2 from v1.25.7 deferred, #368 docs+settings hint as `enhancement`). #365 deferred v1.26.0+; PR #357 anchored v1.26.0+. — v1.25.11 PATCH in progress on branch `fix/v1.25.11-patch-follow-ups` (from `main @ b8ae391` after PR #377 merge): 3-phase scope locked 2026-07-30 — #365 Plan A sources-stamp splice + #375 README absolute URLs + #169 fine-grained stage hints (NOT ETA). #168 granularity deferred. PRs #357 + #372 still HOLD.)
+**Last Updated:** 2026-07-31 (v1.25.11 PATCH MERGED — 8 commits / 44 files / +1498 / −329 / 2744 tests / 204 files. main @ `c73b9af` after PR #379 merge. v1.25.11 PATCH scope: 3 locked from 2026-07-30 triage (#365 Plan A sources stamp splice + #375 README absolute URLs + #169 fine-grained stage hints, NOT ETA) + simplify follow-up (`e02a33d`, 4 fixes from 5-agent audit: F2 4× frontmatter re-parse eliminated, F4 analysis-phase migrated to lintStageAnalyzing, F5 30 dead i18n entries deleted, F6 dead fitIndicatorToContainer alias removed; F1+F7 reverted after user e2e). Docs polish: EN README banner restored ("Obsidian Review Perfect Score" + "Local-first • No backend • GDPR-Friendly" privacy line), comparison table 12→8 rows, star CTA, MinerU online conversion in Ecosystem (Issue #376 tracking reopened). #168 granularity deferred. PRs #357 + #372 still HOLD. Awaiting release notes + tag.)
 
 ---
 
-## Current Phase: v1.25.11 PATCH Phase 5 (docs/simplify done; PR pending); v1.25.10 PATCH RELEASED; v1.26.0 MINOR in design phase.
+## Current Phase: v1.25.11 PATCH MERGED 2026-07-31 (release notes + tag pending); v1.25.10 PATCH RELEASED; v1.26.0 MINOR in design phase.
 
 **v1.25.10 PATCH** (RELEASED 2026-07-29, sequential on v1.25.9): ten-item scope (locked 2026-07-28, expanded from initial 5 after DocTpoint + Guru35 morning batches):
 - admission criterion in Task Requirements (closes DocTpoint §2 "rules stated twice in the same prompt")
