@@ -508,9 +508,6 @@ export const EN_TEXTS = {
     ingestionStatusBar: 'Ingesting... click to cancel',
     lintStatusBar: 'Linting... click to cancel',
     ingestStatusAnalyzing: 'Ingesting… (click to cancel)',
-    lintStatusReading: 'Linting… (click to cancel)',
-    lintStatusDuplicates: 'Linting… (click to cancel)',
-    lintStatusScanningLinks: 'Linting… (click to cancel)',
     lintStatusAnalyzing: 'Linting… (click to cancel)',
     // v1.25.11 PATCH #169 — fine-grained stage hints for the status bar.
     // These labels are ADD-only emission sandwiched between the page name
@@ -529,6 +526,7 @@ export const EN_TEXTS = {
     pdfStageSidecar: 'Writing sidecar',
     lintStagePrep: 'Reading pages',
     lintStageProgrammatic: 'Scanning links',
+    lintStageAnalyzing: 'Running LLM analysis',
     lintStageDedup: 'Detecting duplicates',
     lintStageContradiction: 'Detecting contradictions',
     ingestionCancelling: 'Cancelling — will stop after current batch completes',

@@ -34,7 +34,7 @@ import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { canonicalizeSectionHeaders } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
-import { parseFrontmatter, enforceFrontmatterConstraints, mergeFrontmatter } from '../../core/frontmatter';
+import { parseFrontmatter, enforceFrontmatterConstraints } from '../../core/frontmatter';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
@@ -295,23 +295,81 @@ export async function createNewPage(
     // unchanged rather than synthesise a thin frontmatter block. The
     // sources stamp is a best-effort add-on; it is strictly less risky than
     // the primary write.
+    // Inline source-stamp to avoid `mergeFrontmatter`'s 4× regex pass
+    // (parseFrontmatter + extractBody + extractPassthroughLines +
+    // serializeFrontmatter rebuild). `enforceFrontmatterConstraints`
+    // already produced a clean YAML block; we only need to splice
+    // `sources: [[[sources/<slug>]]]` into the existing block without
+    // re-serializing type/created/updated/tags/aliases. The original
+    // `mergeFrontmatter` helper still owns the merge-page.ts path
+    // (which has different requirements: emit a fresh `updated:`
+    // stamp and full re-serialization).
     const sourcedContent = sourceSlug
-      ? (() => {
-          const mergeResult = mergeFrontmatter(mentionsInjectedContent, `sources/${sourceSlug}`);
-          // `mergeFrontmatter` returns a `frontmatter` field that already
-          // includes the leading and trailing `---` delimiters (it goes
-          // through `serializeFrontmatter`, lines 428 + 458 of
-          // frontmatter.ts). Reassemble by joining the pre-delimited
-          // frontmatter with the body — same shape as the existing
-          // `merge-page.ts` consumers via `assembleFinalContent`.
-          return mergeResult.wasMerged
-            ? `${mergeResult.frontmatter}\n\n${mergeResult.body}`
-            : mentionsInjectedContent;
-        })()
+      ? appendSourceSlugToFrontmatter(mentionsInjectedContent, sourceSlug)
       : mentionsInjectedContent;
     await ctx.createOrUpdateFile(path, sourcedContent);
     return path;
   } catch (error) {
     throw contextualizeError(error, info.name, pageType);
   }
+}
+
+/**
+ * v1.25.11 PATCH #365 source-stamp helper (Plan A): splice a single
+ * `[[sources/<slug>]]` entry into the document's existing frontmatter
+ * block without re-serializing the whole YAML. Designed to be called
+ * AFTER `enforceFrontmatterConstraints` has produced a clean block
+ * (so the byte-shape of type/created/updated/tags/aliases is already
+ * canonical). Falls back to returning the input unchanged when the
+ * content has no parseable frontmatter — same semantics as
+ * `mergeFrontmatter.wasMerged=false`.
+ *
+ * The dedup contract matches `mergeFrontmatter` line 484-490: a Set
+ * of normalized wikilink forms, re-wrapped as `[[name]]`. The slug
+ * input here is the bare source slug (no `sources/` prefix and no
+ * `[[]]` wrapper); we add both to keep the wire format identical to
+ * what `merge-page.ts:95` would have produced.
+ */
+function appendSourceSlugToFrontmatter(content: string, sourceSlug: string): string {
+  if (!content.startsWith('---')) return content;
+  const fmEnd = content.indexOf('\n---\n', 3);
+  if (fmEnd === -1) return content;
+  const fmText = content.substring(3, fmEnd);
+  const body = content.substring(fmEnd + 5);
+  const sourceEntry = `[[sources/${sourceSlug}]]`;
+
+  const lines = fmText.split('\n');
+  const sourcesIdx = lines.findIndex(l => /^sources:\s*$/.test(l));
+  if (sourcesIdx === -1) {
+    // No existing `sources:` key — insert one. Anchor on `tags:` so the
+    // block order (type / created / updated / sources / tags / aliases /
+    // reviewed) matches the canonical layout produced by
+    // `enforceFrontmatterConstraints` + `serializeFrontmatter`.
+    const tagsIdx = lines.findIndex(l => /^tags:\s*$/.test(l));
+    const insertAt = tagsIdx === -1 ? lines.length : tagsIdx;
+    lines.splice(insertAt, 0, `sources:\n  - ${sourceEntry}`);
+  } else {
+    // Existing `sources:` block — append the new entry if not already
+    // present. Scan only indented continuation lines (same semantics
+    // as `mergeFrontmatter`'s Set dedup, lines 484-490).
+    const existing = new Set<string>();
+    for (let i = sourcesIdx + 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line.startsWith('- ')) break;
+      const entry = line.substring(2).trim();
+      if (entry.startsWith('[[') && entry.endsWith(']]')) {
+        existing.add(entry.slice(2, -2).trim());
+      }
+    }
+    if (existing.has(sourceEntry.slice(2, -2))) return content;
+    // Find the first non-`sources:` continuation line — that's where we
+    // append. If no continuation lines exist yet, insert immediately
+    // after the `sources:` key.
+    let insertAt = sourcesIdx + 1;
+    while (insertAt < lines.length && lines[insertAt].trim().startsWith('- ')) {
+      insertAt++;
+    }
+    lines.splice(insertAt, 0, `  - ${sourceEntry}`);
+  }
+  return `---\n${lines.join('\n')}\n---\n${body}`;
 }

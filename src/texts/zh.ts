@@ -485,9 +485,6 @@ export const ZH_TEXTS = {
     ingestionStatusBar: '提取中... 点击取消',
     lintStatusBar: '维护中... 点击取消',
     ingestStatusAnalyzing: '提取中… (点击取消)',
-    lintStatusReading: '维护中… (点击取消)',
-    lintStatusDuplicates: '维护中… (点击取消)',
-    lintStatusScanningLinks: '维护中… (点击取消)',
     lintStatusAnalyzing: '维护中… (点击取消)',
     // v1.25.11 PATCH #169 — fine-grained stage hints for the status bar.
     // These labels are ADD-only emission sandwiched between the page name
@@ -506,6 +503,7 @@ export const ZH_TEXTS = {
     pdfStageSidecar: '正在写入附属文件',
     lintStagePrep: '正在读取页面',
     lintStageProgrammatic: '正在扫描链接',
+    lintStageAnalyzing: '正在运行 LLM 分析',
     lintStageDedup: '正在检测重复',
     lintStageContradiction: '正在检测矛盾',
     ingestionCancelling: '正在取消 — 当前批次完成后将停止',

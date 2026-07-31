@@ -46,6 +46,7 @@ export const STAGE_KEYS = [
   // status-bar mirror; no new keys needed there.
   'lintStagePrep',
   'lintStageProgrammatic',
+  'lintStageAnalyzing',
   'lintStageDedup',
   'lintStageContradiction',
 ] as const;

@@ -503,9 +503,6 @@ export const KO_TEXTS = {
     ingestionStatusBar: '수집 중... 클릭하여 취소',
     lintStatusBar: '점검 중... 클릭하여 취소',
     ingestStatusAnalyzing: '수집 중… (클릭하여 취소)',
-    lintStatusReading: '점검 중… (클릭하여 취소)',
-    lintStatusDuplicates: '점검 중… (클릭하여 취소)',
-    lintStatusScanningLinks: '점검 중… (클릭하여 취소)',
     lintStatusAnalyzing: '점검 중… (클릭하여 취소)',
     // v1.25.11 PATCH #169 — fine-grained stage hints for the status bar.
     // These labels are ADD-only emission sandwiched between the page name
@@ -524,6 +521,7 @@ export const KO_TEXTS = {
     pdfStageSidecar: '사이드카 파일 쓰는 중',
     lintStagePrep: '페이지 읽는 중',
     lintStageProgrammatic: '링크 스캔 중',
+    lintStageAnalyzing: 'LLM 분석 실행 중',
     lintStageDedup: '중복 감지 중',
     lintStageContradiction: '모순 감지 중',
     ingestionCancelling: '취소 중 — 현재 배치 완료 후 중지됩니다',

@@ -307,6 +307,3 @@ export function observeVisibleTurn(
   turns.forEach((t) => observer.observe(t));
   return observer;
 }
-
-/* Re-exports preserved so older callers don't break. */
-export const fitIndicatorToContainer = updateIndicatorTranslation;
