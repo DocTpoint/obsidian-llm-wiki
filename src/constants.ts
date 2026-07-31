@@ -169,6 +169,17 @@ export const TOKENS_CONVERSATION_PAGE = 8000;
 export const TOKENS_DEDUP_RESOLUTION = 1000;
 
 /**
+ * v1.26.0 patch 16 (PR #357) — token budget for the source-lemma type
+ * classification call (`SourceAnalyzer.classifyLemmaType`). The model returns
+ * `{"kind": "entity"}` or `{"kind": "concept"}` — a two-class label — but
+ * thinking-model preambles regularly consume the headroom, so we sit above
+ * `TOKENS_DEDUP_RESOLUTION` (1000) and match `TOKENS_QUERY_MODEL_DETECT`
+ * (2000) which has the same short-JSON, no-thinking-budget pattern. 32
+ * (the original value) is unreachable for any thinking-capable model.
+ */
+export const TOKENS_LEMMA_CLASSIFY = 2000;
+
+/**
  * Max candidate pages shown to the LLM in the semantic dedup prompt.
  * The full same-type list grows with the vault (~77K chars at ~1285
  * entities) and the call is prefill-bound; the top-K keyword pre-filter

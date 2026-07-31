@@ -37,13 +37,15 @@ import { renderTemplate } from '../core/template-renderer';
 import { matchExtractedToExisting } from '../core/index-search';
 import { coerceToArray } from '../core/arrays';
 import { isBlankSource } from '../core/frontmatter';
-import { MAX_TOKENS_BATCH, TOKENS_PER_ITEM_BUDGET, SOURCE_ANALYZER_RETRY_MULTIPLIER } from '../constants';
+import { MAX_TOKENS_BATCH, TOKENS_PER_ITEM_BUDGET, TOKENS_LEMMA_CLASSIFY, SOURCE_ANALYZER_RETRY_MULTIPLIER } from '../constants';
 import { getExistingWikiPages } from './lint/get-existing-pages';
 import { getGranularityInstruction } from './system-prompts';
 import { resolveModelForTask } from '../core/model-resolver';
 import { calculateBatchLimits, adjustBatchSizeForResponse, getCustomTypeCaps } from '../core/batch-limits';
 import { detectConvergence, checkCumulativeLimits, checkEmptyBatch, formatConvergenceStatus } from '../core/convergence-detector';
 import { createEmptyAccumulation, mergeBatchResults, buildSourceAnalysis, calculateBatchStats } from '../core/batch-merger';
+import { decideSourceLemma } from '../core/source-lemma';
+import { getActiveEntityTags, getActiveConceptTags } from '../core/tag-vocab';
 
 // ── Batch response normalization ─────────────────────────────────
 // LLMs often return irregular JSON: omitted empty arrays, non-array truthy
@@ -619,6 +621,13 @@ export class SourceAnalyzer {
       sourceNoteAliases
     );
 
+    // patch 16 — lemma guarantee. The extraction prompt asks what a text
+    // mentions, never what it is about, so the note's own topic is regularly
+    // absent from both lists: the page a reader looks for first is the one
+    // that does not get written. Runs after accumulation so it sees the final
+    // lists, and fails safe — any doubt leaves the analysis untouched.
+    await this.ensureSourceLemma(analysis, file.basename, sourceNoteAliases);
+
     console.debug('=== Iterative extraction complete ===');
     console.debug('  - Total batches:', finalBatchNum);
     console.debug('  - Entities count:', accumulation.entities.length);
@@ -626,5 +635,146 @@ export class SourceAnalyzer {
     console.debug('  - Deduplicated names:', accumulation.extractedNames.size);
 
     return analysis;
+  }
+
+  /**
+   * patch 16 — add the source note's own lemma as a candidate when the
+   * extraction missed it.
+   *
+   * The *whether* is decided deterministically (`decideSourceLemma`). Only the
+   * type choice needs the model, and it is a classification into a two-element
+   * set rather than a generation. Every failure path is a no-op: a node that
+   * is not created costs nothing, a wrongly created one is permanent.
+   *
+   * The candidate is named after the *file*, because that is what inbound
+   * links in the vault point at; the analyzer's own `source_title` is folded
+   * into the match keys only, so a differing model title can suppress the
+   * addition but never rename the page.
+   */
+  private async ensureSourceLemma(
+    analysis: SourceAnalysis,
+    fileBasename: string,
+    sourceNoteAliases: string[],
+  ): Promise<void> {
+    const decision = decideSourceLemma({
+      sourceTitle: fileBasename,
+      sourceAliases: sourceNoteAliases,
+      entities: analysis.entities,
+      concepts: analysis.concepts,
+    });
+
+    if (decision.action === 'skip') {
+      console.debug(`[Lemma guarantee] no action for "${fileBasename}" (${decision.reason})`);
+      return;
+    }
+
+    // The source summary is what the page would be generated from. Without it
+    // there is nothing to write, so adding the candidate would only produce an
+    // empty page that the stub cleaner deletes again.
+    const summary = (analysis.summary || '').trim();
+    if (summary.length === 0) {
+      console.debug(`[Lemma guarantee] no action for "${fileBasename}" (no source summary)`);
+      return;
+    }
+
+    // Honour the user's custom granularity cap (#120, #367 P0-1). The
+    // extraction-phase cap slice at :602-607 already trimmed the lists;
+    // re-checking here avoids both exceeding the cap and a wasted LLM call
+    // on a candidate that would be immediately discarded.
+    const targetIsEntity = await this.classifyLemmaType(decision.name, summary);
+    if (!targetIsEntity) {
+      console.debug(`[Lemma guarantee] no action for "${fileBasename}" (type undecided)`);
+      return;
+    }
+    const capHit = this.exceedsCustomCap(analysis, targetIsEntity);
+    if (capHit) {
+      console.debug(`[Lemma guarantee] no action for "${fileBasename}" (custom granularity cap reached)`);
+      return;
+    }
+
+    const candidate = {
+      name: decision.name,
+      type: this.firstActiveTag(targetIsEntity) as 'other',
+      summary,
+      mentions_in_source: [],
+    };
+    if (targetIsEntity === 'entity') {
+      analysis.entities.push(candidate);
+    } else {
+      analysis.concepts.push({ ...candidate, related_concepts: [] });
+    }
+    console.debug(`[Lemma guarantee] added missing lemma "${decision.name}" as ${targetIsEntity}`);
+  }
+
+  /**
+   * True when the lemma addition would exceed the user's configured custom
+   * granularity cap for the target list. Returns false in default mode.
+   */
+  private exceedsCustomCap(analysis: SourceAnalysis, target: 'entity' | 'concept'): boolean {
+    if (this.ctx.settings.extractionGranularity !== 'custom') return false;
+    const cap = target === 'entity'
+      ? (this.ctx.settings.customEntityLimit ?? 5)
+      : (this.ctx.settings.customConceptLimit ?? 5);
+    const list = target === 'entity' ? analysis.entities : analysis.concepts;
+    return list.length >= cap;
+  }
+
+  /**
+   * Pick a `type` value that survives `scanTagViolations` (`wiki/lint/scanners.ts:384`).
+   * In custom tag-vocabulary mode `getActive*Tags` returns the user's CSV without
+   * the built-in `'other'` literal; using `'other'` hard-coded therefore
+   * manufactures a lint violation on the very page this feature just created.
+   * The first active tag is always safe (and a sensible default — the page is
+   * about the note's own subject, so any user-curated subtype applies).
+   */
+  private firstActiveTag(target: 'entity' | 'concept'): string {
+    const tags = target === 'entity'
+      ? getActiveEntityTags(this.ctx.settings)
+      : getActiveConceptTags(this.ctx.settings);
+    return tags[0] ?? 'other';
+  }
+
+  /**
+   * Classify the missing lemma as entity or concept. Returns null on any
+   * doubt — an unreadable answer, an unknown label, or a failed call — so the
+   * caller skips instead of guessing a folder.
+   *
+   * `buildSystemPrompt('analyze')` runs outside the try: it is *our* code,
+   * and a TypeError there is a programming error, not a model failure. Logging
+   * the two cases distinctly keeps the skip reason truthful.
+   */
+  private async classifyLemmaType(name: string, summary: string): Promise<'entity' | 'concept' | null> {
+    const client = this.ctx.getClient();
+    if (!client) return null;
+
+    const prompt = `A wiki page must be created for "${name}". Decide which kind it is.
+
+entity  — a thing that exists: a substance, gene, protein, organism, product, person, organization, place.
+concept — a thing that is the case: a process, mechanism, method, theory, condition, field of study.
+
+Summary of the source describing it:
+${summary}
+
+Respond with this JSON object and nothing else: {"kind": "entity"} or {"kind": "concept"}`;
+
+    const system = await this.ctx.buildSystemPrompt('analyze');
+    try {
+      const response = await client.createMessage({
+        model: resolveModelForTask(this.ctx.settings, 'ingest'),
+        max_tokens: TOKENS_LEMMA_CLASSIFY,
+        system,
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
+      });
+      const parsed = (await parseJsonResponse(response, undefined, { silentOnEmpty: true })) as { kind?: unknown } | null;
+      const kind = typeof parsed?.kind === 'string' ? parsed.kind.trim().toLowerCase() : '';
+      if (kind === 'entity' || kind === 'concept') return kind;
+      console.debug(`[Lemma guarantee] unusable type answer: ${JSON.stringify(parsed)}`);
+      return null;
+    } catch (err) {
+      console.warn('[Lemma guarantee] type classification call failed:', err);
+      return null;
+    }
   }
 }
