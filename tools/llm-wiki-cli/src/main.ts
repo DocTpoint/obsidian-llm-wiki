@@ -117,6 +117,27 @@ interface CliOptions {
  */
 export type ThinkingModeValue = 'data-json' | 'plugin-off' | 'server-default';
 
+/**
+ * Apply a `--thinking-mode <value>` override to the settings object. Pure —
+ * mutates only `settings.disableThinking` and only for the two modes that
+ * actually express an opinion. `data-json` is a deliberate no-op (the user
+ * is saying "use whatever data.json says"), so the previous value is
+ * preserved. Without this branch the three-state enum would collapse to a
+ * single boolean assignment and silently contradict data.json.
+ *
+ * The parameter is typed as `{ disableThinking: boolean }` rather than the
+ * full `LLMWikiSettings` so callers and tests can pass a minimal stub
+ * without rest of the settings surface — applyThinkingMode genuinely only
+ * touches this one field.
+ */
+export function applyThinkingMode(
+  settings: { disableThinking?: boolean | undefined },
+  mode: ThinkingModeValue,
+): void {
+  if (mode === 'plugin-off') settings.disableThinking = true;
+  if (mode === 'server-default') settings.disableThinking = false;
+}
+
 interface LLMUsageTotals {
   calls: number;
   extractionRounds: number;
@@ -471,12 +492,7 @@ async function runIngest(argv: string[]): Promise<void> {
   const settings = loadSettings(options.vault);
   settings.apiKey = resolveApiKey(settings.provider);
   if (options.seed !== undefined) settings.samplingSeed = options.seed;
-  if (options.thinkingMode !== undefined) {
-    // data-json  → leave settings.disableThinking alone (user did not override)
-    // plugin-off → force-disable reasoning
-    // server-default → defer to the server's preset
-    settings.disableThinking = options.thinkingMode === 'plugin-off';
-  }
+  if (options.thinkingMode !== undefined) applyThinkingMode(settings, options.thinkingMode);
   if (options.granularity !== undefined) settings.extractionGranularity = options.granularity as ExtractionGranularity;
 
   // `--batch-size` and `--max-rounds` have no settings of their own: the numbers

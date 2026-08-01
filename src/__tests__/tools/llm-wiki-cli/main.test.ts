@@ -7,7 +7,7 @@
 import nodePath from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-import { parseCliOptions, dispatchCli, resolveApiKey } from '../../../../tools/llm-wiki-cli/src/main';
+import { parseCliOptions, dispatchCli, resolveApiKey, applyThinkingMode } from '../../../../tools/llm-wiki-cli/src/main';
 
 const base = (extra: string[] = []): string[] => [
   '--vault', '/tmp/vault', '--source', 'notes.md', ...extra,
@@ -180,3 +180,36 @@ function expectError(fn: () => unknown): string {
   }
   throw new Error('expected fn() to throw, but it did not');
 }
+
+describe('applyThinkingMode', () => {
+  // Pure settings-mutation helper. The CLI runs this once when the user
+  // passes `--thinking-mode <value>`; the bug it fixed was collapsing all
+  // three modes into a single boolean assignment, so `data-json` silently
+  // overwrote whatever the vault's data.json held for `disableThinking`.
+
+  const make = (disableThinking: boolean) => ({ disableThinking } as { disableThinking: boolean });
+
+  it('data-json is a no-op — leaves the existing setting untouched', () => {
+    const s1 = make(true);
+    applyThinkingMode(s1, 'data-json');
+    expect(s1.disableThinking).toBe(true);
+
+    const s2 = make(false);
+    applyThinkingMode(s2, 'data-json');
+    expect(s2.disableThinking).toBe(false);
+  });
+
+  it('plugin-off forces reasoning off regardless of the prior setting', () => {
+    const s1 = make(true);  applyThinkingMode(s1, 'plugin-off');
+    expect(s1.disableThinking).toBe(true);
+    const s2 = make(false); applyThinkingMode(s2, 'plugin-off');
+    expect(s2.disableThinking).toBe(true);
+  });
+
+  it('server-default forces reasoning to defer to the server preset', () => {
+    const s1 = make(true);  applyThinkingMode(s1, 'server-default');
+    expect(s1.disableThinking).toBe(false);
+    const s2 = make(false); applyThinkingMode(s2, 'server-default');
+    expect(s2.disableThinking).toBe(false);
+  });
+});
