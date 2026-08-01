@@ -90,6 +90,30 @@ describe('parseCliOptions — --thinking-mode', () => {
       .toThrow(/--thinking-mode/);
   });
 
+  it('numeric validation errors include the ingest USAGE block', () => {
+    // The boundary-catch contract: every error escaping parseCliOptions
+    // ends up with INGEST_USAGE appended (unless the throw site already
+    // inlined it). Tests assert on a stable substring of the USAGE block
+    // (the example Usage line) rather than the full block, so future
+    // whitespace reformatting in INGEST_USAGE doesn't break this test.
+    const USAGE_FRAGMENT = /llm-wiki-cli\/run-llm-wiki\.mjs ingest/;
+    expect(() => parseCliOptions(base(['--seed', '1.5']))).toThrow(USAGE_FRAGMENT);
+    expect(() => parseCliOptions(base(['--top-p', '1.5']))).toThrow(USAGE_FRAGMENT);
+    expect(() => parseCliOptions(base(['--max-tokens-per-call', '-1']))).toThrow(USAGE_FRAGMENT);
+    expect(() => parseCliOptions(base(['--batch-size', '0']))).toThrow(USAGE_FRAGMENT);
+    expect(() => parseCliOptions(base(['--temperature', 'NaN']))).toThrow(USAGE_FRAGMENT);
+  });
+
+  it('parseArgs errors (unknown option, missing argument) also include the USAGE block', () => {
+    // A typo'd flag is the most common CLI mistake, and it's the one case
+    // that previously showed the least help — Node's own parseArgs error
+    // bubbles up bare. The boundary catch in main() (not parseCliOptions)
+    // is what attaches USAGE to those.
+    const USAGE_FRAGMENT = /llm-wiki-cli\/run-llm-wiki\.mjs ingest/;
+    expect(() => parseCliOptions(['--vualt', '/v'])).toThrow(USAGE_FRAGMENT);
+    expect(() => parseCliOptions(['--vault', '/v', '--source', 'x.md', '--batch-size'])).toThrow(USAGE_FRAGMENT);
+  });
+
   it('throws a deprecation error for the legacy --thinking flag', () => {
     expect(() => parseCliOptions(base(['--thinking', 'off'])))
       .toThrow(/--thinking is deprecated.*v1\.26\.0.*--thinking-mode/);

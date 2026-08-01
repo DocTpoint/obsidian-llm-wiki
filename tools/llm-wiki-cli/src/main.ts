@@ -166,66 +166,56 @@ export function dispatchCli(argv: string[]): Dispatch {
   return { kind: 'unknown', command: first };
 }
 
-// Sentinel stamped on Error instances whose message already carries the ingest
-// USAGE block, so `withUsage` can detect and skip a second append instead of
-// matching on message text (which would be brittle to future reformatting).
-const HAS_INGEST_USAGE = Symbol('hasIngestUsage');
-
-/**
- * Returns a copy of `error` whose message includes the ingest USAGE block,
- * idempotently. Validation errors thrown by `parseCliOptions` go through here
- * so the user sees the flag list right after the bad-input line; errors that
- * already include the block (because they were assembled with it inline) skip
- * the append.
- */
-function withUsage(error: Error): Error {
-  if ((error as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE]) return error;
-  const wrapped = new Error(`${error.message}\n\n${INGEST_USAGE}`);
-  (wrapped as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE] = true;
-  return wrapped;
-}
+// Substring used by `main()` to detect whether an escaping Error already
+// carries the ingest USAGE block. Stable across INGEST_USAGE reformatting
+// because it lives in the help text the user types. Avoiding a Symbol on
+// every Error instance (the previous design) means helpers can throw plain
+// Errors and the boundary catch decides what to attach.
+const INGEST_USAGE_MARKER = 'llm-wiki-cli/run-llm-wiki.mjs ingest';
 
 function parseInteger(raw: string, flagName: string): number {
   const n = Number(raw);
-  if (!Number.isInteger(n)) {
-    const err = new Error(`${flagName} must be an integer, got: ${raw}`);
-    (err as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE] = true;
-    throw err;
-  }
+  if (!Number.isInteger(n)) throw new Error(`${flagName} must be an integer, got: ${raw}`);
   return n;
 }
 
 function parsePositiveInteger(raw: string, flagName: string): number {
   const n = parseInteger(raw, flagName);
-  if (n < 1) {
-    const err = new Error(`${flagName} must be a positive integer, got: ${raw}`);
-    (err as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE] = true;
-    throw err;
-  }
+  if (n < 1) throw new Error(`${flagName} must be a positive integer, got: ${raw}`);
   return n;
 }
 
 function parseNonNegativeNumber(raw: string, flagName: string): number {
   const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) {
-    const err = new Error(`${flagName} must be a non-negative number, got: ${raw}`);
-    (err as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE] = true;
-    throw err;
-  }
+  if (!Number.isFinite(n) || n < 0) throw new Error(`${flagName} must be a non-negative number, got: ${raw}`);
   return n;
 }
 
 function parseProbability(raw: string, flagName: string): number {
   const n = parseNonNegativeNumber(raw, flagName);
-  if (n === 0 || n > 1) {
-    const err = new Error(`${flagName} must be within (0, 1], got: ${raw}`);
-    (err as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE] = true;
-    throw err;
-  }
+  if (n === 0 || n > 1) throw new Error(`${flagName} must be within (0, 1], got: ${raw}`);
   return n;
 }
 
 export function parseCliOptions(argv: string[]): CliOptions {
+  try {
+    return parseCliOptionsInner(argv);
+  } catch (err) {
+    // Single append site for the ingest USAGE block. Anything escaping
+    // parseArgs, the numeric helpers, or the inline validation throws
+    // lands here; if its message does not already include INGEST_USAGE
+    // — e.g. parseArgs's "Unknown option '--x'" — attach the flag list
+    // so the user lands somewhere useful. The marker substring is
+    // stable across INGEST_USAGE reformatting because it's the exact
+    // path the user types.
+    if (err instanceof Error && !err.message.includes(INGEST_USAGE_MARKER)) {
+      throw new Error(`${err.message}\n\n${INGEST_USAGE}`);
+    }
+    throw err;
+  }
+}
+
+function parseCliOptionsInner(argv: string[]): CliOptions {
   const { values } = parseArgs({
     args: argv,
     options: {
@@ -265,16 +255,16 @@ export function parseCliOptions(argv: string[]): CliOptions {
     };
   }
 
-  // Required-flag checks throw plain errors (no USAGE inline). They will be
-  // wrapped by `withUsage` below before the caller surfaces them.
-  if (!values.vault) throw withUsage(new Error('--vault is required.'));
-  if (!values.source) throw withUsage(new Error('--source is required.'));
+  // Required-flag checks throw plain errors. The boundary catch in `main()`
+  // appends INGEST_USAGE to anything escaping parseCliOptions.
+  if (!values.vault) throw new Error('--vault is required.');
+  if (!values.source) throw new Error('--source is required.');
 
   const extractOnly = values['extract-only'] === true;
 
-  // Wrap every numeric parse so a bad value surfaces as a single Error with
-  // both the flag-specific message and the ingest USAGE block. The helpers
-  // stamp HAS_INGEST_USAGE so the wrapping `withUsage` here is idempotent.
+  // Numeric parses throw plain errors too. The 4 helpers and these inline
+  // throws all propagate to `main()` which decides whether to attach
+  // INGEST_USAGE — single append site, no Symbol stamp needed.
   let seed: number | undefined;
   if (values.seed !== undefined) seed = parseInteger(String(values.seed), '--seed');
 
@@ -291,9 +281,9 @@ export function parseCliOptions(argv: string[]): CliOptions {
     // `--max-rounds` was the v1.25.x name. Throw rather than translate so
     // the user's script advertises the new flag explicitly; the old name
     // was misleading anyway (it sets the round base, not a ceiling).
-    throw withUsage(new Error(
+    throw new Error(
       `--max-rounds is deprecated and will be removed in v1.26.0; use --round-base.`,
-    ));
+    );
   }
   if (values['round-base'] !== undefined) {
     roundBase = parsePositiveInteger(String(values['round-base']), '--round-base');
@@ -315,7 +305,7 @@ export function parseCliOptions(argv: string[]): CliOptions {
     // ES2022's `Object.hasOwn` in the lib config (tools tsconfig extends
     // root, which only ships DOM + ES2021).
     if (!Object.prototype.hasOwnProperty.call(GRANULARITY_CONFIG, g)) {
-      throw withUsage(new Error(`Unknown granularity: ${g}. Known: ${Object.keys(GRANULARITY_CONFIG).join(', ')}`));
+      throw new Error(`Unknown granularity: ${g}. Known: ${Object.keys(GRANULARITY_CONFIG).join(', ')}`);
     }
     granularity = g;
   }
@@ -326,17 +316,17 @@ export function parseCliOptions(argv: string[]): CliOptions {
     // silently translating) forces the user's script to advertise the new
     // name explicitly; a silent translation would let a typo like
     // `--thinking on` keep working long after the deprecation is forgotten.
-    throw withUsage(new Error(
+    throw new Error(
       `--thinking is deprecated and will be removed in v1.26.0; ` +
       `use --thinking-mode data-json|plugin-off|server-default.`,
-    ));
+    );
   }
   if (values['thinking-mode'] !== undefined) {
     const tm = String(values['thinking-mode']) as ThinkingModeValue;
     if (tm !== 'data-json' && tm !== 'plugin-off' && tm !== 'server-default') {
-      throw withUsage(new Error(
+      throw new Error(
         `--thinking-mode must be one of data-json, plugin-off, server-default; got: ${tm}`,
-      ));
+      );
     }
     thinkingMode = tm;
   }
@@ -344,7 +334,7 @@ export function parseCliOptions(argv: string[]): CliOptions {
   let model: string | undefined;
   if (values.model !== undefined) {
     const m = String(values.model);
-    if (!m.trim()) throw withUsage(new Error('--model must not be empty.'));
+    if (!m.trim()) throw new Error('--model must not be empty.');
     model = m;
   }
 
