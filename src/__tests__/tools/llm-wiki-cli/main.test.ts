@@ -59,6 +59,19 @@ describe('parseCliOptions', () => {
     expect(() => parseCliOptions(base(['--model', '   ']))).toThrow(/--model must not be empty/);
   });
 
+  it('parses boolean flags to true', () => {
+    expect(parseCliOptions(base(['--dry-run'])).dryRun).toBe(true);
+    expect(parseCliOptions(base(['--force'])).force).toBe(true);
+    expect(parseCliOptions(base(['--extract-only'])).extractOnly).toBe(true);
+  });
+
+  it('--extract-only implies --dry-run', () => {
+    // A run that cannot write must not touch the vault by forgetting a flag.
+    const opts = parseCliOptions(base(['--extract-only']));
+    expect(opts.extractOnly).toBe(true);
+    expect(opts.dryRun).toBe(true);
+  });
+
   it('rejects empty-string numeric flags', () => {
     // Number('') is 0, so without the parseNumber guard `--seed ""` would
     // silently become seed 0 and `--max-tokens-per-call ""` would silently
@@ -72,6 +85,34 @@ describe('parseCliOptions', () => {
     // would differ from what the user typed. isSafeInteger rejects it.
     expect(() => parseCliOptions(base(['--seed', '99999999999999999999']))).toThrow(/--seed must be an integer/);
     expect(() => parseCliOptions(base(['--round-base', '99999999999999999999']))).toThrow(/--round-base must be a positive integer/);
+  });
+
+  it('accepts valid values for every numeric flag', () => {
+    // Rejection-only coverage would let a spec-table key mapping break (e.g.
+    // --temperature's value landing under seed) without any test noticing.
+    const opts = parseCliOptions(base([
+      '--seed', '42',
+      '--max-tokens-per-call', '16000',
+      '--batch-size', '7',
+      '--round-base', '6',
+      '--temperature', '0.7',
+      '--top-p', '0.9',
+    ]));
+    expect(opts.seed).toBe(42);
+    expect(opts.maxTokensPerCall).toBe(16000);
+    expect(opts.batchSize).toBe(7);
+    expect(opts.roundBase).toBe(6);
+    expect(opts.temperature).toBe(0.7);
+    expect(opts.topP).toBe(0.9);
+  });
+
+  it('rejects negative values via = form through the validator', () => {
+    // The space-separated `--x -1` form is intercepted by parseArgs itself
+    // ("argument is ambiguous"), so the validator's friendly message is only
+    // reachable through `--x=-1`. Pin the = form so the validator contract
+    // is actually exercised.
+    expect(() => parseCliOptions(base(['--max-tokens-per-call=-1']))).toThrow(/must be a non-negative number/);
+    expect(() => parseCliOptions(base(['--temperature=-0.5']))).toThrow(/must be a non-negative number/);
   });
 
   it('marks --help without exiting (pure function)', () => {
@@ -136,6 +177,17 @@ describe('parseCliOptions — --thinking-mode', () => {
     expect(() => parseCliOptions(base(['--max-tokens-per-call', '-1']))).toThrow(USAGE_FRAGMENT);
     expect(() => parseCliOptions(base(['--batch-size', '0']))).toThrow(USAGE_FRAGMENT);
     expect(() => parseCliOptions(base(['--temperature', 'NaN']))).toThrow(USAGE_FRAGMENT);
+  });
+
+  it('non-numeric validation errors also carry the USAGE block', () => {
+    // Deprecation, enum, granularity and empty-model throws all escape through
+    // the same boundary catch — pin that none of them lose the USAGE block.
+    const USAGE_FRAGMENT = /llm-wiki-cli\/run-llm-wiki\.mjs ingest/;
+    expect(() => parseCliOptions(base(['--thinking', 'off']))).toThrow(USAGE_FRAGMENT);
+    expect(() => parseCliOptions(base(['--thinking-mode', 'on']))).toThrow(USAGE_FRAGMENT);
+    expect(() => parseCliOptions(base(['--max-rounds', '6']))).toThrow(USAGE_FRAGMENT);
+    expect(() => parseCliOptions(base(['--granularity', 'bogus']))).toThrow(USAGE_FRAGMENT);
+    expect(() => parseCliOptions(base(['--model', '']))).toThrow(USAGE_FRAGMENT);
   });
 
   it('parseArgs errors (unknown option, missing argument) also include the USAGE block', () => {
@@ -404,6 +456,14 @@ describe('applyOverrides', () => {
     } as Parameters<typeof applyOverrides>[1]);
     expect(GRANULARITY_CONFIG.standard.initialBatchSize).toBe(7);
     expect(GRANULARITY_CONFIG.standard.maxBatchesBase).toBe(4);
+  });
+
+  it('batch-size alone patches only initialBatchSize', () => {
+    const s = baseSettings();
+    const before = { ...ORIGINAL_ROWS.standard };
+    applyOverrides(s, { batchSize: 7 } as Parameters<typeof applyOverrides>[1]);
+    expect(GRANULARITY_CONFIG.standard.initialBatchSize).toBe(7);
+    expect(GRANULARITY_CONFIG.standard.maxBatchesBase).toBe(before.maxBatchesBase);
   });
 
   it('rejects prototype keys from settings granularity', () => {
