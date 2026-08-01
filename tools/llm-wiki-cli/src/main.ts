@@ -166,35 +166,80 @@ export function dispatchCli(argv: string[]): Dispatch {
   return { kind: 'unknown', command: first };
 }
 
-// Substring used by `main()` to detect whether an escaping Error already
-// carries the ingest USAGE block. Stable across INGEST_USAGE reformatting
-// because it lives in the help text the user types. Avoiding a Symbol on
-// every Error instance (the previous design) means helpers can throw plain
-// Errors and the boundary catch decides what to attach.
+// Substring used by the boundary catch in `parseCliOptions` to detect
+// whether an escaping Error already carries the ingest USAGE block.
+// Stable across INGEST_USAGE reformatting because it lives in the help
+// text the user types.
 const INGEST_USAGE_MARKER = 'llm-wiki-cli/run-llm-wiki.mjs ingest';
 
-function parseInteger(raw: string, flagName: string): number {
+/**
+ * Single number parser. Returns `Number(raw)` when finite and the
+ * predicate accepts; otherwise throws with a flag-prefixed message that
+ * uses the predicate's returned string as the reason (e.g. "must be a
+ * positive integer"). The four domain-specific helpers below are
+ * one-line wrappers around this — they exist only to attach the right
+ * predicate and the right user-facing reason at the call site.
+ */
+export function parseNumber(
+  raw: string,
+  flagName: string,
+  predicate: (n: number) => true | string,
+): number {
   const n = Number(raw);
-  if (!Number.isInteger(n)) throw new Error(`${flagName} must be an integer, got: ${raw}`);
+  if (!Number.isFinite(n)) throw new Error(`${flagName} must be a number, got: ${raw}`);
+  const ok = predicate(n);
+  if (ok !== true) throw new Error(`${flagName} ${ok}, got: ${raw}`);
   return n;
+}
+
+function parseInteger(raw: string, flagName: string): number {
+  return parseNumber(raw, flagName, n => Number.isInteger(n) || 'must be an integer');
 }
 
 function parsePositiveInteger(raw: string, flagName: string): number {
-  const n = parseInteger(raw, flagName);
-  if (n < 1) throw new Error(`${flagName} must be a positive integer, got: ${raw}`);
-  return n;
+  return parseNumber(raw, flagName, n => (n >= 1) || 'must be a positive integer');
 }
 
 function parseNonNegativeNumber(raw: string, flagName: string): number {
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) throw new Error(`${flagName} must be a non-negative number, got: ${raw}`);
-  return n;
+  return parseNumber(raw, flagName, n => (n >= 0) || 'must be a non-negative number');
 }
 
 function parseProbability(raw: string, flagName: string): number {
-  const n = parseNonNegativeNumber(raw, flagName);
-  if (n === 0 || n > 1) throw new Error(`${flagName} must be within (0, 1], got: ${raw}`);
-  return n;
+  return parseNumber(raw, flagName, n => (n > 0 && n <= 1) || 'must be within (0, 1]');
+}
+
+/**
+ * Apply the parsed CLI overrides to the settings object and the shared
+ * GRANULARITY_CONFIG table. Pure modulo the `GRANULARITY_CONFIG` write —
+ * the engine itself only ever reads a copy of that table (batch-limits.ts),
+ * so replacing the entry rather than mutating keeps the write local to
+ * this row.
+ *
+ * Exported so the overrides matrix can be unit-tested without touching
+ * the vault or the engine — the bulk of `runIngest`'s settings
+ * hydration used to be untestable for that reason.
+ */
+export function applyOverrides(
+  settings: LLMWikiSettings,
+  options: CliOptions,
+): void {
+  if (options.seed !== undefined) settings.samplingSeed = options.seed;
+  if (options.thinkingMode !== undefined) applyThinkingMode(settings, options.thinkingMode);
+  if (options.granularity !== undefined) settings.extractionGranularity = options.granularity as ExtractionGranularity;
+  if (options.temperature !== undefined) settings.extractionTemperature = options.temperature;
+  if (options.topP !== undefined) settings.extractionTopP = options.topP;
+  if (options.model !== undefined) settings.model = options.model;
+  if (options.maxTokensPerCall !== undefined) settings.maxTokensPerCall = options.maxTokensPerCall;
+
+  if (options.batchSize === undefined && options.roundBase === undefined) return;
+
+  const name = settings.extractionGranularity || 'standard';
+  const config = GRANULARITY_CONFIG[name];
+  if (!config) throw new Error(`Unknown granularity in settings: ${name}`);
+  const patch: Partial<typeof GRANULARITY_CONFIG[string]> = {};
+  if (options.batchSize !== undefined) patch.initialBatchSize = options.batchSize;
+  if (options.roundBase !== undefined) patch.maxBatchesBase = options.roundBase;
+  GRANULARITY_CONFIG[name] = { ...config, ...patch };
 }
 
 export function parseCliOptions(argv: string[]): CliOptions {
@@ -262,21 +307,6 @@ function parseCliOptionsInner(argv: string[]): CliOptions {
 
   const extractOnly = values['extract-only'] === true;
 
-  // Numeric parses throw plain errors too. The 4 helpers and these inline
-  // throws all propagate to `main()` which decides whether to attach
-  // INGEST_USAGE — single append site, no Symbol stamp needed.
-  let seed: number | undefined;
-  if (values.seed !== undefined) seed = parseInteger(String(values.seed), '--seed');
-
-  let maxTokensPerCall: number | undefined;
-  if (values['max-tokens-per-call'] !== undefined) {
-    maxTokensPerCall = parseNonNegativeNumber(String(values['max-tokens-per-call']), '--max-tokens-per-call');
-  }
-
-  let batchSize: number | undefined;
-  if (values['batch-size'] !== undefined) batchSize = parsePositiveInteger(String(values['batch-size']), '--batch-size');
-
-  let roundBase: number | undefined;
   if (values['max-rounds'] !== undefined) {
     // `--max-rounds` was the v1.25.x name. Throw rather than translate so
     // the user's script advertises the new flag explicitly; the old name
@@ -285,15 +315,30 @@ function parseCliOptionsInner(argv: string[]): CliOptions {
       `--max-rounds is deprecated and will be removed in v1.26.0; use --round-base.`,
     );
   }
-  if (values['round-base'] !== undefined) {
-    roundBase = parsePositiveInteger(String(values['round-base']), '--round-base');
+
+  // Numeric / string-flag parsing driven by a single spec table. Each entry
+  // pairs the parseArgs option key with the helper that produces the typed
+  // value; the loop below populates a result object with the same shape
+  // the explicit `let X; if (values.X ...) X = helper(...)` blocks used
+  // to spell out. Deprecation throws, enum validation, and the empty-model
+  // guard stay inline because they don't fit the parse-a-string pattern.
+  type NumericSpec = {
+    key: string;
+    flag: string;
+    parse: (raw: string) => number;
+  };
+  const numericSpecs: NumericSpec[] = [
+    { key: 'seed',                flag: '--seed',                parse: r => parseInteger(r, '--seed') },
+    { key: 'max-tokens-per-call', flag: '--max-tokens-per-call', parse: r => parseNonNegativeNumber(r, '--max-tokens-per-call') },
+    { key: 'batch-size',          flag: '--batch-size',          parse: r => parsePositiveInteger(r, '--batch-size') },
+    { key: 'round-base',          flag: '--round-base',          parse: r => parsePositiveInteger(r, '--round-base') },
+    { key: 'temperature',         flag: '--temperature',         parse: r => parseNonNegativeNumber(r, '--temperature') },
+    { key: 'top-p',               flag: '--top-p',               parse: r => parseProbability(r, '--top-p') },
+  ];
+  const numericValues: Record<string, number> = {};
+  for (const { key, parse } of numericSpecs) {
+    if (values[key] !== undefined) numericValues[key] = parse(String(values[key]));
   }
-
-  let temperature: number | undefined;
-  if (values.temperature !== undefined) temperature = parseNonNegativeNumber(String(values.temperature), '--temperature');
-
-  let topP: number | undefined;
-  if (values['top-p'] !== undefined) topP = parseProbability(String(values['top-p']), '--top-p');
 
   let granularity: string | undefined;
   if (values.granularity !== undefined) {
@@ -349,13 +394,15 @@ function parseCliOptionsInner(argv: string[]): CliOptions {
     dryRun: values['dry-run'] === true || extractOnly,
     force: values.force === true,
     extractOnly,
-    ...(seed !== undefined ? { seed } : {}),
-    ...(maxTokensPerCall !== undefined ? { maxTokensPerCall } : {}),
-    ...(batchSize !== undefined ? { batchSize } : {}),
-    ...(roundBase !== undefined ? { roundBase } : {}),
+    ...(numericValues.seed !== undefined ? { seed: numericValues.seed } : {}),
+    ...(numericValues['max-tokens-per-call'] !== undefined
+      ? { maxTokensPerCall: numericValues['max-tokens-per-call'] }
+      : {}),
+    ...(numericValues['batch-size'] !== undefined ? { batchSize: numericValues['batch-size'] } : {}),
+    ...(numericValues['round-base'] !== undefined ? { roundBase: numericValues['round-base'] } : {}),
     ...(model !== undefined ? { model } : {}),
-    ...(temperature !== undefined ? { temperature } : {}),
-    ...(topP !== undefined ? { topP } : {}),
+    ...(numericValues.temperature !== undefined ? { temperature: numericValues.temperature } : {}),
+    ...(numericValues['top-p'] !== undefined ? { topP: numericValues['top-p'] } : {}),
     ...(granularity !== undefined ? { granularity } : {}),
     ...(thinkingMode !== undefined ? { thinkingMode } : {}),
     help,
@@ -487,29 +534,7 @@ async function runIngest(argv: string[]): Promise<void> {
 
   const settings = loadSettings(options.vault);
   settings.apiKey = resolveApiKey(settings.provider);
-  if (options.seed !== undefined) settings.samplingSeed = options.seed;
-  if (options.thinkingMode !== undefined) applyThinkingMode(settings, options.thinkingMode);
-  if (options.granularity !== undefined) settings.extractionGranularity = options.granularity as ExtractionGranularity;
-
-  // `--batch-size` and `--max-rounds` have no settings of their own: the numbers
-  // live in the granularity table. Overriding them writes into that table, and
-  // the table is a shared `export const` — the engine itself only ever reads a
-  // copy of it (batch-limits.ts). Replacing the entry rather than mutating it
-  // keeps the write local to this row, so nothing else in the process sees a
-  // granularity that has been edited underneath it.
-  const overrideGranularity = (patch: Partial<typeof GRANULARITY_CONFIG[string]>) => {
-    const name = settings.extractionGranularity || 'standard';
-    const config = GRANULARITY_CONFIG[name];
-    if (!config) throw new Error(`Unknown granularity in settings: ${name}`);
-    GRANULARITY_CONFIG[name] = { ...config, ...patch };
-  };
-
-  if (options.batchSize !== undefined) overrideGranularity({ initialBatchSize: options.batchSize });
-  if (options.roundBase !== undefined) overrideGranularity({ maxBatchesBase: options.roundBase });
-  if (options.temperature !== undefined) settings.extractionTemperature = options.temperature;
-  if (options.topP !== undefined) settings.extractionTopP = options.topP;
-  if (options.model !== undefined) settings.model = options.model;
-  if (options.maxTokensPerCall !== undefined) settings.maxTokensPerCall = options.maxTokensPerCall;
+  applyOverrides(settings, options);
 
   const app = createVaultApp(options.vault, options.dryRun);
   const sourceFile = resolveSourceFile(app, options.source);

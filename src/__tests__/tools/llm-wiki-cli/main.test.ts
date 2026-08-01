@@ -5,9 +5,10 @@
 // nothing runs until `main()` is called, so this import stays side-effect-free.
 
 import nodePath from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 
-import { parseCliOptions, dispatchCli, resolveApiKey, applyThinkingMode } from '../../../../tools/llm-wiki-cli/src/main';
+import { parseCliOptions, dispatchCli, resolveApiKey, applyThinkingMode, applyOverrides, parseNumber } from '../../../../tools/llm-wiki-cli/src/main';
+import { GRANULARITY_CONFIG } from '../../../../src/core/batch-limits';
 
 const base = (extra: string[] = []): string[] => [
   '--vault', '/tmp/vault', '--source', 'notes.md', ...extra,
@@ -249,5 +250,103 @@ describe('applyThinkingMode', () => {
     expect(s1.disableThinking).toBe(false);
     const s2 = make(false); applyThinkingMode(s2, 'server-default');
     expect(s2.disableThinking).toBe(false);
+  });
+});
+
+describe('parseNumber', () => {
+  // Single helper replacing four near-identical validators (parseInteger,
+  // parsePositiveInteger, parseNonNegativeNumber, parseProbability). Each
+  // call site expresses its rule as a predicate.
+  it('accepts any finite number when the predicate is the identity', () => {
+    expect(parseNumber('0', '--x', () => true)).toBe(0);
+    expect(parseNumber('-1.5', '--x', () => true)).toBe(-1.5);
+    expect(parseNumber('42', '--x', () => true)).toBe(42);
+  });
+
+  it('rejects NaN and Infinity with a generic "must be a number" message', () => {
+    expect(() => parseNumber('NaN', '--x', () => true)).toThrow(/--x must be a number/);
+    expect(() => parseNumber('Infinity', '--x', () => true)).toThrow(/--x must be a number/);
+  });
+
+  it('rejects when the predicate returns a non-true reason', () => {
+    // 5.5 is not an integer, so the predicate returns the reason string.
+    expect(() => parseNumber('5.5', '--x', n => Number.isInteger(n) || 'must be an integer'))
+      .toThrow(/--x must be an integer, got: 5\.5/);
+  });
+
+  it('propagates the predicate reason verbatim after the flag prefix', () => {
+    expect(() => parseNumber('0', '--top-p', n => (n > 0 && n <= 1) || 'must be within (0, 1]'))
+      .toThrow(/--top-p must be within \(0, 1\], got: 0/);
+  });
+});
+
+describe('applyOverrides', () => {
+  // Pure settings hydration extracted from runIngest. Mutates settings in
+  // place plus writes a patched row into GRANULARITY_CONFIG. The latter is
+  // a shared `export const` and therefore a process-wide side effect, but
+  // the test scope is one row per call and the table is rebuilt by the
+  // next test's setup if needed.
+
+  const baseSettings = () => ({
+    provider: 'anthropic',
+    model: 'claude-opus-4-8',
+    baseUrl: '',
+    disableThinking: false,
+    samplingSeed: 0,
+    extractionTemperature: 0,
+    extractionTopP: 0,
+    extractionGranularity: 'standard',
+    maxTokensPerCall: 0,
+  } as unknown as Parameters<typeof applyOverrides>[0]);
+
+  // Snapshot the original "standard" row so each test starts from a known state
+  // (applyOverrides mutates this shared `export const`). Restore in afterEach.
+  const ORIGINAL_STANDARD = { ...GRANULARITY_CONFIG.standard };
+
+  afterEach(() => {
+    GRANULARITY_CONFIG.standard = { ...ORIGINAL_STANDARD };
+  });
+
+  it('applies direct settings fields when present', () => {
+    const s = baseSettings();
+    applyOverrides(s, {
+      seed: 42,
+      granularity: 'coarse',
+      temperature: 0.7,
+      topP: 0.9,
+      model: 'claude-sonnet-4-5',
+      maxTokensPerCall: 16000,
+    } as Parameters<typeof applyOverrides>[1]);
+    expect(s.samplingSeed).toBe(42);
+    expect(s.extractionGranularity).toBe('coarse');
+    expect(s.extractionTemperature).toBe(0.7);
+    expect(s.extractionTopP).toBe(0.9);
+    expect(s.model).toBe('claude-sonnet-4-5');
+    expect(s.maxTokensPerCall).toBe(16000);
+  });
+
+  it('delegates thinkingMode to applyThinkingMode (the three-state enum)', () => {
+    const s = baseSettings();
+    applyOverrides(s, { thinkingMode: 'plugin-off' } as Parameters<typeof applyOverrides>[1]);
+    expect(s.disableThinking).toBe(true);
+  });
+
+  it('patches GRANULARITY_CONFIG when batchSize/roundBase are present', () => {
+    const s = baseSettings();
+    applyOverrides(s, {
+      batchSize: 7,
+      roundBase: 4,
+    } as Parameters<typeof applyOverrides>[1]);
+    expect(GRANULARITY_CONFIG.standard.initialBatchSize).toBe(7);
+    expect(GRANULARITY_CONFIG.standard.maxBatchesBase).toBe(4);
+  });
+
+  it('leaves untouched fields alone', () => {
+    const s = baseSettings();
+    const before = { ...s };
+    applyOverrides(s, {} as Parameters<typeof applyOverrides>[1]);
+    expect(s.samplingSeed).toBe(before.samplingSeed);
+    expect(s.model).toBe(before.model);
+    expect(s.disableThinking).toBe(before.disableThinking);
   });
 });
