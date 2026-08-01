@@ -14,5 +14,9 @@
     "module": "ESNext",
     "moduleResolution": "bundler"
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "../../src/__tests__/tools/llm-wiki-cli/**/*.ts"
+  ],
+  "exclude": []
 }
