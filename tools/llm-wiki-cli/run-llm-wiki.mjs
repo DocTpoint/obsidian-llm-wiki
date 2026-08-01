@@ -13,7 +13,7 @@ import * as nodePath from 'node:path';
 
 const CLI_DIR = nodePath.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = nodePath.resolve(CLI_DIR, '../..');
-const BUNDLE_PATH = nodePath.join(CLI_DIR, '.build', 'wiki-ingest-cli.mjs');
+const BUNDLE_PATH = nodePath.join(CLI_DIR, '.build', 'llm-wiki-cli.mjs');
 const OBSIDIAN_SHIM = nodePath.join(CLI_DIR, 'src', 'obsidian.ts');
 
 const require = createRequire(nodePath.join(PLUGIN_ROOT, 'package.json'));

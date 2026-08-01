@@ -1,4 +1,4 @@
-# wiki-ingest-cli
+# llm-wiki-cli
 
 Runs the obsidian-llm-wiki plugin's real ingest pipeline under plain Node —
 no Obsidian, no Electron, no display — against a vault directory on disk.
@@ -11,7 +11,7 @@ module and the vault it reads and writes.
 ## Running
 
 ```bash
-WIKI_API_KEY=... node tools/wiki-ingest-cli/run-ingest.mjs \
+WIKI_API_KEY=... node tools/llm-wiki-cli/run-llm-wiki.mjs \
   --vault /path/to/your/vault \
   --source "sources/Attention Is All You Need.md" \
   --dry-run
@@ -66,7 +66,7 @@ updated, input and output tokens, elapsed time.
 
 ## How it is wired
 
-`run-ingest.mjs` invokes esbuild (from the plugin's `node_modules`) to bundle
+`run-llm-wiki.mjs` invokes esbuild (from the plugin's `node_modules`) to bundle
 `src/main.ts` for Node, rewriting every `from 'obsidian'` import — in plugin
 code and CLI code alike — to `src/obsidian.ts`. One shared module means one
 shared `TFile` class, which is what makes the engine's `instanceof TFile`
@@ -74,7 +74,7 @@ checks work. The bundle lands in `.build/` and is then imported and run.
 
 | File | Role |
 |---|---|
-| `run-ingest.mjs` | Bundles and runs. The thing you invoke. |
+| `run-llm-wiki.mjs` | Bundles and runs. The thing you invoke. |
 | `src/obsidian.ts` | The `obsidian` module: `TFile`, `TFolder`, `normalizePath`, `Notice`, `Platform`, `requestUrl`. |
 | `src/vault.ts` | `App` over the real filesystem: vault index, reads, writes, `DataAdapter`, `metadataCache`, `fileManager`. |
 | `src/node-globals.ts` | `window`, `activeWindow`, uncoloured console. |

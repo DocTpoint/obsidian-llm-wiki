@@ -474,7 +474,7 @@ export class WikiEngine {
   /**
    * Run the source analyzer against a single source file and return the result.
    *
-   * Exposed publicly for the headless ingest CLI (`tools/wiki-ingest-cli/`)
+   * Exposed publicly for the headless ingest CLI (`tools/llm-wiki-cli/`)
    * so it can run the same extraction path as a real ingest without having to
    * reach into the engine's private `sourceAnalyzer` field via cast. The CLI
    * is the only caller; plugin code reaches the analyzer through

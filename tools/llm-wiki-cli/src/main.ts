@@ -24,7 +24,7 @@ const PLUGIN_ID = 'karpathywiki';
 const API_KEY_ENV = 'WIKI_API_KEY';
 
 const USAGE = `Usage:
-  node tools/wiki-ingest-cli/run-ingest.mjs --vault <path> --source <path-in-vault> [flags]
+  node tools/llm-wiki-cli/run-llm-wiki.mjs ingest --vault <path> --source <path-in-vault> [flags]
 
   --vault         Path to the Obsidian vault. Required.
   --source        Source file path relative to the vault. Required.
