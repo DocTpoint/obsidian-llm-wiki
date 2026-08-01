@@ -68,10 +68,14 @@ const INGEST_USAGE = `Usage:
                   the pair, and overriding one alone runs on half of each.
   --granularity   fine | standard | coarse | minimal | custom. Decides the batch
                   size, the item limit and the round ceiling together.
-  --thinking      off declines reasoning, which is the only direction the
-                  plugin can express. "on" asks for the server's own default.
-                  Omitting the flag leaves whatever data.json says, which may
-                  itself be "off" — so the three are not interchangeable.
+  --thinking-mode  data-json | plugin-off | server-default.
+                  data-json keeps whatever data.json says (no override);
+                  plugin-off forces reasoning off; server-default asks
+                  for the server's own preset — the only state the
+                  plugin can actually express. Omitting the flag leaves
+                  data.json in force.
+  --thinking       Deprecated; throws. Use --thinking-mode.
+                  Removal in v1.26.0.
 
 Environment:
   ${API_KEY_ENV}  Provider API key. Obsidian keeps it in the system keychain,
@@ -91,9 +95,19 @@ interface CliOptions {
   temperature?: number;
   topP?: number;
   granularity?: string;
-  thinking?: string;
+  thinkingMode?: ThinkingModeValue;
   help: boolean;
 }
+
+/**
+ * `--thinking-mode` replaces `--thinking` (deprecated, removal in v1.26.0).
+ * `data-json` keeps whatever the plugin's data.json says (no override);
+ * `plugin-off` forces reasoning off; `server-default` asks for the server's
+ * own preset. The three states match the three outcomes the plugin can
+ * actually express, where the old `on|off` made `on` look like "enable
+ * reasoning" while it really meant "defer to server default".
+ */
+export type ThinkingModeValue = 'data-json' | 'plugin-off' | 'server-default';
 
 interface LLMUsageTotals {
   calls: number;
@@ -199,6 +213,7 @@ export function parseCliOptions(argv: string[]): CliOptions {
       temperature: { type: 'string' },
       'top-p': { type: 'string' },
       granularity: { type: 'string' },
+      'thinking-mode': { type: 'string' },
       thinking: { type: 'string' },
       help: { type: 'boolean', default: false },
     },
@@ -259,13 +274,25 @@ export function parseCliOptions(argv: string[]): CliOptions {
     granularity = g;
   }
 
-  let thinking: string | undefined;
+  let thinkingMode: ThinkingModeValue | undefined;
   if (values.thinking !== undefined) {
-    const t = String(values.thinking);
-    if (t !== 'on' && t !== 'off') {
-      throw withUsage(new Error(`--thinking must be "on" or "off", got: ${t}`));
+    // `--thinking` is the deprecated v1.25.x form. Throwing (rather than
+    // silently translating) forces the user's script to advertise the new
+    // name explicitly; a silent translation would let a typo like
+    // `--thinking on` keep working long after the deprecation is forgotten.
+    throw withUsage(new Error(
+      `--thinking is deprecated and will be removed in v1.26.0; ` +
+      `use --thinking-mode data-json|plugin-off|server-default.`,
+    ));
+  }
+  if (values['thinking-mode'] !== undefined) {
+    const tm = String(values['thinking-mode']) as ThinkingModeValue;
+    if (tm !== 'data-json' && tm !== 'plugin-off' && tm !== 'server-default') {
+      throw withUsage(new Error(
+        `--thinking-mode must be one of data-json, plugin-off, server-default; got: ${tm}`,
+      ));
     }
-    thinking = t;
+    thinkingMode = tm;
   }
 
   let model: string | undefined;
@@ -294,7 +321,7 @@ export function parseCliOptions(argv: string[]): CliOptions {
     ...(temperature !== undefined ? { temperature } : {}),
     ...(topP !== undefined ? { topP } : {}),
     ...(granularity !== undefined ? { granularity } : {}),
-    ...(thinking !== undefined ? { thinking } : {}),
+    ...(thinkingMode !== undefined ? { thinkingMode } : {}),
     help,
   };
 }
@@ -410,7 +437,12 @@ async function runIngest(argv: string[]): Promise<void> {
   const settings = loadSettings(options.vault);
   settings.apiKey = resolveApiKey(settings);
   if (options.seed !== undefined) settings.samplingSeed = options.seed;
-  if (options.thinking !== undefined) settings.disableThinking = options.thinking === 'off';
+  if (options.thinkingMode !== undefined) {
+    // data-json  → leave settings.disableThinking alone (user did not override)
+    // plugin-off → force-disable reasoning
+    // server-default → defer to the server's preset
+    settings.disableThinking = options.thinkingMode === 'plugin-off';
+  }
   if (options.granularity !== undefined) settings.extractionGranularity = options.granularity as ExtractionGranularity;
 
   // `--batch-size` and `--max-rounds` have no settings of their own: the numbers
@@ -468,7 +500,7 @@ async function runIngest(argv: string[]): Promise<void> {
   // another log later, and two of this session's comparisons died on exactly
   // that — arms that turned out to differ by something no line recorded.
   console.log(`[cli] dry-run=${options.dryRun} force=${options.force}`
-    + ` model=${settings.model} thinking=${settings.disableThinking ? 'off' : 'server default'}`
+    + ` model=${settings.model} thinking-mode=${options.thinkingMode ?? 'unset'}`
     + ` temp=${settings.extractionTemperature ?? 'server default'} top-p=${settings.extractionTopP ?? 'server default'}`
     + ` seed=${settings.samplingSeed ?? 'random'} max-tokens=${settings.maxTokensPerCall || 'uncapped'}`
     + ` batch=${options.batchSize ?? 'default'} max-rounds=${options.maxRounds ?? 'default'}`

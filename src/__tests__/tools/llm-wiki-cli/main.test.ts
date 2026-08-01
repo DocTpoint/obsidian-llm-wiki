@@ -77,3 +77,30 @@ describe('dispatchCli', () => {
     expect(dispatchCli(['--vault', '/v'])).toEqual({ kind: 'unknown', command: '--vault' });
   });
 });
+
+describe('parseCliOptions — --thinking-mode', () => {
+  it('accepts data-json / plugin-off / server-default', () => {
+    expect(parseCliOptions(base(['--thinking-mode', 'data-json'])).thinkingMode).toBe('data-json');
+    expect(parseCliOptions(base(['--thinking-mode', 'plugin-off'])).thinkingMode).toBe('plugin-off');
+    expect(parseCliOptions(base(['--thinking-mode', 'server-default'])).thinkingMode).toBe('server-default');
+  });
+
+  it('rejects an unknown --thinking-mode value with USAGE', () => {
+    expect(() => parseCliOptions(base(['--thinking-mode', 'on'])))
+      .toThrow(/--thinking-mode/);
+  });
+
+  it('throws a deprecation error for the legacy --thinking flag', () => {
+    expect(() => parseCliOptions(base(['--thinking', 'off'])))
+      .toThrow(/--thinking is deprecated.*v1\.26\.0.*--thinking-mode/);
+    expect(() => parseCliOptions(base(['--thinking', 'data-json'])))
+      .toThrow(/--thinking is deprecated/);
+  });
+
+  it('throws when both --thinking-mode and --thinking are given', () => {
+    expect(() => parseCliOptions(base([
+      '--thinking-mode', 'plugin-off',
+      '--thinking', 'off',
+    ]))).toThrow(/--thinking.*--thinking-mode/);
+  });
+});
