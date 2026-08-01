@@ -4,7 +4,7 @@
 // factory, the schema manager and the LLM client are the production ones.
 
 import { parseArgs } from 'node:util';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, type Stats } from 'node:fs';
 import * as nodePath from 'node:path';
 import { normalizePath, TFile, type App } from 'obsidian';
 
@@ -312,13 +312,9 @@ function parseCliOptionsInner(argv: string[]): CliOptions {
     };
   }
 
-  // Required-flag checks throw plain errors. The boundary catch in `main()`
-  // appends INGEST_USAGE to anything escaping parseCliOptions.
-  if (!values.vault) throw new Error('--vault is required.');
-  if (!values.source) throw new Error('--source is required.');
-
-  const extractOnly = values['extract-only'] === true;
-
+  // Deprecation checks run before the required-flag checks so a migrating
+  // script still using an old flag name learns that even when it also
+  // omitted --vault/--source. `--help` already short-circuits above.
   if (values['max-rounds'] !== undefined) {
     // `--max-rounds` was the v1.25.x name. Throw rather than translate so
     // the user's script advertises the new flag explicitly; the old name
@@ -327,6 +323,24 @@ function parseCliOptionsInner(argv: string[]): CliOptions {
       `--max-rounds is deprecated and will be removed in v1.26.0; use --round-base.`,
     );
   }
+
+  if (values.thinking !== undefined) {
+    // `--thinking` is the deprecated v1.25.x form. Throwing (rather than
+    // silently translating) forces the user's script to advertise the new
+    // name explicitly; a silent translation would let a typo like
+    // `--thinking on` keep working long after the deprecation is forgotten.
+    throw new Error(
+      `--thinking is deprecated and will be removed in v1.26.0; ` +
+      `use --thinking-mode data-json|plugin-off|server-default.`,
+    );
+  }
+
+  // Required-flag checks throw plain errors. The boundary catch in `main()`
+  // appends INGEST_USAGE to anything escaping parseCliOptions.
+  if (!values.vault) throw new Error('--vault is required.');
+  if (!values.source) throw new Error('--source is required.');
+
+  const extractOnly = values['extract-only'] === true;
 
   // Numeric / string-flag parsing driven by a single spec table. Each entry
   // pairs the parseArgs option key with the helper that produces the typed
@@ -368,16 +382,6 @@ function parseCliOptionsInner(argv: string[]): CliOptions {
   }
 
   let thinkingMode: ThinkingModeValue | undefined;
-  if (values.thinking !== undefined) {
-    // `--thinking` is the deprecated v1.25.x form. Throwing (rather than
-    // silently translating) forces the user's script to advertise the new
-    // name explicitly; a silent translation would let a typo like
-    // `--thinking on` keep working long after the deprecation is forgotten.
-    throw new Error(
-      `--thinking is deprecated and will be removed in v1.26.0; ` +
-      `use --thinking-mode data-json|plugin-off|server-default.`,
-    );
-  }
   if (values['thinking-mode'] !== undefined) {
     const tm = String(values['thinking-mode']) as ThinkingModeValue;
     if (tm !== 'data-json' && tm !== 'plugin-off' && tm !== 'server-default') {
@@ -540,7 +544,19 @@ async function runIngest(argv: string[]): Promise<void> {
 
   installObsidianGlobals();
 
-  if (!statSync(options.vault).isDirectory()) {
+  // A nonexistent vault is the most common first-run mistake; surface it as a
+  // CLI message instead of the raw Node ENOENT stack. The "not a directory"
+  // branch below already had one.
+  let vaultStat: Stats;
+  try {
+    vaultStat = statSync(options.vault);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(`--vault does not exist: ${options.vault}`);
+    }
+    throw err;
+  }
+  if (!vaultStat.isDirectory()) {
     throw new Error(`--vault is not a directory: ${options.vault}`);
   }
 

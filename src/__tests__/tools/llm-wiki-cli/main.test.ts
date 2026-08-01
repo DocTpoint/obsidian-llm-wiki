@@ -189,6 +189,16 @@ describe('parseCliOptions — --round-base', () => {
       '--max-rounds', '6',
     ]))).toThrow(/--max-rounds.*--round-base/);
   });
+
+  it('fires deprecations before the required-flag checks', () => {
+    // A migrating script that still uses an old flag name AND omits
+    // --vault/--source should learn about the rename first — not "--vault
+    // is required." The deprecation blocks must precede the required checks.
+    expect(() => parseCliOptions(['--thinking', 'off', '--source', 'n.md']))
+      .toThrow(/--thinking is deprecated/);
+    expect(() => parseCliOptions(['--max-rounds', '6', '--source', 'n.md']))
+      .toThrow(/--max-rounds is deprecated/);
+  });
 });
 
 describe('resolveApiKey', () => {
@@ -404,7 +414,7 @@ describe('applyOverrides', () => {
     // shared table. applyOverrides must apply the same hasOwnProperty guard.
     for (const bad of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
       const s = baseSettings();
-      s.extractionGranularity = bad;
+      (s as { extractionGranularity: string }).extractionGranularity = bad;
       expect(() => applyOverrides(s, { batchSize: 7 } as Parameters<typeof applyOverrides>[1]))
         .toThrow(/Unknown granularity in settings/);
     }
