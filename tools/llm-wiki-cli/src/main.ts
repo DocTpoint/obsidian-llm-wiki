@@ -292,7 +292,7 @@ function parseCliOptionsInner(argv: string[]): CliOptions {
       granularity: { type: 'string' },
       'thinking-mode': { type: 'string' },
       thinking: { type: 'string' },
-      help: { type: 'boolean', default: false },
+      help: { type: 'boolean', default: false, short: 'h' },
     },
     allowPositionals: false,
   });

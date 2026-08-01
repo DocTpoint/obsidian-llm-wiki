@@ -78,6 +78,13 @@ describe('parseCliOptions', () => {
     const opts = parseCliOptions(['--help']);
     expect(opts.help).toBe(true);
   });
+
+  it('accepts -h as an alias for --help at ingest level', () => {
+    // dispatchCli special-cases -h at the tool level; the ingest subcommand
+    // must accept the same short form instead of "Unknown option '-h'".
+    expect(parseCliOptions(['-h']).help).toBe(true);
+    expect(parseCliOptions(base(['-h'])).help).toBe(true);
+  });
 });
 
 describe('dispatchCli', () => {
