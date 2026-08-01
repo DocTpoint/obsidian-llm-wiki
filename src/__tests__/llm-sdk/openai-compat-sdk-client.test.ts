@@ -148,6 +148,12 @@ describe('OpenAICompatSdkClient', () => {
       // Both dialects are sent: `thinking.type` for DeepSeek/Kimi/GLM, and
       // `chat_template_kwargs` for llama.cpp-style local servers, which ignore
       // the former entirely. Each side ignores the field it does not know.
+      //
+      // Keyed `openaiCompatible`, which is not a key the SDK copies raw fields
+      // from — so both are built here and dropped before the request. This
+      // assertion records what the client hands over, and by construction it
+      // cannot tell that apart from delivery; the sibling
+      // openai-compat-request-body.test.ts reads the body and shows the drop.
       expect(call.providerOptions).toEqual({
         openaiCompatible: {
           thinking: { type: 'disabled' },
@@ -155,6 +161,7 @@ describe('OpenAICompatSdkClient', () => {
         },
       });
     });
+
 
     it('omits reasoningEffort when enableThinking is undefined', async () => {
       const client = new OpenAICompatSdkClient({
@@ -173,8 +180,19 @@ describe('OpenAICompatSdkClient', () => {
     });
   });
 
-  describe('response_format support', () => {
-    it('forwards response_format via providerOptions.openaiCompatible', async () => {
+  describe('response_format is not forwarded', () => {
+    // #65 reports an error from LM Studio 0.4.15 on `{"type":"json_object"}`,
+    // with no status code given. The fix
+    // for that removed the field outright (5851cc8); the AI-SDK migration
+    // (6be9258) reintroduced it inside `buildProviderOptions`, where the fixed
+    // `openaiCompatible` key hid it again — the field has been built and
+    // discarded ever since, which is why no one noticed it was back.
+    //
+    // Correcting the key would deliver it. It goes for real instead. Nothing
+    // changes on the wire: extraction asks for `json_object` and nothing else,
+    // and the prompt already states the shape. What would justify sending it is
+    // `json_schema`, which is not in this branch.
+    it('leaves it out even when the caller asks for it', async () => {
       const client = new OpenAICompatSdkClient({
         apiKey: 'sk-test',
         baseURL: 'https://api.deepseek.com/v1',
@@ -188,9 +206,7 @@ describe('OpenAICompatSdkClient', () => {
       });
 
       const call = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
-      expect(call.providerOptions).toEqual({
-        openaiCompatible: { response_format: { type: 'json_object' } },
-      });
+      expect(call.providerOptions).toEqual({});
     });
   });
 

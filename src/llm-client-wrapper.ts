@@ -19,6 +19,14 @@ import { capMaxTokens } from './core/token-cap';
 export interface WrapperSettings {
   maxTokensPerCall: number;
   extractionTemperature?: number;
+  /**
+   * Nucleus sampling for extraction. Its partner, not an independent knob: a
+   * server preset sets the two together, so overriding only the temperature
+   * leaves the run on half of one preset and half of another.
+   */
+  extractionTopP?: number;
+  /** Fixed sampling seed. Unset means the provider picks one per request. */
+  samplingSeed?: number;
   chatTemperature?: number;
   repetitionPenalty?: number;
 }
@@ -52,7 +60,9 @@ export function wrapWithAdvancedSettings(
       ...params,
       ...(capTokens ? { max_tokens: capMaxTokens(params.max_tokens, { maxTokensPerCall: settings.maxTokensPerCall }), maxTokensPerCall: settings.maxTokensPerCall } : {}),
       ...(params.temperature === undefined && settings.extractionTemperature !== undefined ? { temperature: settings.extractionTemperature } : {}),
+      ...(params.top_p === undefined && settings.extractionTopP !== undefined ? { top_p: settings.extractionTopP } : {}),
       ...(params.repetition_penalty === undefined && settings.repetitionPenalty !== undefined ? { repetition_penalty: settings.repetitionPenalty } : {}),
+      ...(params.seed === undefined && settings.samplingSeed !== undefined ? { seed: settings.samplingSeed } : {}),
     });
   };
   return wrapper;

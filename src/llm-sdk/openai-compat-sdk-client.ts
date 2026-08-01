@@ -30,6 +30,7 @@ import {
 } from '../core/url-fallback';
 import { TokenKeyProber } from './token-key-probe';
 import { reportFinish } from './finish-reason';
+import { buildSamplingArgs } from './sampling-args';
 
 export interface OpenAICompatSdkClientOptions {
   apiKey: string;
@@ -139,7 +140,7 @@ export class OpenAICompatSdkClient implements LLMClient {
   }
 
   async createMessage(params: LLMClient['createMessage'] extends (p: infer P) => unknown ? P : never): Promise<string> {
-    const { model, max_tokens, system, messages, temperature, repetition_penalty, enableThinking, response_format, onFinish } = params;
+    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, seed, enableThinking, onFinish } = params;
 
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
@@ -153,9 +154,8 @@ export class OpenAICompatSdkClient implements LLMClient {
         providerOptions: this.buildProviderOptions({
           enableThinking,
           repetitionPenalty: repetition_penalty,
-          responseFormat: response_format,
         }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-        ...(temperature !== undefined ? { temperature } : {}),
+        ...buildSamplingArgs({ temperature, top_p, seed }),
       });
       reportFinish(onFinish, result.finishReason, result.usage);
       return result.text;
@@ -181,9 +181,8 @@ export class OpenAICompatSdkClient implements LLMClient {
           providerOptions: this.buildProviderOptions({
             enableThinking,
             repetitionPenalty: repetition_penalty,
-            responseFormat: response_format,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
@@ -213,9 +212,8 @@ export class OpenAICompatSdkClient implements LLMClient {
           providerOptions: this.buildProviderOptions({
             enableThinking,
             repetitionPenalty: repetition_penalty,
-            responseFormat: response_format,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
@@ -236,7 +234,6 @@ export class OpenAICompatSdkClient implements LLMClient {
   private buildProviderOptions(opts: {
     enableThinking?: boolean;
     repetitionPenalty?: number;
-    responseFormat?: { type: 'json_object' };
   }): Record<string, Record<string, unknown>> {
     const openaiOpts: Record<string, unknown> = {};
 
@@ -261,20 +258,65 @@ export class OpenAICompatSdkClient implements LLMClient {
       openaiOpts.thinking = { type: 'disabled' };
       // llama.cpp's llama-server (and most local OpenAI-compatible servers
       // serving Qwen3-family models) ignores `thinking.type` entirely — it
-      // expects chat_template_kwargs instead. Unknown fields are ignored by
-      // both dialects, so sending both is safe and makes the toggle actually
-      // work against local backends.
+      // expects chat_template_kwargs instead, so both dialects are sent.
+      //
+      // Sending both assumes each side ignores the dialect it does not know.
+      // Half of that is now measured and the news is mixed: on LM Studio 0.4.20
+      // `chat_template_kwargs` is accepted with a 200 and the model reasons
+      // anyway (#372), so on that backend delivery would not make the toggle
+      // work. Neither field currently leaves the process, so the assumption
+      // costs nothing today; it becomes load-bearing the moment the key is
+      // corrected, and what it buys is unproven on every backend measured.
       openaiOpts.chat_template_kwargs = { enable_thinking: false };
     }
 
     if (opts.repetitionPenalty !== undefined) {
-      openaiOpts.repetitionPenalty = opts.repetitionPenalty;
+      // The spelling `OpenAICompatibleClient.buildRequestBody` put on the wire
+      // before v1.23.0. Kept, so that correcting the providerOptions key
+      // restores that spelling rather than inventing a new one — but only the
+      // spelling. That client gated every non-standard field on an
+      // `unsupportedFields` set held per client instance, learned from 400
+      // bodies via `parseUnknownFields` and surfaced to the user as a
+      // `paramStripped` notice. The AI-SDK migration dropped all of it, so
+      // whenever a value is set this field now travels ungated — the setting
+      // itself is opt-in, with no default and its input behind Custom Advanced
+      // Settings.
+      //
+      // Which spelling is right is per-backend, not global:
+      //   - llama.cpp b9205 ignores this one — measured once locally, same
+      //     output hash as a field name invented on the spot, three seeds, both
+      //     ends of the range, while `repeat_penalty` changed the output. No
+      //     artefact kept, and the server is no longer reachable
+      //   - the repository counts it among the fields the #137 retry stripped
+      //     on a 400 (CHANGELOG «temperature, repetition_penalty, etc.»), and a
+      //     code comment of that era cites `Unknown name 'repetition_penalty'`
+      //     as a Gemini reply. The issue itself never names the field, and no
+      //     live response is kept — the record is weaker than the thinking one
+      //   - OpenRouter and vLLM document this spelling; whether it ever took
+      //     effect for a user is not established either way
+      // So the fix is a per-provider dialect plus something to replace the
+      // learned blocklist, not a rename. A rename here would trade one broken
+      // set of backends for another.
+      openaiOpts.repetition_penalty = opts.repetitionPenalty;
     }
 
-    if (opts.responseFormat?.type === 'json_object') {
-      openaiOpts.response_format = { type: 'json_object' };
-    }
-
+    // Left under the key the SDK does not read raw fields from, which means
+    // none of the three above reach the request body — as has been the case
+    // since v1.23.0. Correcting it is deliberately not part of this change: it
+    // would deliver all three to all ten providers on this path at once, and
+    // no backend is known to read them. What the repository does record is the
+    // opposite: #137 has Gemini rejecting `thinking` on the same
+    // `/v1beta/openai` shim it still uses, and the strip-and-retry that used to
+    // absorb such rejections went with the AI-SDK migration. That record is a
+    // 2026-06 comment and a hand-written fixture, not a live response — enough
+    // to decline sending, not enough to claim what would happen.
+    //
+    // The follow-up does not need this key at all for most of it: the SDK
+    // parses `openaiCompatible.reasoningEffort` through its own schema and
+    // emits `reasoning_effort` regardless, which is Gemini's documented way to
+    // decline reasoning, and structured output travels as the standard
+    // `responseFormat` argument. Only the three raw fields here need a
+    // provider-keyed channel, and each needs a backend that reads it.
     return Object.keys(openaiOpts).length > 0 ? { openaiCompatible: openaiOpts } : {};
   }
 
@@ -286,10 +328,12 @@ export class OpenAICompatSdkClient implements LLMClient {
     onChunk: (chunk: string) => void;
     enableThinking?: boolean;
     temperature?: number;
+    top_p?: number;
     repetition_penalty?: number;
+    seed?: number;
     onFinish?: (meta: { finishReason: LLMFinishReason }) => void;
   }): Promise<string> {
-    const { model, max_tokens, system, messages, onChunk, temperature, repetition_penalty, enableThinking, onFinish } = params;
+    const { model, max_tokens, system, messages, onChunk, temperature, top_p, repetition_penalty, seed, enableThinking, onFinish } = params;
 
     // v1.23.0 P1-7 follow-up: stream path uses streamWithFallback
     // (real streaming via window.fetch with CORS fallback to
@@ -322,7 +366,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           enableThinking,
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-        ...(temperature !== undefined ? { temperature } : {}),
+        ...buildSamplingArgs({ temperature, top_p, seed }),
       });
 
       let fullText = '';
@@ -397,7 +441,7 @@ export class OpenAICompatSdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
 
         let fullText = '';
@@ -436,7 +480,7 @@ export class OpenAICompatSdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
         let fullText = '';
         for await (const chunk of result.textStream) {

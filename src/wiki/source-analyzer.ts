@@ -374,6 +374,16 @@ export class SourceAnalyzer {
           response_format: { type: 'json_object' },
           cacheBreakpoint: staticPrefix.length,
           maxTokensPerCall: retryCap,
+          // Extraction never mentioned the thinking setting, so whatever the
+          // server had been started with decided it and the setting meant
+          // nothing here. Not the only such call site — the lint alias and tag
+          // runners and the PDF converter still do not pass it, and the welcome
+          // note and the connection probe omit it deliberately — but the one
+          // this change is about. Sent in the disable direction
+          // only, matching every other call site: `disableThinking` defaults to
+          // false, so asking for reasoning would fire on every install that
+          // never opened the setting.
+          ...(this.ctx.settings.disableThinking === true ? { enableThinking: false } : {}),
           onFinish: (meta) => { finish.reason = meta.finishReason; finish.usage = meta.usage; },
         });
 

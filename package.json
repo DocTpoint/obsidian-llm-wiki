@@ -11,7 +11,8 @@
     "lint": "eslint src/ --max-warnings=0",
     "css-lint": "node scripts/css-lint.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck:tools": "tsc -p tools/wiki-ingest-cli/tsconfig.json --noEmit"
   },
   "keywords": [
     "obsidian",
