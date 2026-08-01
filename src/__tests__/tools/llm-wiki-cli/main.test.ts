@@ -104,3 +104,31 @@ describe('parseCliOptions — --thinking-mode', () => {
     ]))).toThrow(/--thinking.*--thinking-mode/);
   });
 });
+
+describe('parseCliOptions — --round-base', () => {
+  it('accepts a positive integer', () => {
+    expect(parseCliOptions(base(['--round-base', '6'])).roundBase).toBe(6);
+  });
+
+  it('rejects zero (must be positive)', () => {
+    expect(() => parseCliOptions(base(['--round-base', '0'])))
+      .toThrow(/--round-base must be a positive integer/);
+  });
+
+  it('rejects a non-integer', () => {
+    expect(() => parseCliOptions(base(['--round-base', 'abc'])))
+      .toThrow(/--round-base/);
+  });
+
+  it('throws a deprecation error for the legacy --max-rounds flag', () => {
+    expect(() => parseCliOptions(base(['--max-rounds', '6'])))
+      .toThrow(/--max-rounds is deprecated.*v1\.26\.0.*--round-base/);
+  });
+
+  it('throws when both --round-base and --max-rounds are given', () => {
+    expect(() => parseCliOptions(base([
+      '--round-base', '6',
+      '--max-rounds', '6',
+    ]))).toThrow(/--max-rounds.*--round-base/);
+  });
+});

@@ -33,7 +33,8 @@ WIKI_API_KEY=... node tools/llm-wiki-cli/run-llm-wiki.mjs \
 | `--thinking` | Deprecated; passing it throws. Use `--thinking-mode`. Removal in v1.26.0. |
 | `--granularity` | `fine` \| `standard` \| `coarse` \| `minimal` \| `custom`. Decides batch size, item limit and round ceiling together. |
 | `--batch-size` | How many items a round asks for. Comparing sizes through this flag keeps every arm on one build, which editing the code between arms does not. Under `--granularity custom` it survives unless the per-type caps sum above 10, in which case `calculateBatchLimits` derives the batch size from them and overwrites it. Each unset cap counts as `MIN_BATCH_SIZE` (5), so a plain `--granularity custom` sums to exactly 10, the rule needs strictly more, and this flag still applies. |
-| `--max-rounds` | Sets the granularity's round base, not the ceiling. The ceiling is `min(base × 3, ceil(source_chars / 2000) + 2)`, so `--max-rounds 6` allows 18 — and on a short source the length term wins and the flag changes nothing. Under `--granularity custom` the same caps-above-10 rule can overwrite it. |
+| `--round-base` | Sets the granularity's round base, not the ceiling. The ceiling is `min(base × 3, ceil(source_chars / 2000) + 2)`, so `--round-base 6` allows 18 — and on a short source the length term wins and the flag changes nothing. Under `--granularity custom` the same caps-above-10 rule can overwrite it. |
+| `--max-rounds` | Deprecated; passing it throws. Use `--round-base`. Removal in v1.26.0. |
 | `--max-tokens-per-call` | Caps `max_tokens` for every call. `0` removes the cap, leaving whatever the call site asks for — for extraction that is at least `MAX_TOKENS_BATCH` (16000), not "unlimited". |
 
 **Without `--dry-run` the CLI writes into the real vault.** It is the same

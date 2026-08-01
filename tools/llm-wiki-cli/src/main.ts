@@ -54,11 +54,12 @@ const INGEST_USAGE = `Usage:
                   the per-type caps sum above 10, where the batch size is
                   derived from them instead; an unset cap counts as 5, so plain
                   --granularity custom sums to exactly 10 and this still applies.
-  --max-rounds    Sets the granularity's round base, not the ceiling: the
+  --round-base    Sets the granularity's round base, not the ceiling: the
                   ceiling is min(base * 3, ceil(source_chars / 2000) + 2), so 6
                   allows 18 — and on a short source the length term wins and
                   this changes nothing. Under --granularity custom the same
                   caps-above-10 rule can overwrite it.
+  --max-rounds    Deprecated; throws. Use --round-base. Removal in v1.26.0.
   --model         Override the model, so two arms differ only by which one
                   answered. Otherwise every run takes the model from data.json.
   --temperature   Set the extraction sampling temperature. Unset, the server's
@@ -90,7 +91,7 @@ interface CliOptions {
   seed?: number;
   maxTokensPerCall?: number;
   batchSize?: number;
-  maxRounds?: number;
+  roundBase?: number;
   model?: string;
   temperature?: number;
   topP?: number;
@@ -208,6 +209,7 @@ export function parseCliOptions(argv: string[]): CliOptions {
       seed: { type: 'string' },
       'max-tokens-per-call': { type: 'string' },
       'batch-size': { type: 'string' },
+      'round-base': { type: 'string' },
       'max-rounds': { type: 'string' },
       model: { type: 'string' },
       temperature: { type: 'string' },
@@ -256,8 +258,18 @@ export function parseCliOptions(argv: string[]): CliOptions {
   let batchSize: number | undefined;
   if (values['batch-size'] !== undefined) batchSize = parsePositiveInteger(String(values['batch-size']), '--batch-size');
 
-  let maxRounds: number | undefined;
-  if (values['max-rounds'] !== undefined) maxRounds = parsePositiveInteger(String(values['max-rounds']), '--max-rounds');
+  let roundBase: number | undefined;
+  if (values['max-rounds'] !== undefined) {
+    // `--max-rounds` was the v1.25.x name. Throw rather than translate so
+    // the user's script advertises the new flag explicitly; the old name
+    // was misleading anyway (it sets the round base, not a ceiling).
+    throw withUsage(new Error(
+      `--max-rounds is deprecated and will be removed in v1.26.0; use --round-base.`,
+    ));
+  }
+  if (values['round-base'] !== undefined) {
+    roundBase = parsePositiveInteger(String(values['round-base']), '--round-base');
+  }
 
   let temperature: number | undefined;
   if (values.temperature !== undefined) temperature = parseNonNegativeNumber(String(values.temperature), '--temperature');
@@ -316,7 +328,7 @@ export function parseCliOptions(argv: string[]): CliOptions {
     ...(seed !== undefined ? { seed } : {}),
     ...(maxTokensPerCall !== undefined ? { maxTokensPerCall } : {}),
     ...(batchSize !== undefined ? { batchSize } : {}),
-    ...(maxRounds !== undefined ? { maxRounds } : {}),
+    ...(roundBase !== undefined ? { roundBase } : {}),
     ...(model !== undefined ? { model } : {}),
     ...(temperature !== undefined ? { temperature } : {}),
     ...(topP !== undefined ? { topP } : {}),
@@ -459,7 +471,7 @@ async function runIngest(argv: string[]): Promise<void> {
   };
 
   if (options.batchSize !== undefined) overrideGranularity({ initialBatchSize: options.batchSize });
-  if (options.maxRounds !== undefined) overrideGranularity({ maxBatchesBase: options.maxRounds });
+  if (options.roundBase !== undefined) overrideGranularity({ maxBatchesBase: options.roundBase });
   if (options.temperature !== undefined) settings.extractionTemperature = options.temperature;
   if (options.topP !== undefined) settings.extractionTopP = options.topP;
   if (options.model !== undefined) settings.model = options.model;
@@ -503,7 +515,7 @@ async function runIngest(argv: string[]): Promise<void> {
     + ` model=${settings.model} thinking-mode=${options.thinkingMode ?? 'unset'}`
     + ` temp=${settings.extractionTemperature ?? 'server default'} top-p=${settings.extractionTopP ?? 'server default'}`
     + ` seed=${settings.samplingSeed ?? 'random'} max-tokens=${settings.maxTokensPerCall || 'uncapped'}`
-    + ` batch=${options.batchSize ?? 'default'} max-rounds=${options.maxRounds ?? 'default'}`
+    + ` batch=${options.batchSize ?? 'default'} round-base=${options.roundBase ?? 'default'}`
     + ` granularity=${settings.extractionGranularity}`);
 
   const startedAt = Date.now();
