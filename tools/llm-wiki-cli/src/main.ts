@@ -308,7 +308,13 @@ export function parseCliOptions(argv: string[]): CliOptions {
   let granularity: string | undefined;
   if (values.granularity !== undefined) {
     const g = String(values.granularity);
-    if (!GRANULARITY_CONFIG[g]) {
+    // Object.prototype.hasOwnProperty.call (not `g in GRANULARITY_CONFIG` or
+    // bare `GRANULARITY_CONFIG[g]`) rejects prototype keys like `constructor`,
+    // `toString`, `__proto__` — a plain object literal inherits all of them,
+    // and bare-property lookup accepts them. The .call form avoids needing
+    // ES2022's `Object.hasOwn` in the lib config (tools tsconfig extends
+    // root, which only ships DOM + ES2021).
+    if (!Object.prototype.hasOwnProperty.call(GRANULARITY_CONFIG, g)) {
       throw withUsage(new Error(`Unknown granularity: ${g}. Known: ${Object.keys(GRANULARITY_CONFIG).join(', ')}`));
     }
     granularity = g;

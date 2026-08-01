@@ -181,6 +181,20 @@ function expectError(fn: () => unknown): string {
   throw new Error('expected fn() to throw, but it did not');
 }
 
+describe('parseCliOptions — granularity', () => {
+  // Bare-property lookup on a plain object accepts prototype keys
+  // (`constructor`, `toString`, `__proto__`, …). The CLI must reject them
+  // explicitly with `Object.hasOwn`, otherwise `--granularity constructor`
+  // passes validation and downstream `calculateBatchLimits` returns
+  // `initialBatchSize: undefined` for a silently broken run.
+  it('rejects prototype keys (constructor, toString, __proto__)', () => {
+    for (const bad of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(() => parseCliOptions(base(['--granularity', bad])))
+        .toThrow(/Unknown granularity/);
+    }
+  });
+});
+
 describe('applyThinkingMode', () => {
   // Pure settings-mutation helper. The CLI runs this once when the user
   // passes `--thinking-mode <value>`; the bug it fixed was collapsing all
