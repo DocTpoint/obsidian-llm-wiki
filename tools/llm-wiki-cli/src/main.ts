@@ -23,7 +23,15 @@ import { installObsidianGlobals } from './node-globals';
 const PLUGIN_ID = 'karpathywiki';
 const API_KEY_ENV = 'WIKI_API_KEY';
 
-const USAGE = `Usage:
+const TOOL_USAGE = `Usage:
+  llm-wiki <command> [flags]
+
+Commands:
+  ingest   Run the real ingest pipeline against a vault on disk.
+
+Run \`llm-wiki <command> --help\` for command-specific flags.`;
+
+const INGEST_USAGE = `Usage:
   node tools/llm-wiki-cli/run-llm-wiki.mjs ingest --vault <path> --source <path-in-vault> [flags]
 
   --vault         Path to the Obsidian vault. Required.
@@ -84,6 +92,7 @@ interface CliOptions {
   topP?: number;
   granularity?: string;
   thinking?: string;
+  help: boolean;
 }
 
 interface LLMUsageTotals {
@@ -93,7 +102,87 @@ interface LLMUsageTotals {
   outputTokens: number;
 }
 
-function parseCliOptions(argv: string[]): CliOptions {
+/**
+ * Subcommand dispatch. Pure function — no I/O, no logging, no side effects.
+ *
+ * Returning a tagged union rather than a string keeps `main()` honest: adding
+ * a new command means adding a `case` here and the compiler will refuse to
+ * forget it. The `unknown` case for flag-shaped first arguments is deliberate
+ * — it catches `llm-wiki --vault /path` (user forgot `ingest`) and turns it
+ * into a helpful error rather than letting parseArgs swallow it as ingest flags.
+ */
+export type Dispatch =
+  | { kind: 'tool-help' }
+  | { kind: 'ingest'; rest: string[] }
+  | { kind: 'unknown'; command: string };
+
+export function dispatchCli(argv: string[]): Dispatch {
+  const [first] = argv;
+  if (first === undefined || first === '--help' || first === '-h') return { kind: 'tool-help' };
+  if (first === 'ingest') return { kind: 'ingest', rest: argv.slice(1) };
+  return { kind: 'unknown', command: first };
+}
+
+// Sentinel stamped on Error instances whose message already carries the ingest
+// USAGE block, so `withUsage` can detect and skip a second append instead of
+// matching on message text (which would be brittle to future reformatting).
+const HAS_INGEST_USAGE = Symbol('hasIngestUsage');
+
+/**
+ * Returns a copy of `error` whose message includes the ingest USAGE block,
+ * idempotently. Validation errors thrown by `parseCliOptions` go through here
+ * so the user sees the flag list right after the bad-input line; errors that
+ * already include the block (because they were assembled with it inline) skip
+ * the append.
+ */
+function withUsage(error: Error): Error {
+  if ((error as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE]) return error;
+  const wrapped = new Error(`${error.message}\n\n${INGEST_USAGE}`);
+  (wrapped as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE] = true;
+  return wrapped;
+}
+
+function parseInteger(raw: string, flagName: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n)) {
+    const err = new Error(`${flagName} must be an integer, got: ${raw}`);
+    (err as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE] = true;
+    throw err;
+  }
+  return n;
+}
+
+function parsePositiveInteger(raw: string, flagName: string): number {
+  const n = parseInteger(raw, flagName);
+  if (n < 1) {
+    const err = new Error(`${flagName} must be a positive integer, got: ${raw}`);
+    (err as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE] = true;
+    throw err;
+  }
+  return n;
+}
+
+function parseNonNegativeNumber(raw: string, flagName: string): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    const err = new Error(`${flagName} must be a non-negative number, got: ${raw}`);
+    (err as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE] = true;
+    throw err;
+  }
+  return n;
+}
+
+function parseProbability(raw: string, flagName: string): number {
+  const n = parseNonNegativeNumber(raw, flagName);
+  if (n === 0 || n > 1) {
+    const err = new Error(`${flagName} must be within (0, 1], got: ${raw}`);
+    (err as Error & { [HAS_INGEST_USAGE]?: boolean })[HAS_INGEST_USAGE] = true;
+    throw err;
+  }
+  return n;
+}
+
+export function parseCliOptions(argv: string[]): CliOptions {
   const { values } = parseArgs({
     args: argv,
     options: {
@@ -116,14 +205,76 @@ function parseCliOptions(argv: string[]): CliOptions {
     allowPositionals: false,
   });
 
-  if (values.help) {
-    console.log(USAGE);
-    process.exit(0);
+  const help = values.help === true;
+
+  // `--help` short-circuits before the required-flag checks so a bare
+  // `llm-wiki ingest --help` prints USAGE without demanding --vault/--source.
+  if (help) {
+    return {
+      vault: '',
+      source: '',
+      dryRun: false,
+      force: false,
+      extractOnly: false,
+      help: true,
+    };
   }
-  if (!values.vault) throw new Error(`--vault is required.\n\n${USAGE}`);
-  if (!values.source) throw new Error(`--source is required.\n\n${USAGE}`);
+
+  // Required-flag checks throw plain errors (no USAGE inline). They will be
+  // wrapped by `withUsage` below before the caller surfaces them.
+  if (!values.vault) throw withUsage(new Error('--vault is required.'));
+  if (!values.source) throw withUsage(new Error('--source is required.'));
 
   const extractOnly = values['extract-only'] === true;
+
+  // Wrap every numeric parse so a bad value surfaces as a single Error with
+  // both the flag-specific message and the ingest USAGE block. The helpers
+  // stamp HAS_INGEST_USAGE so the wrapping `withUsage` here is idempotent.
+  let seed: number | undefined;
+  if (values.seed !== undefined) seed = parseInteger(String(values.seed), '--seed');
+
+  let maxTokensPerCall: number | undefined;
+  if (values['max-tokens-per-call'] !== undefined) {
+    maxTokensPerCall = parseNonNegativeNumber(String(values['max-tokens-per-call']), '--max-tokens-per-call');
+  }
+
+  let batchSize: number | undefined;
+  if (values['batch-size'] !== undefined) batchSize = parsePositiveInteger(String(values['batch-size']), '--batch-size');
+
+  let maxRounds: number | undefined;
+  if (values['max-rounds'] !== undefined) maxRounds = parsePositiveInteger(String(values['max-rounds']), '--max-rounds');
+
+  let temperature: number | undefined;
+  if (values.temperature !== undefined) temperature = parseNonNegativeNumber(String(values.temperature), '--temperature');
+
+  let topP: number | undefined;
+  if (values['top-p'] !== undefined) topP = parseProbability(String(values['top-p']), '--top-p');
+
+  let granularity: string | undefined;
+  if (values.granularity !== undefined) {
+    const g = String(values.granularity);
+    if (!GRANULARITY_CONFIG[g]) {
+      throw withUsage(new Error(`Unknown granularity: ${g}. Known: ${Object.keys(GRANULARITY_CONFIG).join(', ')}`));
+    }
+    granularity = g;
+  }
+
+  let thinking: string | undefined;
+  if (values.thinking !== undefined) {
+    const t = String(values.thinking);
+    if (t !== 'on' && t !== 'off') {
+      throw withUsage(new Error(`--thinking must be "on" or "off", got: ${t}`));
+    }
+    thinking = t;
+  }
+
+  let model: string | undefined;
+  if (values.model !== undefined) {
+    const m = String(values.model);
+    if (!m.trim()) throw withUsage(new Error('--model must not be empty.'));
+    model = m;
+  }
+
   return {
     // Both are validated as present just above; `parseArgs` types every value
     // as string-or-boolean because a flag declared `string` can still appear
@@ -135,17 +286,16 @@ function parseCliOptions(argv: string[]): CliOptions {
     dryRun: values['dry-run'] === true || extractOnly,
     force: values.force === true,
     extractOnly,
-    ...(values.seed !== undefined ? { seed: Number(values.seed) } : {}),
-    ...(values['max-tokens-per-call'] !== undefined
-      ? { maxTokensPerCall: Number(values['max-tokens-per-call']) }
-      : {}),
-    ...(values['batch-size'] !== undefined ? { batchSize: Number(values['batch-size']) } : {}),
-    ...(values['max-rounds'] !== undefined ? { maxRounds: Number(values['max-rounds']) } : {}),
-    ...(values.model !== undefined ? { model: String(values.model) } : {}),
-    ...(values.temperature !== undefined ? { temperature: Number(values.temperature) } : {}),
-    ...(values['top-p'] !== undefined ? { topP: Number(values['top-p']) } : {}),
-    ...(values.granularity !== undefined ? { granularity: String(values.granularity) } : {}),
-    ...(values.thinking !== undefined ? { thinking: String(values.thinking) } : {}),
+    ...(seed !== undefined ? { seed } : {}),
+    ...(maxTokensPerCall !== undefined ? { maxTokensPerCall } : {}),
+    ...(batchSize !== undefined ? { batchSize } : {}),
+    ...(maxRounds !== undefined ? { maxRounds } : {}),
+    ...(model !== undefined ? { model } : {}),
+    ...(temperature !== undefined ? { temperature } : {}),
+    ...(topP !== undefined ? { topP } : {}),
+    ...(granularity !== undefined ? { granularity } : {}),
+    ...(thinking !== undefined ? { thinking } : {}),
+    help,
   };
 }
 
@@ -244,8 +394,13 @@ function printSummary(
   console.log(`  elapsed           ${(elapsedMs / 1000).toFixed(1)}s`);
 }
 
-export async function main(argv: string[]): Promise<void> {
+async function runIngest(argv: string[]): Promise<void> {
   const options = parseCliOptions(argv);
+  if (options.help) {
+    console.log(INGEST_USAGE);
+    return;
+  }
+
   installObsidianGlobals();
 
   if (!statSync(options.vault).isDirectory()) {
@@ -254,24 +409,10 @@ export async function main(argv: string[]): Promise<void> {
 
   const settings = loadSettings(options.vault);
   settings.apiKey = resolveApiKey(settings);
-  if (options.seed !== undefined) {
-    if (!Number.isInteger(options.seed)) {
-      throw new Error(`--seed must be an integer, got: ${options.seed}`);
-    }
-    settings.samplingSeed = options.seed;
-  }
-  if (options.thinking !== undefined) {
-    if (options.thinking !== 'on' && options.thinking !== 'off') {
-      throw new Error(`--thinking must be "on" or "off", got: ${options.thinking}`);
-    }
-    settings.disableThinking = options.thinking === 'off';
-  }
-  if (options.granularity !== undefined) {
-    if (!GRANULARITY_CONFIG[options.granularity]) {
-      throw new Error(`Unknown granularity: ${options.granularity}. Known: ${Object.keys(GRANULARITY_CONFIG).join(', ')}`);
-    }
-    settings.extractionGranularity = options.granularity as ExtractionGranularity;
-  }
+  if (options.seed !== undefined) settings.samplingSeed = options.seed;
+  if (options.thinking !== undefined) settings.disableThinking = options.thinking === 'off';
+  if (options.granularity !== undefined) settings.extractionGranularity = options.granularity as ExtractionGranularity;
+
   // `--batch-size` and `--max-rounds` have no settings of their own: the numbers
   // live in the granularity table. Overriding them writes into that table, and
   // the table is a shared `export const` — the engine itself only ever reads a
@@ -285,40 +426,12 @@ export async function main(argv: string[]): Promise<void> {
     GRANULARITY_CONFIG[name] = { ...config, ...patch };
   };
 
-  if (options.batchSize !== undefined) {
-    if (!Number.isInteger(options.batchSize) || options.batchSize < 1) {
-      throw new Error(`--batch-size must be a positive integer, got: ${options.batchSize}`);
-    }
-    overrideGranularity({ initialBatchSize: options.batchSize });
-  }
-  if (options.maxRounds !== undefined) {
-    if (!Number.isInteger(options.maxRounds) || options.maxRounds < 1) {
-      throw new Error(`--max-rounds must be a positive integer, got: ${options.maxRounds}`);
-    }
-    overrideGranularity({ maxBatchesBase: options.maxRounds });
-  }
-  if (options.temperature !== undefined) {
-    if (!Number.isFinite(options.temperature) || options.temperature < 0) {
-      throw new Error(`--temperature must be a non-negative number, got: ${options.temperature}`);
-    }
-    settings.extractionTemperature = options.temperature;
-  }
-  if (options.topP !== undefined) {
-    if (!Number.isFinite(options.topP) || options.topP <= 0 || options.topP > 1) {
-      throw new Error(`--top-p must be within (0, 1], got: ${options.topP}`);
-    }
-    settings.extractionTopP = options.topP;
-  }
-  if (options.model !== undefined) {
-    if (!options.model.trim()) throw new Error('--model must not be empty.');
-    settings.model = options.model;
-  }
-  if (options.maxTokensPerCall !== undefined) {
-    if (!Number.isFinite(options.maxTokensPerCall) || options.maxTokensPerCall < 0) {
-      throw new Error(`--max-tokens-per-call must be a non-negative number, got: ${options.maxTokensPerCall}`);
-    }
-    settings.maxTokensPerCall = options.maxTokensPerCall;
-  }
+  if (options.batchSize !== undefined) overrideGranularity({ initialBatchSize: options.batchSize });
+  if (options.maxRounds !== undefined) overrideGranularity({ maxBatchesBase: options.maxRounds });
+  if (options.temperature !== undefined) settings.extractionTemperature = options.temperature;
+  if (options.topP !== undefined) settings.extractionTopP = options.topP;
+  if (options.model !== undefined) settings.model = options.model;
+  if (options.maxTokensPerCall !== undefined) settings.maxTokensPerCall = options.maxTokensPerCall;
 
   const app = createVaultApp(options.vault, options.dryRun);
   const sourceFile = resolveSourceFile(app, options.source);
@@ -373,6 +486,26 @@ export async function main(argv: string[]): Promise<void> {
     }
   } finally {
     printSummary(options, report, totals, app.vault.writes, Date.now() - startedAt);
+  }
+}
+
+export async function main(argv: string[]): Promise<void> {
+  const d = dispatchCli(argv);
+  switch (d.kind) {
+    case 'tool-help':
+      console.log(TOOL_USAGE);
+      return;
+    case 'ingest':
+      return runIngest(d.rest);
+    case 'unknown': {
+      // First arg is flag-shaped: the user almost certainly typed a flag at
+      // the tool level and forgot `ingest`. Surface a hint rather than the
+      // generic "unknown command" error.
+      const hint = d.command.startsWith('-')
+        ? `(did you forget \`ingest\`? try \`llm-wiki ingest ${argv.join(' ')}\`)`
+        : '';
+      throw new Error(`Unknown command: ${d.command}${hint ? ' ' + hint : ''}\n\n${TOOL_USAGE}`);
+    }
   }
 }
 

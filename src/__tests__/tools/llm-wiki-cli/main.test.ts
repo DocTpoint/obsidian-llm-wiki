@@ -7,7 +7,7 @@
 import nodePath from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-import { parseCliOptions } from '../../../../tools/llm-wiki-cli/src/main';
+import { parseCliOptions, dispatchCli } from '../../../../tools/llm-wiki-cli/src/main';
 
 const base = (extra: string[] = []): string[] => [
   '--vault', '/tmp/vault', '--source', 'notes.md', ...extra,
@@ -28,7 +28,7 @@ describe('parseCliOptions', () => {
   });
 
   it('rejects a non-integer seed with USAGE', () => {
-    expect(() => parseCliOptions(base(['--seed', '1.5']))).toThrow(/--seed.*integer/s);
+    expect(() => parseCliOptions(base(['--seed', '1.5']))).toThrow(/--seed must be an integer/);
   });
 
   it('rejects an out-of-range top-p with USAGE', () => {
@@ -45,5 +45,35 @@ describe('parseCliOptions', () => {
 
   it('rejects a non-finite temperature with USAGE', () => {
     expect(() => parseCliOptions(base(['--temperature', 'NaN']))).toThrow(/--temperature/);
+  });
+
+  it('marks --help without exiting (pure function)', () => {
+    const opts = parseCliOptions(['--help']);
+    expect(opts.help).toBe(true);
+  });
+});
+
+describe('dispatchCli', () => {
+  it('returns tool-help for empty argv', () => {
+    expect(dispatchCli([])).toEqual({ kind: 'tool-help' });
+  });
+
+  it('returns tool-help for --help at the top level', () => {
+    expect(dispatchCli(['--help'])).toEqual({ kind: 'tool-help' });
+    expect(dispatchCli(['-h'])).toEqual({ kind: 'tool-help' });
+  });
+
+  it('returns ingest with remaining args for the ingest command', () => {
+    expect(dispatchCli(['ingest'])).toEqual({ kind: 'ingest', rest: [] });
+    expect(dispatchCli(['ingest', '--vault', '/v', '--source', 'n.md']))
+      .toEqual({ kind: 'ingest', rest: ['--vault', '/v', '--source', 'n.md'] });
+  });
+
+  it('returns unknown for an unknown subcommand name', () => {
+    expect(dispatchCli(['lint'])).toEqual({ kind: 'unknown', command: 'lint' });
+  });
+
+  it('returns unknown when the first arg looks like a flag (likely missing ingest)', () => {
+    expect(dispatchCli(['--vault', '/v'])).toEqual({ kind: 'unknown', command: '--vault' });
   });
 });
