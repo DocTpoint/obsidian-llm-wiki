@@ -54,7 +54,7 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
     const root = this.app.vault.getRoot();
 
     const collect = (folder: TFolder) => {
-      if (!folder.path.startsWith(this.app.vault.configDir) && folder.path !== this.wikiFolder && !isInFolderScope(folder.path, this.wikiFolder, false)) {
+      if (!folder.path.startsWith(this.app.vault.configDir) && !isInFolderScope(folder.path, this.wikiFolder, false)) {
         folders.push(folder);
       }
       for (const child of folder.children) {
