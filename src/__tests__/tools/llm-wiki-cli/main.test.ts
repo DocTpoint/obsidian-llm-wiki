@@ -299,12 +299,27 @@ describe('applyOverrides', () => {
     maxTokensPerCall: 0,
   } as unknown as Parameters<typeof applyOverrides>[0]);
 
-  // Snapshot the original "standard" row so each test starts from a known state
-  // (applyOverrides mutates this shared `export const`). Restore in afterEach.
-  const ORIGINAL_STANDARD = { ...GRANULARITY_CONFIG.standard };
+  // GRANULARITY_CONFIG is a shared `export const` with no reset function, so
+  // snapshot every row and restore all of them in afterEach — not just
+  // `standard`, or a test that patches a different row (or shadows an
+  // inherited prototype key) would leak its mutation into every later test
+  // in this worker.
+  const ORIGINAL_ROWS = Object.fromEntries(
+    Object.entries(GRANULARITY_CONFIG).map(([name, row]) => [name, { ...row }]),
+  ) as Record<string, typeof GRANULARITY_CONFIG[keyof typeof GRANULARITY_CONFIG]>;
 
   afterEach(() => {
-    GRANULARITY_CONFIG.standard = { ...ORIGINAL_STANDARD };
+    for (const [name, row] of Object.entries(ORIGINAL_ROWS)) {
+      (GRANULARITY_CONFIG as Record<string, typeof GRANULARITY_CONFIG[keyof typeof GRANULARITY_CONFIG]>)[name] = row;
+    }
+    // Drop own keys that were not in the original table — a prototype-key
+    // attempt (`constructor`, `toString`) would have shadowed one via an own
+    // property; delete it back.
+    for (const name of Object.keys(GRANULARITY_CONFIG)) {
+      if (!(name in ORIGINAL_ROWS)) {
+        delete (GRANULARITY_CONFIG as Record<string, unknown>)[name];
+      }
+    }
   });
 
   it('applies direct settings fields when present', () => {
@@ -339,6 +354,20 @@ describe('applyOverrides', () => {
     } as Parameters<typeof applyOverrides>[1]);
     expect(GRANULARITY_CONFIG.standard.initialBatchSize).toBe(7);
     expect(GRANULARITY_CONFIG.standard.maxBatchesBase).toBe(4);
+  });
+
+  it('rejects prototype keys from settings granularity', () => {
+    // The CLI's --granularity flag path guards against prototype keys, but the
+    // name here comes from data.json (settings.extractionGranularity), which
+    // bypasses parseCliOptions. A bare GRANULARITY_CONFIG[name] lookup would
+    // accept 'constructor'/'__proto__' (inherited, truthy) and shadow the
+    // shared table. applyOverrides must apply the same hasOwnProperty guard.
+    for (const bad of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      const s = baseSettings();
+      s.extractionGranularity = bad;
+      expect(() => applyOverrides(s, { batchSize: 7 } as Parameters<typeof applyOverrides>[1]))
+        .toThrow(/Unknown granularity in settings/);
+    }
   });
 
   it('leaves untouched fields alone', () => {

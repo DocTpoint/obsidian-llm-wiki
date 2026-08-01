@@ -234,8 +234,15 @@ export function applyOverrides(
   if (options.batchSize === undefined && options.roundBase === undefined) return;
 
   const name = settings.extractionGranularity || 'standard';
+  // Same prototype-key guard as the --granularity flag path. The name here
+  // comes from data.json, not the CLI, so it bypasses parseCliOptions'
+  // hasOwnProperty check; a bare `GRANULARITY_CONFIG[name]` lookup would
+  // accept `constructor`/`__proto__` (inherited, truthy) and shadow the
+  // shared table's prototype with the patch.
+  if (!Object.prototype.hasOwnProperty.call(GRANULARITY_CONFIG, name)) {
+    throw new Error(`Unknown granularity in settings: ${name}`);
+  }
   const config = GRANULARITY_CONFIG[name];
-  if (!config) throw new Error(`Unknown granularity in settings: ${name}`);
   const patch: Partial<typeof GRANULARITY_CONFIG[string]> = {};
   if (options.batchSize !== undefined) patch.initialBatchSize = options.batchSize;
   if (options.roundBase !== undefined) patch.maxBatchesBase = options.roundBase;
