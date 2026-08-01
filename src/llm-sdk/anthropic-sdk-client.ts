@@ -29,6 +29,7 @@ import {
   isUrlError,
 } from '../core/url-fallback';
 import { reportFinish } from './finish-reason';
+import { buildSamplingArgs } from './sampling-args';
 
 // Re-export for callers that import from anthropic-sdk-client only.
 // Reuse the same error mapper as OpenAI — AI-SDK's APICallError shape is
@@ -121,8 +122,7 @@ export class AnthropicSdkClient implements LLMClient {
           enableThinking,
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-        ...(temperature !== undefined ? { temperature } : {}),
-        ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...buildSamplingArgs({ temperature, top_p }, { withSeed: false }),
       });
       reportFinish(onFinish, result.finishReason);
       return result.text;
@@ -151,8 +151,7 @@ export class AnthropicSdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
-          ...(top_p !== undefined ? { topP: top_p } : {}),
+          ...buildSamplingArgs({ temperature, top_p }, { withSeed: false }),
         });
         reportFinish(onFinish, result.finishReason);
         return result.text;
@@ -221,8 +220,7 @@ export class AnthropicSdkClient implements LLMClient {
           enableThinking,
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-        ...(temperature !== undefined ? { temperature } : {}),
-        ...(top_p !== undefined ? { topP: top_p } : {}),
+        ...buildSamplingArgs({ temperature, top_p }, { withSeed: false }),
       });
 
       let fullText = '';
@@ -276,8 +274,7 @@ export class AnthropicSdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
-          ...(top_p !== undefined ? { topP: top_p } : {}),
+          ...buildSamplingArgs({ temperature, top_p }, { withSeed: false }),
         });
 
         let fullText = '';

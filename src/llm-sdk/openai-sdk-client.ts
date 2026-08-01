@@ -38,6 +38,7 @@ import {
   isUrlError,
 } from '../core/url-fallback';
 import { reportFinish } from './finish-reason';
+import { buildSamplingArgs } from './sampling-args';
 
 export interface OpenAISdkClientOptions {
   apiKey: string;
@@ -152,12 +153,10 @@ export class OpenAISdkClient implements LLMClient {
           responseFormat: response_format,
         }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
         // Plugin-level sampling (OpenAI's standard param).
-        ...(temperature !== undefined ? { temperature } : {}),
-        ...(top_p !== undefined ? { topP: top_p } : {}),
-        // Passed and discarded: `createOpenAI()(id)` returns the Responses
-        // model, which answers `{type:'unsupported', feature:'seed'}` and omits
-        // it. Left in place so the argument reads the same across clients.
-        ...(seed !== undefined ? { seed } : {}),
+        // `seed` is forwarded but the Responses model discards it; see comment in
+        // src/llm-sdk/sampling-args.ts. Top-level repetition_penalty is
+        // non-standard for OpenAI; pass via providerOptions.
+        ...buildSamplingArgs({ temperature, top_p, seed }),
         // Top-level repetition_penalty is non-standard for OpenAI; pass via providerOptions.
       });
       reportFinish(onFinish, result.finishReason, result.usage);
@@ -186,9 +185,7 @@ export class OpenAISdkClient implements LLMClient {
             repetitionPenalty: repetition_penalty,
             responseFormat: response_format,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
-          ...(top_p !== undefined ? { topP: top_p } : {}),
-          ...(seed !== undefined ? { seed } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
@@ -297,9 +294,7 @@ export class OpenAISdkClient implements LLMClient {
           enableThinking,
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-        ...(temperature !== undefined ? { temperature } : {}),
-        ...(top_p !== undefined ? { topP: top_p } : {}),
-        ...(seed !== undefined ? { seed } : {}),
+        ...buildSamplingArgs({ temperature, top_p, seed }),
       });
 
       // Accumulate text deltas (sent to onChunk) and reasoning (prepended).
@@ -362,9 +357,7 @@ export class OpenAISdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
-          ...(top_p !== undefined ? { topP: top_p } : {}),
-          ...(seed !== undefined ? { seed } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
 
         let fullText = '';

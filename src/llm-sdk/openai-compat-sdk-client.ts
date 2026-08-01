@@ -30,6 +30,7 @@ import {
 } from '../core/url-fallback';
 import { TokenKeyProber } from './token-key-probe';
 import { reportFinish } from './finish-reason';
+import { buildSamplingArgs } from './sampling-args';
 
 export interface OpenAICompatSdkClientOptions {
   apiKey: string;
@@ -154,9 +155,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           enableThinking,
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-        ...(temperature !== undefined ? { temperature } : {}),
-        ...(top_p !== undefined ? { topP: top_p } : {}),
-        ...(seed !== undefined ? { seed } : {}),
+        ...buildSamplingArgs({ temperature, top_p, seed }),
       });
       reportFinish(onFinish, result.finishReason, result.usage);
       return result.text;
@@ -183,9 +182,7 @@ export class OpenAICompatSdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
-          ...(top_p !== undefined ? { topP: top_p } : {}),
-        ...(seed !== undefined ? { seed } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
@@ -216,9 +213,7 @@ export class OpenAICompatSdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
-          ...(top_p !== undefined ? { topP: top_p } : {}),
-        ...(seed !== undefined ? { seed } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
@@ -371,9 +366,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           enableThinking,
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-        ...(temperature !== undefined ? { temperature } : {}),
-        ...(top_p !== undefined ? { topP: top_p } : {}),
-        ...(seed !== undefined ? { seed } : {}),
+        ...buildSamplingArgs({ temperature, top_p, seed }),
       });
 
       let fullText = '';
@@ -448,9 +441,7 @@ export class OpenAICompatSdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
-          ...(top_p !== undefined ? { topP: top_p } : {}),
-        ...(seed !== undefined ? { seed } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
 
         let fullText = '';
@@ -489,9 +480,7 @@ export class OpenAICompatSdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
-          ...(top_p !== undefined ? { topP: top_p } : {}),
-        ...(seed !== undefined ? { seed } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
         let fullText = '';
         for await (const chunk of result.textStream) {

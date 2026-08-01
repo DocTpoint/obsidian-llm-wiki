@@ -9,7 +9,6 @@ import * as nodePath from 'node:path';
 import { normalizePath, TFile, type App } from 'obsidian';
 
 import { WikiEngine } from '../../../src/wiki/wiki-engine';
-import type { SourceAnalyzer } from '../../../src/wiki/source-analyzer';
 import { SchemaManager } from '../../../src/schema/schema-manager';
 import { createLLMClient } from '../../../src/core/create-plugin-llm-client';
 import { preloadLLMClientModules } from '../../../src/llm-sdk/create-llm-client';
@@ -390,8 +389,7 @@ export async function main(argv: string[]): Promise<void> {
  * the CLI would make the measurement describe the CLI instead of the plugin.
  */
 async function runExtractionOnly(engine: WikiEngine, sourceFile: TFile): Promise<void> {
-  const analyzer = (engine as unknown as { sourceAnalyzer: SourceAnalyzer }).sourceAnalyzer;
-  const analysis = await analyzer.analyzeSource(sourceFile);
+  const analysis = await engine.runExtractionOnly(sourceFile);
 
   console.log('');
   console.log('=== Extraction ===');
