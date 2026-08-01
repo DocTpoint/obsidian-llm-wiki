@@ -28,6 +28,7 @@
 - [Démarrage rapide](#-démarrage-rapide)
 - [Fonctionnalités](#-fonctionnalités)
 - [Écosystème](#-écosystème)
+- [Outils](#-outils)
 - [Fonctionnement de la recherche](#-fonctionnement-de-la-recherche)
 - [Modèles](#-modèles)
 - [FAQ](#-faq)
@@ -266,6 +267,16 @@ Le plugin s'intègre au reste de votre stack Obsidian — chacun des outils ci-d
 - **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** — transformez n'importe quelle note Obsidian en diaporama via le frontmatter Marp (`marp: true`). Les pages wiki sont en Markdown pur, elles se rendent en diapositives sans conversion supplémentaire.
 - **🖼️ Canvas** — canevas infini natif d'Obsidian. Déposez des fiches wiki sur un canvas pour assembler guides d'étude, cartes mentales ou synthèses de recherche à partir de `[[wiki-links]]`, sans quitter le vault.
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** — plugin compagnon pour la capture locale de mémos vocaux et réunions (whisper.cpp sur macOS ; l'audio ne quitte jamais la machine). Génère des transcriptions étiquetées par locuteur et ses propres pages wiki hub. Indépendant de ce plugin — les deux peuvent partager le même vault sans couplage.
+
+## 🛠️ Outils
+
+Le plugin inclut une CLI headless dans ce dépôt, vous permettant d'exécuter le même pipeline d'ingestion contre un vault sur disque — sans Obsidian, sans Electron, sans affichage. Le moteur, l'analyseur, la fabrique de pages, le gestionnaire de schéma et les clients LLM sont importés directement depuis `src/` ; seul l'hôte (`obsidian`, vault actif, metadataCache) est remplacé par un shim. Utile pour la CI, les exécutions scriptées, la comparaison de paramètres d'échantillonnage entre bras, et le profilage de la boucle d'extraction sur une source unique.
+
+```bash
+pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+```
+
+Référence complète des drapeaux, exigences d'environnement et mises en garde du shim dans [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md).
 
 ## ❓ FAQ
 

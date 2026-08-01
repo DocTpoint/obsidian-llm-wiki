@@ -28,6 +28,7 @@
 - [クイックスタート](#-クイックスタート)
 - [特徴](#-特徴)
 - [エコシステム](#-エコシステム)
+- [ツール](#-ツール)
 - [検索の仕組み](#-検索の仕組み)
 - [モデル](#-モデル)
 - [FAQ](#-faq)
@@ -268,6 +269,18 @@ Monte Carlo PPR（Fogaras 2005）を使用 — 3,000ランダムウォーク×50
 - **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** — Marp frontmatter（`marp: true`）で任意のObsidianノートをスライドに変換。Wikiページは純粋なMarkdownのため、追加変換なしでスライドとしてレンダリングされます。
 - **🖼️ Canvas** — Obsidian標準の無限キャンバス。WikiカードをCanvasに配置すれば、vaultから出ずに学習ガイド・マインドマップ・研究概要を `[[wiki-links]]` で組み立てられます。
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** — ローカル音声メモ＋会議キャプチャ（macOSでwhisper.cpp使用、音声は端末から出ない）のコンパニオンプラグイン。話者ラベル付き文字起こしと独自のwikiハブページを生成。本プラグインとは独立しており、同じvaultを共有しても結合は不要です。
+
+---
+
+## 🛠️ ツール
+
+プラグインにはこのリポジトリに headless CLI が付属しており、ディスク上の vault に対して同じ取り込みパイプラインを実行できます——Obsidian も Electron もディスプレイも不要です。エンジン、アナライザ、ページファクトリ、スキーママネージャ、LLM クライアントは `src/` から直接インポートされ、ホスト（`obsidian`、ライブ vault、metadataCache）のみが shim に置き換わります。CI、スクリプト実行、腕単位でのサンプリングパラメータ比較、単一ソースでの抽出ループのプロファイリングに有用です。
+
+```bash
+pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+```
+
+全フラグリファレンス、環境要件、shim の注意事項は [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md) を参照してください。
 
 ---
 

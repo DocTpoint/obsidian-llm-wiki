@@ -1,4 +1,4 @@
-# wiki-ingest-cli
+# llm-wiki-cli
 
 Runs the obsidian-llm-wiki plugin's real ingest pipeline under plain Node —
 no Obsidian, no Electron, no display — against a vault directory on disk.
@@ -11,7 +11,7 @@ module and the vault it reads and writes.
 ## Running
 
 ```bash
-WIKI_API_KEY=... node tools/wiki-ingest-cli/run-ingest.mjs \
+WIKI_API_KEY=... node tools/llm-wiki-cli/run-llm-wiki.mjs \
   --vault /path/to/your/vault \
   --source "sources/Attention Is All You Need.md" \
   --dry-run
@@ -29,10 +29,12 @@ WIKI_API_KEY=... node tools/wiki-ingest-cli/run-ingest.mjs \
 | `--temperature` | Sampling temperature. Named for extraction because it comes from `extractionTemperature`, and it reaches more than extraction: the wrapper applies it to every `createMessage` that does not set its own, and the schema manager arrives at the same value by passing `extractionTemperature` itself. Unset, the server's own preset applies — and presets differ per model, so comparing two models without this compares their presets too. |
 | `--top-p` | Nucleus sampling. Pass it with `--temperature`: a preset is the pair, and overriding one alone runs on half of each. |
 | `--seed` | Fix the sampling seed. Local servers honour it strictly. Anthropic has no such parameter, and neither, in practice, does the `openai` provider: the plugin builds it through `createOpenAI()`, which returns the Responses model, and that model answers `{type:'unsupported', feature:'seed'}` and leaves it out of the body. The best-effort seed belongs to Chat Completions, which this path does not use. |
-| `--thinking` | `off` declines reasoning, the only direction the plugin can express. `on` asks for the server's default; omitting the flag leaves `data.json`'s setting in force, which may itself be `off`. |
+| `--thinking-mode` | `data-json` \| `plugin-off` \| `server-default`. The three states match what the plugin can actually express: `data-json` leaves whatever `data.json` says in force; `plugin-off` forces reasoning off; `server-default` asks the server for its own preset. |
+| `--thinking` | Deprecated; passing it throws. Use `--thinking-mode`. Removal in v1.26.0. |
 | `--granularity` | `fine` \| `standard` \| `coarse` \| `minimal` \| `custom`. Decides batch size, item limit and round ceiling together. |
 | `--batch-size` | How many items a round asks for. Comparing sizes through this flag keeps every arm on one build, which editing the code between arms does not. Under `--granularity custom` it survives unless the per-type caps sum above 10, in which case `calculateBatchLimits` derives the batch size from them and overwrites it. Each unset cap counts as `MIN_BATCH_SIZE` (5), so a plain `--granularity custom` sums to exactly 10, the rule needs strictly more, and this flag still applies. |
-| `--max-rounds` | Sets the granularity's round base, not the ceiling. The ceiling is `min(base × 3, ceil(source_chars / 2000) + 2)`, so `--max-rounds 6` allows 18 — and on a short source the length term wins and the flag changes nothing. Under `--granularity custom` the same caps-above-10 rule can overwrite it. |
+| `--round-base` | Sets the granularity's round base, not the ceiling. The ceiling is `min(base × 3, ceil(source_chars / 2000) + 2)`, so `--round-base 6` allows 18 — and on a short source the length term wins and the flag changes nothing. Under `--granularity custom` the same caps-above-10 rule can overwrite it. |
+| `--max-rounds` | Deprecated; passing it throws. Use `--round-base`. Removal in v1.26.0. |
 | `--max-tokens-per-call` | Caps `max_tokens` for every call. `0` removes the cap, leaving whatever the call site asks for — for extraction that is at least `MAX_TOKENS_BATCH` (16000), not "unlimited". |
 
 **Without `--dry-run` the CLI writes into the real vault.** It is the same
@@ -53,20 +55,44 @@ updated, input and output tokens, elapsed time.
 
 - **Node 24** (matches the plugin's `.nvmrc`; `crypto.subtle` and `fetch` are
   native).
+- **Settings reuse `data.json`.** The CLI reuses the plugin's `provider`,
+  `model`, `baseUrl`, `extractionGranularity`, and every other field from
+  `<vault>/.obsidian/plugins/karpathywiki/data.json` (after running the
+  plugin's `applySettingsMigrations`). The CLI is the plugin's engine on a
+  disk vault — the configuration surface is exactly the one Obsidian already
+  exposes in **Settings → LLM Wiki**. Nothing in this README is a substitute
+  for that settings page; run the plugin's `Test Connection` once in Obsidian
+  before the CLI to confirm the provider / model / baseUrl / key are valid.
 - **`WIKI_API_KEY`** — the provider key. Obsidian migrated it into
   SecretStorage (the OS keychain) in v1.25.3, and Node cannot read that, so
   the key must be supplied through the environment. Missing key for a
-  provider that requires one is a hard error, never a silent fallback. For a
-  keyless local endpoint (llama.cpp, Ollama, LM Studio) any non-empty value
-  works. The key is never logged and never written to a file.
+  provider that requires one is a hard error, never a silent fallback —
+  the error message prints OS-specific extraction commands so you can
+  copy the key out of the keychain in one step:
+
+  ```bash
+  # macOS — the entry name is the plugin id, "-w" prints just the password
+  WIKI_API_KEY=$(security find-generic-password -s "obsidian-lw-plugin-karpathywiki" -w) \
+    pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+  # Windows — Credential Manager → Windows Credentials → find the entry
+  # named "obsidian-lw-plugin-karpathywiki" → Show → copy the password, then:
+  #   $env:WIKI_API_KEY = "sk-..."
+  #   pnpm llm-wiki ingest --vault C:\path\to\vault --source "notes\foo.md"
+
+  # Linux — reveal via seahorse, or:
+  #   secret-tool lookup service obsidian-lw-plugin-karpathywiki   # libsecret
+  ```
+
+  For keyless local endpoints (Ollama, LM Studio) any non-empty placeholder
+  works (`WIKI_API_KEY=unused`). The key is never logged and never written
+  to a file.
 - `obsidian-llm-wiki/node_modules` must be installed — the bundler and every
   AI-SDK dependency are resolved from there.
-- Settings are read from `<vault>/.obsidian/plugins/karpathywiki/data.json`
-  and passed through the plugin's own `applySettingsMigrations`.
 
 ## How it is wired
 
-`run-ingest.mjs` invokes esbuild (from the plugin's `node_modules`) to bundle
+`run-llm-wiki.mjs` invokes esbuild (from the plugin's `node_modules`) to bundle
 `src/main.ts` for Node, rewriting every `from 'obsidian'` import — in plugin
 code and CLI code alike — to `src/obsidian.ts`. One shared module means one
 shared `TFile` class, which is what makes the engine's `instanceof TFile`
@@ -74,7 +100,7 @@ checks work. The bundle lands in `.build/` and is then imported and run.
 
 | File | Role |
 |---|---|
-| `run-ingest.mjs` | Bundles and runs. The thing you invoke. |
+| `run-llm-wiki.mjs` | Bundles and runs. The thing you invoke. |
 | `src/obsidian.ts` | The `obsidian` module: `TFile`, `TFolder`, `normalizePath`, `Notice`, `Platform`, `requestUrl`. |
 | `src/vault.ts` | `App` over the real filesystem: vault index, reads, writes, `DataAdapter`, `metadataCache`, `fileManager`. |
 | `src/node-globals.ts` | `window`, `activeWindow`, uncoloured console. |

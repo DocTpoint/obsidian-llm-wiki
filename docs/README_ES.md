@@ -28,6 +28,7 @@
 - [🚀 Inicio rápido](#-inicio-rápido)
 - [✨ Características](#-características)
 - [🌐 Ecosistema](#-ecosistema)
+- [🛠️ Herramientas](#-herramientas)
 - [🔍 Cómo funciona la recuperación](#-cómo-funciona-la-recuperación)
 - [🤖 Modelos](#-modelos)
 - [❓ FAQ](#-faq)
@@ -268,6 +269,18 @@ El plugin se combina con el resto de tu stack de Obsidian — cada herramienta d
 - **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** — convierte cualquier nota de Obsidian en diapositivas mediante el frontmatter Marp (`marp: true`). Las páginas wiki son Markdown puro, se renderizan como diapositivas sin conversión adicional.
 - **🖼️ Canvas** — lienzo infinito nativo de Obsidian. Coloca tarjetas wiki en un canvas para ensamblar guías de estudio, mapas mentales o resúmenes de investigación a partir de `[[wiki-links]]` sin salir del vault.
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** — plugin complementario para captura local de notas de voz y reuniones (whisper.cpp en macOS; el audio nunca sale del dispositivo). Genera transcripciones etiquetadas por hablante y sus propias páginas wiki hub. Independiente de este plugin — ambos pueden compartir el mismo vault sin acoplarse.
+
+---
+
+## 🛠️ Herramientas
+
+El plugin incluye una CLI headless en este repositorio para ejecutar el mismo pipeline de ingestión contra un vault en disco — sin Obsidian, sin Electron, sin pantalla. El motor, el analizador, la fábrica de páginas, el gestor de esquema y los clientes LLM se importan directamente desde `src/`; solo el host (`obsidian`, vault en vivo, metadataCache) se reemplaza con un shim. Útil para CI, ejecuciones programadas, comparación de parámetros de muestreo entre brazos y perfilado del bucle de extracción sobre una única fuente.
+
+```bash
+pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+```
+
+Referencia completa de flags, requisitos del entorno y advertencias del shim en [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md).
 
 ---
 

@@ -31,6 +31,7 @@
 - [🚀 快速开始](#-快速开始)
 - [✨ 核心特性](#-核心特性)
 - [🌐 生态](#-生态)
+- [🛠️ 工具](#-工具)
 - [🔍 检索工作原理](#-检索工作原理)
 - [🤖 模型推荐](#-模型推荐)
 - [❓ 常见问题](#-常见问题)
@@ -274,6 +275,18 @@
 - **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** —— 通过 Marp frontmatter（`marp: true`）将任意 Obsidian 笔记转为幻灯片。Wiki 页面是纯 Markdown，可直接渲染为幻灯片，无需额外转换。
 - **🖼️ Canvas** —— Obsidian 原生无限画布。把 Wiki 卡片拖到 Canvas 上，无需离开 vault 即可拼装学习指南、思维导图或研究概览，所有内容均通过 `[[wiki-links]]` 互联。
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** —— 本地语音备忘录与会议录制（macOS 上使用 whisper.cpp，音频数据不出本机）的配套插件。生成带说话人标记的转录文件与自有 wiki 中心页面。与本插件相互独立——可在同一 vault 共存而无需耦合。
+
+---
+
+## 🛠️ 工具
+
+插件随仓库附带一个无头 CLI，可在磁盘上的 vault 上运行同一摄取流水线——无需 Obsidian、无需 Electron、无需界面。引擎、分析器、页面工厂、Schema 管理器与 LLM 客户端均直接从 `src/` 导入；只有宿主（`obsidian`、实时 vault、metadataCache）被替换为 shim。适用于 CI、脚本化运行、跨臂比较采样参数，以及在单一源上分析提取循环。
+
+```bash
+pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+```
+
+完整 flag 参考、环境要求与 shim 注意事项见 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md)。
 
 ---
 

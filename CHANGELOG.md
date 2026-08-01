@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.12] - 2026-08-01
+
+### Added
+
+- **Headless ingest CLI is now discoverable.** PR #372 (eucher) shipped the engine under `tools/wiki-ingest-cli/`, but a fresh clone could not find it: no `bin`, no pnpm script, no mention in any README. This PATCH exposes it as `llm-wiki` (bin) plus `pnpm llm-wiki` (script) and sets the executable bit on `run-llm-wiki.mjs` so `npm install` produces `node_modules/.bin/llm-wiki`. The tool is named `llm-wiki` rather than `wiki-ingest` so it can grow beyond ingest into a general wiki-management CLI (lint, query, mutation) without a later rename. Note: pnpm 10 does not link the root package's bin to `node_modules/.bin/`, so the pnpm-user entry point is `pnpm llm-wiki` (not `pnpm exec llm-wiki`); npm users see `./node_modules/.bin/llm-wiki`.
+- **🛠️ Tools H2 section in all 10 READMEs.** One paragraph pointing at the CLI's flag reference, environment requirements, and shim caveats — links out to `tools/llm-wiki-cli/README.md` (absolute GitHub URL so the readme-links test stays green).
+
+### Changed
+
+- **`--thinking on|off` → `--thinking-mode data-json | plugin-off | server-default`.** The old flag was a two-state surface that hid the three outcomes the plugin can actually produce: leave `data.json` alone, force-disable reasoning, or defer to the server's preset. `on` looked like "enable reasoning" but actually meant "defer to server default" — a footgun. The new flag makes all three states explicit. The legacy `--thinking` throws a deprecation error pointing at the new flag and the v1.26.0 removal target; it does NOT silently translate, so a `--thinking on` typo can't keep working long after the deprecation is forgotten.
+- **`--max-rounds` → `--round-base`.** The old name was actively misleading: it set the granularity's `maxBatchesBase` field, not a ceiling. The actual ceiling is `min(base * 3, ceil(source_chars / 2000) + 2)`, so `--max-rounds 6` allowed up to 18 rounds, and on a short source the length term wins regardless. Renaming to `--round-base` describes what the flag actually sets. The internal `GRANULARITY_CONFIG.maxBatchesBase` field is unchanged (engine contract, not CLI surface). Legacy `--max-rounds` throws a deprecation error.
+
+### Internal
+
+- Subcommand dispatch via `dispatchCli(argv)` returning a tagged union `{ kind: 'tool-help' | 'ingest' | 'unknown' }`. Adding a future `lint` or `query` subcommand is one `case` and the compiler will refuse to forget it. Flag-shaped first arguments (e.g. forgetting `ingest`) surface a hint rather than getting swallowed.
+- Numeric validation collapsed into a single `parseNumber(raw, flag, predicate)` helper driven by a spec table in `parseCliOptions()`, so errors surface from the parser (with the ingest USAGE block attached) instead of mid-run. A single boundary catch appends `INGEST_USAGE` to every escaping error, detecting by a stable marker substring (the exact `run-llm-wiki.mjs ingest` path) rather than matching on message text.
+- `--help` is now a pure marker (`options.help: boolean`) instead of calling `process.exit(0)` inside the parser, so `parseCliOptions` is testable. The `runIngest` runner handles the actual printing.
+- 57 CLI test cases in `src/__tests__/tools/llm-wiki-cli/main.test.ts`: parseCliOptions base contract + boundary-catch USAGE contract, dispatchCli shapes, `--thinking-mode` enum + legacy deprecation + ambiguity, `--round-base` + legacy deprecation, numeric validation (safe-integer, empty-value rejection, `=`-form negatives), boolean plumbing incl. `--extract-only` ⇒ `--dry-run`, applyOverrides (prototype-key guard, single-field patches), resolveApiKey OS guidance, applyThinkingMode, parseNumber.
+- Code-review hardening (8 angles, subagents): prototype-key guard on the settings-derived granularity path in `applyOverrides`, empty/whitespace numeric rejection (`Number('')` coerced to 0 — `--max-tokens-per-call ""` silently meant "no cap"), `--model` trim, `Number.isSafeInteger` for integer flags, `-h` alias at the ingest subcommand, `--vault` ENOENT → friendly message, deprecation throws before required-flag checks. All backward-compatible.
+- Root `tsconfig.json` gains `exclude: ["src/__tests__/tools/**"]` because the CLI test files import `tools/` source via relative paths and root tsc would otherwise follow those imports into `@types/node@16` territory (`parseArgs` was added in Node 18.3+). vitest still finds them via its own include glob.
+
 ## [1.25.11] - 2026-07-31
 
 ### Fixed

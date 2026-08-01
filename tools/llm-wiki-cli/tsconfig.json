@@ -1,6 +1,6 @@
 {
   // The repo's tsconfig includes only `src/**/*.ts`, so nothing type-checked
-  // this directory: `run-ingest.mjs` bundles it with esbuild, which strips
+  // this directory: `run-llm-wiki.mjs` bundles it with esbuild, which strips
   // types without looking at them. Roughly two thirds of the CLI shipped
   // unchecked, and three real errors were sitting in it.
   //
@@ -14,5 +14,9 @@
     "module": "ESNext",
     "moduleResolution": "bundler"
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "../../src/__tests__/tools/llm-wiki-cli/**/*.ts"
+  ],
+  "exclude": []
 }
