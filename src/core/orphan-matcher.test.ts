@@ -195,11 +195,10 @@ describe('Orphan Matcher — Pure Functions', () => {
       expect(result).toBe('wiki/entities/page.md');
     });
 
-    it('handles paths starting with wiki folder name', () => {
-      // If path starts with wiki folder name (not full path), it's treated as full
+    it('does not treat sibling folders sharing a name prefix as absolute (issue #383)', () => {
+      // Unanchored startsWith('wiki') wrongly treated wiki-concepts/... as already absolute.
       const result = normalizeOrphanPagePath('wiki-concepts/page.md', 'wiki');
-      // startsWith('wiki') is true, so treated as full path
-      expect(result).toBe('wiki-concepts/page.md');
+      expect(result).toBe('wiki/wiki-concepts/page.md');
     });
 
     it('handles root-level paths', () => {

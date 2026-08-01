@@ -5,6 +5,7 @@ import { scanPollutedSources, fixPollutedSources } from '../../../core/sources-n
 import { parseFrontmatter } from '../../../core/frontmatter';
 import { LINT_PREP_BATCH_READ } from '../../../constants';
 import { LintPhaseContext, ScannerPage } from '../types';
+import { isInFolderScope } from '../../../core/folder-scope';
 
 export interface PreparationResult {
   wikiFiles: Array<{ path: string; basename: string }>;
@@ -20,7 +21,7 @@ export async function runPreparationPhase(
   ctx: LintPhaseContext,
 ): Promise<PreparationResult> {
   const wikiFiles = ctx.app.vault.getMarkdownFiles()
-    .filter(f => f.path.startsWith(ctx.settings.wikiFolder) &&
+    .filter(f => isInFolderScope(f.path, ctx.settings.wikiFolder, false) &&
                  !f.path.includes('index.md') &&
                  !f.path.includes('log.md') &&
                  !f.path.includes('/schema/') &&
