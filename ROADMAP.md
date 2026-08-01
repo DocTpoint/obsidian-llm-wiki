@@ -2,7 +2,7 @@
 
 > Feature planning and improvement proposals
 
-**Version:** 1.25.11 PATCH (post-merge, release notes drafting). | **Updated:** 2026-07-31
+**Version:** 1.25.12 PATCH (6 commits, on branch `feat/cli-ux-v1.25.12`, awaiting merge). | **Updated:** 2026-08-01
 
 ## Current Status
 
