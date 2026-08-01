@@ -48,6 +48,14 @@ describe('parseCliOptions', () => {
     expect(() => parseCliOptions(base(['--temperature', 'NaN']))).toThrow(/--temperature/);
   });
 
+  it('rejects empty-string numeric flags', () => {
+    // Number('') is 0, so without the parseNumber guard `--seed ""` would
+    // silently become seed 0 and `--max-tokens-per-call ""` would silently
+    // remove the token cap.
+    expect(() => parseCliOptions(base(['--seed', '']))).toThrow(/--seed must be a number/);
+    expect(() => parseCliOptions(base(['--max-tokens-per-call', '']))).toThrow(/--max-tokens-per-call must be a number/);
+  });
+
   it('marks --help without exiting (pure function)', () => {
     const opts = parseCliOptions(['--help']);
     expect(opts.help).toBe(true);
@@ -266,6 +274,13 @@ describe('parseNumber', () => {
   it('rejects NaN and Infinity with a generic "must be a number" message', () => {
     expect(() => parseNumber('NaN', '--x', () => true)).toThrow(/--x must be a number/);
     expect(() => parseNumber('Infinity', '--x', () => true)).toThrow(/--x must be a number/);
+  });
+
+  it('rejects empty and whitespace-only raw values before Number() coercion', () => {
+    // Number('') and Number('  ') are both 0, so without this guard
+    // `--max-tokens-per-call ""` would silently mean "no cap".
+    expect(() => parseNumber('', '--x', () => true)).toThrow(/--x must be a number, got: ""/);
+    expect(() => parseNumber('   ', '--x', () => true)).toThrow(/--x must be a number, got: "   "/);
   });
 
   it('rejects when the predicate returns a non-true reason', () => {

@@ -185,6 +185,11 @@ export function parseNumber(
   flagName: string,
   predicate: (n: number) => true | string,
 ): number {
+  // Number('') and Number('  ') are both 0, so an empty or whitespace-only
+  // value would silently coerce to 0 — for --max-tokens-per-call that means
+  // "no cap". Reject it before coercion; JSON.stringify keeps the empty
+  // value visible in the `got:` clause.
+  if (!raw.trim()) throw new Error(`${flagName} must be a number, got: ${JSON.stringify(raw)}`);
   const n = Number(raw);
   if (!Number.isFinite(n)) throw new Error(`${flagName} must be a number, got: ${raw}`);
   const ok = predicate(n);
