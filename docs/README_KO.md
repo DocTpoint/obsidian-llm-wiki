@@ -28,6 +28,7 @@
 - [🚀 빠른 시작](#-빠른-시작)
 - [✨ 주요 기능](#-주요-기능)
 - [🌐 생태계](#-생태계)
+- [🛠️ 도구](#-도구)
 - [🔍 검색 작동 방식](#-검색-작동-방식)
 - [🤖 모델](#-모델)
 - [❓ FAQ](#-faq)
@@ -268,6 +269,18 @@ Monte Carlo PPR (Fogaras 2005)을 사용합니다 — 3,000개의 랜덤 워크 
 - **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** — Marp frontmatter(`marp: true`)로 임의의 Obsidian 노트를 슬라이드로 변환합니다. Wiki 페이지는 순수 Markdown이므로 추가 변환 없이 슬라이드로 렌더링됩니다.
 - **🖼️ Canvas** — Obsidian의 기본 무한 캔버스. Wiki 카드를 Canvas에 배치하여 vault를 벗어나지 않고 학습 가이드, 마인드 맵, 연구 개요를 `[[wiki-links]]` 로 조립할 수 있습니다.
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** — 로컬 음성 메모 및 회의 캡처(macOS에서 whisper.cpp 사용, 오디오는 기기를 떠나지 않음) 동반 플러그인. 화자 라벨이 붙은 전사 파일과 자체 wiki 허브 페이지를 생성합니다. 본 플러그인과는 독립적이며, 같은 vault를 공유해도 결합이 필요 없습니다.
+
+---
+
+## 🛠️ 도구
+
+이 저장소에는 디스크상의 vault에 대해 동일한 수집 파이프라인을 실행할 수 있는 헤드리스 CLI가 포함되어 있습니다 — Obsidian, Electron, 디스플레이가 필요 없습니다. 엔진, 분석기, 페이지 팩토리, 스키마 관리자, LLM 클라이언트는 `src/` 에서 직접 가져오며, 호스트(`obsidian`, 실시간 vault, metadataCache)만 shim으로 대체됩니다. CI, 스크립트 실행, 팔 단위 샘플링 파라미터 비교, 단일 소스에서 추출 루프 프로파일링에 유용합니다.
+
+```bash
+pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+```
+
+전체 플래그 참조, 환경 요구사항, shim 주의사항은 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md) 를 참조하세요.
 
 ---
 

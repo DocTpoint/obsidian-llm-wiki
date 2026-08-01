@@ -28,6 +28,7 @@
 - [🚀 快速開始](#-快速開始)
 - [✨ 核心特性](#-核心特性)
 - [🌐 生態](#-生態)
+- [🛠️ 工具](#-工具)
 - [🔍 檢索原理](#-檢索原理)
 - [🤖 模型](#-模型)
 - [❓ 常見問題 (FAQ)](#-常見問題-faq)
@@ -269,6 +270,16 @@
 - **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** —— 透過 Marp frontmatter（`marp: true`）將任何 Obsidian 筆記轉為投影片。Wiki 頁面為純 Markdown，無需額外轉換即可直接渲染為投影片。
 - **🖼️ Canvas** —— Obsidian 原生無限畫布。把 Wiki 卡片拖到 Canvas 上，無需離開 vault 即可拼裝學習指南、心智圖或研究概覽，所有內容均透過 `[[wiki-links]]` 互聯。
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** —— 本地語音備忘錄與會議錄製（macOS 上使用 whisper.cpp，音訊資料不出本機）的配套外掛。產生帶說話者標記的轉錄檔案與自有 wiki 中心頁面。與本外掛相互獨立——可在同一 vault 共存而無需耦合。
+
+## 🛠️ 工具
+
+此外掛在本倉庫隨附一個無頭 CLI，可在磁碟上的 vault 上執行同一攝入管線——無需 Obsidian、無需 Electron、無需介面。引擎、分析器、頁面工廠、Schema 管理器與 LLM 客戶端均直接從 `src/` 匯入；僅宿主（`obsidian`、即時 vault、metadataCache）被替換為 shim。適用於 CI、腳本化執行、跨臂比較採樣參數，以及在單一來源上分析萃取迴圈。
+
+```bash
+pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+```
+
+完整 flag 參考、環境需求與 shim 注意事項見 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md)。
 
 ---
 

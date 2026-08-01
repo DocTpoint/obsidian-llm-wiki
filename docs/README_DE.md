@@ -30,6 +30,7 @@
 - [🚀 Schnellstart](#-schnellstart)
 - [✨ Funktionen](#-funktionen)
 - [🌐 Ökosystem](#-ökosystem)
+- [🛠️ Werkzeuge](#-werkzeuge)
 - [🔍 Wie die Suche funktioniert](#-wie-die-suche-funktioniert)
 - [🤖 Modelle](#-modelle)
 - [❓ FAQ](#-faq)
@@ -270,6 +271,18 @@ Das Plugin ergänzt sich mit dem Rest Ihres Obsidian-Stacks — jedes der folgen
 - **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** — verwandeln Sie jede Obsidian-Notiz über Marp-Frontmatter (`marp: true`) in einen Foliensatz. Wiki-Seiten sind reines Markdown und rendern ohne zusätzliche Konvertierung als Folien.
 - **🖼️ Canvas** — Obsidians native, unendliche Leinwand. Platzieren Sie Wiki-Karten auf einer Canvas, um Lernhilfen, Mindmaps oder Forschungsübersichten aus `[[wiki-links]]` zusammenzustellen — ohne den Vault zu verlassen.
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** — Begleit-Plugin für lokale Sprachmemo- und Meeting-Erfassung (whisper.cpp auf macOS; Audio verlässt das Gerät nicht). Erzeugt sprecherbeschriftete Transkripte und eigene Wiki-Hub-Seiten. Unabhängig von diesem Plugin — beide können dasselbe Vault ohne Kopplung nutzen.
+
+---
+
+## 🛠️ Werkzeuge
+
+Das Plugin liefert ein Headless-CLI in diesem Repository, mit dem Sie dieselbe Ingest-Pipeline gegen einen Vault auf der Festplatte ausführen können — ohne Obsidian, ohne Electron, ohne Anzeige. Engine, Analyzer, Page Factory, Schema Manager und LLM-Clients werden direkt aus `src/` importiert; nur der Host (`obsidian`, Live-Vault, metadataCache) wird durch einen Shim ersetzt. Nützlich für CI, Skript-Läufe, den Vergleich von Sampling-Parametern zwischen Armen und das Profiling der Extraktionsschleife auf einer einzelnen Quelle.
+
+```bash
+pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+```
+
+Vollständige Flag-Referenz, Umgebungsanforderungen und Shim-Hinweise finden Sie in [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md).
 
 ---
 

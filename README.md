@@ -28,6 +28,7 @@
 - [Quick Start](#-quick-start)
 - [Features](#-features)
 - [Ecosystem](#-ecosystem)
+- [Tools](#-tools)
 - [How retrieval works](#-how-retrieval-works)
 - [Models](#-models)
 - [FAQ](#-faq)
@@ -199,6 +200,18 @@ The plugin composes with the rest of your Obsidian stack — each tool below plu
 - **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** — turn any Obsidian note into slide decks via Marp frontmatter (`marp: true`). Wiki pages are pure Markdown, so they render as slides without extra conversion.
 - **🖼️ Canvas** — Obsidian's native infinite canvas. Drag wiki cards onto a Canvas to assemble study guides, mind maps, or research overviews from `[[wiki-links]]` without leaving the vault.
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** — companion plugin for local voice memo and meeting capture (whisper.cpp on macOS; audio never leaves the machine). Generates speaker-labeled transcripts and its own wiki hub pages. Independent of this plugin — both can share the same vault without coupling.
+
+---
+
+## 🛠️ Tools
+
+The plugin ships a headless CLI in this repo so you can run the same ingest pipeline against a vault on disk — no Obsidian, no Electron, no display. The engine, the analyzer, the page factory, the schema manager and the LLM clients are imported straight from `src/`; only the host (`obsidian`, the live vault, the metadataCache) is replaced by a shim. Useful for CI, scripted runs, comparing sampling parameters across arms, and profiling the extract loop on a single source.
+
+```bash
+pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+```
+
+See the full flag reference, environment requirements, and shim caveats in [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md).
 
 ---
 
