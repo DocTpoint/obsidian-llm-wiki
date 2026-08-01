@@ -13,7 +13,7 @@ import { SchemaManager } from '../../../src/schema/schema-manager';
 import { createLLMClient } from '../../../src/core/create-plugin-llm-client';
 import { preloadLLMClientModules } from '../../../src/llm-sdk/create-llm-client';
 import { applySettingsMigrations } from '../../../src/core/settings-migrations';
-import { allowsEmptyApiKey } from '../../../src/core/local-no-key-provider';
+import { isLocalNoKeyProvider } from '../../../src/core/local-no-key-provider';
 import { GRANULARITY_CONFIG } from '../../../src/core/batch-limits';
 import type { ExtractionGranularity, IngestReport, LLMClient, LLMWikiSettings } from '../../../src/types';
 
@@ -79,8 +79,15 @@ const INGEST_USAGE = `Usage:
                   Removal in v1.26.0.
 
 Environment:
-  ${API_KEY_ENV}  Provider API key. Obsidian keeps it in the system keychain,
-                which Node cannot read, so it must be supplied here.`;
+  ${API_KEY_ENV}  Provider API key. The CLI reuses the plugin's provider,
+                model, baseUrl, granularity, and other settings from
+                <vault>/.obsidian/plugins/karpathywiki/data.json — only
+                the API key has to come from outside, because the plugin
+                stores it in the OS keychain (SecretStorage) which Node
+                cannot read.
+
+                When the key is missing, the error message prints the
+                OS-specific commands to extract it from the keychain.`;
 
 interface CliOptions {
   vault: string;
@@ -345,14 +352,29 @@ function loadSettings(vaultRoot: string): LLMWikiSettings {
   return settings;
 }
 
-function resolveApiKey(settings: LLMWikiSettings): string {
-  const fromEnv = (process.env[API_KEY_ENV] ?? '').trim();
-  if (fromEnv) return fromEnv;
-  if (allowsEmptyApiKey(settings.provider, '')) return '';
+export function resolveApiKey(
+  provider: string,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const raw = (env[API_KEY_ENV] ?? '').trim();
+  // Local no-key providers accept an empty key, so missing env is not an error
+  // for them — it just means the client will send no Authorization header.
+  if (raw) return raw;
+  if (isLocalNoKeyProvider(provider)) return '';
   throw new Error(
-    `No API key available for provider "${settings.provider}". ` +
-    `Obsidian stores it in the system keychain, which this CLI cannot read — ` +
-    `export ${API_KEY_ENV} before running.`
+    `No API key available for provider "${provider}".\n\n` +
+    `Obsidian stores the API key in the OS keychain (SecretStorage) so the ` +
+    `plugin can read it at runtime, but Node cannot reach the keychain from ` +
+    `a headless process. Copy the key into the ${API_KEY_ENV} environment ` +
+    `variable before running the CLI:\n\n` +
+    `  macOS:   ${API_KEY_ENV}=$(security find-generic-password -s "obsidian-lw-plugin-karpathywiki" -w) llm-wiki ingest ...\n` +
+    `  Windows: Open Credential Manager → Windows Credentials → find the entry ` +
+    `named "obsidian-lw-plugin-karpathywiki" → Show → copy the password, ` +
+    `then set ${API_KEY_ENV} in PowerShell ($env:${API_KEY_ENV} = "sk-...").\n` +
+    `  Linux:   Reveal via your keyring GUI (e.g. seahorse) or via ` +
+    `"secret-tool lookup service obsidian-lw-plugin-karpathywiki" (libsecret).\n\n` +
+    `For local providers that do not need a real key (ollama, lmstudio) any ` +
+    `non-empty placeholder works (e.g. ${API_KEY_ENV}=unused).`,
   );
 }
 
@@ -447,7 +469,7 @@ async function runIngest(argv: string[]): Promise<void> {
   }
 
   const settings = loadSettings(options.vault);
-  settings.apiKey = resolveApiKey(settings);
+  settings.apiKey = resolveApiKey(settings.provider);
   if (options.seed !== undefined) settings.samplingSeed = options.seed;
   if (options.thinkingMode !== undefined) {
     // data-json  → leave settings.disableThinking alone (user did not override)

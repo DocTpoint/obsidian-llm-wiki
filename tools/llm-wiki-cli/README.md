@@ -55,16 +55,40 @@ updated, input and output tokens, elapsed time.
 
 - **Node 24** (matches the plugin's `.nvmrc`; `crypto.subtle` and `fetch` are
   native).
+- **Settings reuse `data.json`.** The CLI reuses the plugin's `provider`,
+  `model`, `baseUrl`, `extractionGranularity`, and every other field from
+  `<vault>/.obsidian/plugins/karpathywiki/data.json` (after running the
+  plugin's `applySettingsMigrations`). The CLI is the plugin's engine on a
+  disk vault — the configuration surface is exactly the one Obsidian already
+  exposes in **Settings → LLM Wiki**. Nothing in this README is a substitute
+  for that settings page; run the plugin's `Test Connection` once in Obsidian
+  before the CLI to confirm the provider / model / baseUrl / key are valid.
 - **`WIKI_API_KEY`** — the provider key. Obsidian migrated it into
   SecretStorage (the OS keychain) in v1.25.3, and Node cannot read that, so
   the key must be supplied through the environment. Missing key for a
-  provider that requires one is a hard error, never a silent fallback. For a
-  keyless local endpoint (llama.cpp, Ollama, LM Studio) any non-empty value
-  works. The key is never logged and never written to a file.
+  provider that requires one is a hard error, never a silent fallback —
+  the error message prints OS-specific extraction commands so you can
+  copy the key out of the keychain in one step:
+
+  ```bash
+  # macOS — the entry name is the plugin id, "-w" prints just the password
+  WIKI_API_KEY=$(security find-generic-password -s "obsidian-lw-plugin-karpathywiki" -w) \
+    pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+  # Windows — Credential Manager → Windows Credentials → find the entry
+  # named "obsidian-lw-plugin-karpathywiki" → Show → copy the password, then:
+  #   $env:WIKI_API_KEY = "sk-..."
+  #   pnpm llm-wiki ingest --vault C:\path\to\vault --source "notes\foo.md"
+
+  # Linux — reveal via seahorse, or:
+  #   secret-tool lookup service obsidian-lw-plugin-karpathywiki   # libsecret
+  ```
+
+  For keyless local endpoints (Ollama, LM Studio) any non-empty placeholder
+  works (`WIKI_API_KEY=unused`). The key is never logged and never written
+  to a file.
 - `obsidian-llm-wiki/node_modules` must be installed — the bundler and every
   AI-SDK dependency are resolved from there.
-- Settings are read from `<vault>/.obsidian/plugins/karpathywiki/data.json`
-  and passed through the plugin's own `applySettingsMigrations`.
 
 ## How it is wired
 

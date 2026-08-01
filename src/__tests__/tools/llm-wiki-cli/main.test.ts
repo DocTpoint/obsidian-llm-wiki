@@ -7,7 +7,7 @@
 import nodePath from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-import { parseCliOptions, dispatchCli } from '../../../../tools/llm-wiki-cli/src/main';
+import { parseCliOptions, dispatchCli, resolveApiKey } from '../../../../tools/llm-wiki-cli/src/main';
 
 const base = (extra: string[] = []): string[] => [
   '--vault', '/tmp/vault', '--source', 'notes.md', ...extra,
@@ -132,3 +132,51 @@ describe('parseCliOptions — --round-base', () => {
     ]))).toThrow(/--max-rounds.*--round-base/);
   });
 });
+
+describe('resolveApiKey', () => {
+  it('returns the trimmed env value when present', () => {
+    expect(resolveApiKey('anthropic', { WIKI_API_KEY: 'sk-abc' })).toBe('sk-abc');
+    expect(resolveApiKey('anthropic', { WIKI_API_KEY: '  sk-abc  ' })).toBe('sk-abc');
+  });
+
+  it('throws a friendly error for cloud providers when the env var is unset', () => {
+    expect(() => resolveApiKey('anthropic', { WIKI_API_KEY: '' }))
+      .toThrow(/No API key available for provider "anthropic"/);
+  });
+
+  it('throws when the env var is whitespace only', () => {
+    expect(() => resolveApiKey('anthropic', { WIKI_API_KEY: '   ' }))
+      .toThrow(/No API key available/);
+  });
+
+  it('the error tells the user how to extract the key on each OS', () => {
+    const msg = expectError(() => resolveApiKey('deepseek', { WIKI_API_KEY: '' }));
+    expect(msg).toMatch(/security find-generic-password/); // macOS
+    expect(msg).toMatch(/Credential Manager/);              // Windows
+    expect(msg).toMatch(/seahorse|secret-tool/);            // Linux
+  });
+
+  it('the error points at the failing provider name, not a generic "missing key"', () => {
+    const msg = expectError(() => resolveApiKey('anthropic', { WIKI_API_KEY: '' }));
+    expect(msg).toContain('anthropic');
+  });
+
+  it('the error explains the keyless local-provider escape hatch', () => {
+    const msg = expectError(() => resolveApiKey('anthropic', { WIKI_API_KEY: '' }));
+    expect(msg).toMatch(/ollama|lmstudio/i);
+  });
+
+  it('returns an empty string for local providers when no key is set', () => {
+    expect(resolveApiKey('ollama', { WIKI_API_KEY: '' })).toBe('');
+    expect(resolveApiKey('lmstudio', { WIKI_API_KEY: '' })).toBe('');
+  });
+});
+
+function expectError(fn: () => unknown): string {
+  try {
+    fn();
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+  throw new Error('expected fn() to throw, but it did not');
+}
