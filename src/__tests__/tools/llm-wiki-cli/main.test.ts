@@ -48,12 +48,30 @@ describe('parseCliOptions', () => {
     expect(() => parseCliOptions(base(['--temperature', 'NaN']))).toThrow(/--temperature/);
   });
 
+  it('trims the --model value', () => {
+    // The emptiness guard checks the trimmed string but must also store the
+    // trimmed value — a padded --model otherwise reaches the provider verbatim.
+    expect(parseCliOptions(base(['--model', '  claude-sonnet-4-5  '])).model).toBe('claude-sonnet-4-5');
+  });
+
+  it('rejects an empty --model', () => {
+    expect(() => parseCliOptions(base(['--model', '']))).toThrow(/--model must not be empty/);
+    expect(() => parseCliOptions(base(['--model', '   ']))).toThrow(/--model must not be empty/);
+  });
+
   it('rejects empty-string numeric flags', () => {
     // Number('') is 0, so without the parseNumber guard `--seed ""` would
     // silently become seed 0 and `--max-tokens-per-call ""` would silently
     // remove the token cap.
     expect(() => parseCliOptions(base(['--seed', '']))).toThrow(/--seed must be a number/);
     expect(() => parseCliOptions(base(['--max-tokens-per-call', '']))).toThrow(/--max-tokens-per-call must be a number/);
+  });
+
+  it('rejects integer flags above MAX_SAFE_INTEGER', () => {
+    // Number() silently rounds beyond 2^53, so a seed that loses precision
+    // would differ from what the user typed. isSafeInteger rejects it.
+    expect(() => parseCliOptions(base(['--seed', '99999999999999999999']))).toThrow(/--seed must be an integer/);
+    expect(() => parseCliOptions(base(['--round-base', '99999999999999999999']))).toThrow(/--round-base must be a positive integer/);
   });
 
   it('marks --help without exiting (pure function)', () => {

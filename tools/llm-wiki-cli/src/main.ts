@@ -198,11 +198,11 @@ export function parseNumber(
 }
 
 function parseInteger(raw: string, flagName: string): number {
-  return parseNumber(raw, flagName, n => Number.isInteger(n) || 'must be an integer');
+  return parseNumber(raw, flagName, n => Number.isSafeInteger(n) || 'must be an integer');
 }
 
 function parsePositiveInteger(raw: string, flagName: string): number {
-  return parseNumber(raw, flagName, n => (n >= 1) || 'must be a positive integer');
+  return parseNumber(raw, flagName, n => (Number.isSafeInteger(n) && n >= 1) || 'must be a positive integer');
 }
 
 function parseNonNegativeNumber(raw: string, flagName: string): number {
@@ -392,7 +392,7 @@ function parseCliOptionsInner(argv: string[]): CliOptions {
   if (values.model !== undefined) {
     const m = String(values.model);
     if (!m.trim()) throw new Error('--model must not be empty.');
-    model = m;
+    model = m.trim();
   }
 
   return {
