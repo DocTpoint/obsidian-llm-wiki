@@ -1,30 +1,34 @@
 // Issue #383 follow-up regression coverage.
 //
-// Hashim1999164's PR #384 migrated 7 call sites from `f.path.startsWith(wikiFolder)`
-// to `isInFolderScope(f.path, wikiFolder, false)`. The shared helper test
-// (`folder-scope.test.ts`) covers the helper itself, but per-site call patterns
-// can drift back to the bare startsWith form during a refactor and not be caught
-// by the helper test alone.
+// PR #384 migrated 7 call sites from `f.path.startsWith(wikiFolder)` to
+// `isInFolderScope(...)`. This file pins the BEHAVIOURAL contract for **six**
+// of those call sites — preparation, get-existing-pages, delete-empty-stubs,
+// normalizeSourcesInFolder (auto-maintain Phase 2), contradictions, and the
+// follow-up fix on contradictions. The seventh site (merge-duplicates) is
+// omitted on purpose: #386 (assigned to DocTpoint) rewrites that filter and
+// owns its own production-function coverage.
 //
-// This file pins the BEHAVIOURAL contract for each migrated call site: given a
-// vault whose markdown files include sibling-folder (e.g. `wiki-archive/x.md`)
-// and adjacent-file (`wiki.md`) leak directions, the filter that the site uses
-// MUST exclude them. If a future contributor reverts any site to the bare
-// `startsWith(wikiFolder)` form, the relevant test here fails with a clear
-// "leaked file at <path>" message — pointing directly at the regression.
+// For each pinned site the test calls the production function with a minimal
+// vault whose markdown files include both leak directions — sibling folder
+// (`wiki-archive/x.md`) and adjacent file (`wiki.md`) — and asserts the
+// filter excludes them. The shared helper (`src/core/folder-scope.ts`) has
+// its own test file; the tests here exercise behaviour, not implementation.
 //
-// Test pattern: build a minimal vault (markdown file list + the engine-context
-// pieces the site consumes), invoke the entry point, assert the result set
-// excludes the leak paths. The tests do not import isInFolderScope directly —
-// they exercise the behaviour, not the implementation.
+// Centralisation note: the picker exclusion rule (wiki folder + config
+// directory) lives in `isExcludedFromSourcePicker` (`folder-scope.ts`) and
+// is shared by `FileSuggestModal`, `FolderSuggestModal`, and the multi-file
+// variant. SourcePicker regressions belong in this file's follow-up
+// coverage, not here.
 
 import { describe, it, expect } from 'vitest';
+import { App } from 'obsidian';
 import { runPreparationPhase } from '../../../wiki/lint/phases/preparation';
 import { LintPhaseContext } from '../../../wiki/lint/types';
 import { LLMWikiSettings } from '../../../types';
 import { getExistingWikiPages } from '../../../wiki/lint/get-existing-pages';
 import { ContradictionManager } from '../../../wiki/contradictions';
-import { isInFolderScope } from '../../../core/folder-scope';
+import { deleteEmptyStubs } from '../../../wiki/lint/delete-empty-stubs';
+import { normalizeSourcesInFolder } from '../../../core/sources-normalizer';
 import type { EngineContext } from '../../../types';
 
 // --- shared fixture builders ------------------------------------------------
@@ -159,77 +163,206 @@ describe('PR #384 / #383 — get-existing-pages.ts leak guard', () => {
 
 // --- 3. delete-empty-stubs.ts (sharp site — user-data-loss) ---------------
 //
-// We test the FILTER shape (the line that excludes non-wiki paths) rather than
-// the full deleteEmptyStubs function, because the full function needs
-// ctx.deleteFile + reviewed-frontmatter detection that are out of scope for a
-// per-site regression test. The shared helper test (folder-scope.test.ts) and
-// the per-site test below ensure that if anyone reverts delete-empty-stubs.ts
-// back to `f.path.startsWith(wikiFolder)`, the leak path enters the candidate
-// set.
+// Calls the production function with a deleteFile collector. Reverting the
+// filter to `startsWith(wikiFolder)` makes `wiki-archive/Empty.md` and
+// `wiki.md` enter the delete set and fails every case below.
 
-describe('PR #384 / #383 — delete-empty-stubs.ts filter shape', () => {
-  it('POST-#384 form (isInFolderScope) excludes both leak paths', () => {
-    // Mirrors delete-empty-stubs.ts:10-16 post-#384.
-    // If anyone reverts the filter to bare `f.path.startsWith(wikiFolder)`,
-    // wiki-archive/Empty.md and wiki.md will re-enter the candidate set and
-    // this test fails with `expected [ 'wiki/entities/Empty.md' ] to equal
-    // [ 'wiki/entities/Empty.md', 'wiki-archive/Empty.md', 'wiki.md' ]`.
-    const candidateFiles = [
-      { path: 'wiki/entities/Empty.md' },
-      { path: 'wiki-archive/Empty.md' },
-      { path: 'wiki.md' },
+describe('PR #384 / #383 — delete-empty-stubs.ts (production function)', () => {
+  it('deletes only empty stubs inside the wiki folder', async () => {
+    const deleted: string[] = [];
+    const files: MockVaultFile[] = [
+      { path: 'wiki/entities/Empty.md', basename: 'Empty', content: '# Empty' },
+      { path: 'wiki-archive/Empty.md', basename: 'Empty', content: '# Empty' },
+      { path: 'wiki.md', basename: 'wiki', content: '# wiki' },
     ];
-    const wikiFolder = 'wiki';
-    const filtered = candidateFiles.filter(f =>
-      isInFolderScope(f.path, wikiFolder, false) &&
-      !f.path.endsWith('/index.md') &&
-      !f.path.includes('/schema/') &&
-      !f.path.includes('/sources/') &&
-      !f.path.includes('/contradictions/') &&
-      !f.path.includes('log.md')
-    );
-    expect(filtered.map(f => f.path)).toEqual(['wiki/entities/Empty.md']);
+    const ctx = {
+      ...makeEngineCtx(files),
+      deleteFile: async (p: string) => {
+        deleted.push(p);
+      },
+    } as unknown as EngineContext;
+
+    const result = await deleteEmptyStubs(ctx, 'wiki');
+
+    expect(result.deleted).toBe(1);
+    expect(deleted).toEqual(['wiki/entities/Empty.md']);
+  });
+
+  it('keeps a non-empty wiki file', async () => {
+    const deleted: string[] = [];
+    const files: MockVaultFile[] = [
+      // MIN_SUBSTANTIVE_CHARS = 50; pad so textBody length crosses the threshold.
+      { path: 'wiki/entities/Substantive.md', basename: 'Substantive', content: '# Title\n\n' + 'word '.repeat(30) },
+    ];
+    const ctx = {
+      ...makeEngineCtx(files),
+      deleteFile: async (p: string) => {
+        deleted.push(p);
+      },
+    } as unknown as EngineContext;
+
+    const result = await deleteEmptyStubs(ctx, 'wiki');
+
+    expect(result.deleted).toBe(0);
+    expect(deleted).toEqual([]);
+  });
+
+  it('keeps an empty stub carrying reviewed: true', async () => {
+    const deleted: string[] = [];
+    const files: MockVaultFile[] = [
+      { path: 'wiki/entities/Reviewed.md', basename: 'Reviewed', content: '---\nreviewed: true\n---\n# Empty' },
+    ];
+    const ctx = {
+      ...makeEngineCtx(files),
+      deleteFile: async (p: string) => {
+        deleted.push(p);
+      },
+    } as unknown as EngineContext;
+
+    const result = await deleteEmptyStubs(ctx, 'wiki');
+
+    expect(result.deleted).toBe(0);
+    expect(deleted).toEqual([]);
+  });
+
+  it.each([
+    ['wiki/sources/Empty.md'],
+    ['wiki/schema/Empty.md'],
+    ['wiki/index.md'],
+    ['wiki/log.md'],
+    ['wiki/entities/sub/log.md'],
+  ])('keeps the protected wiki file %s', async (path) => {
+    const deleted: string[] = [];
+    const files: MockVaultFile[] = [
+      { path, basename: path.split('/').pop()!, content: '# Empty' },
+    ];
+    const ctx = {
+      ...makeEngineCtx(files),
+      deleteFile: async (p: string) => {
+        deleted.push(p);
+      },
+    } as unknown as EngineContext;
+
+    const result = await deleteEmptyStubs(ctx, 'wiki');
+
+    expect(result.deleted).toBe(0);
+    expect(deleted).toEqual([]);
+  });
+
+  it('records the failure when deleteFile throws and continues', async () => {
+    const deleted: string[] = [];
+    const files: MockVaultFile[] = [
+      { path: 'wiki/entities/A.md', basename: 'A', content: '# A' },
+      { path: 'wiki/entities/B.md', basename: 'B', content: '# B' },
+    ];
+    const ctx = {
+      ...makeEngineCtx(files),
+      deleteFile: async (p: string) => {
+        deleted.push(p);
+        throw new Error('disk full');
+      },
+    } as unknown as EngineContext;
+
+    const result = await deleteEmptyStubs(ctx, 'wiki');
+
+    expect(deleted).toEqual(['wiki/entities/A.md', 'wiki/entities/B.md']);
+    expect(result.deleted).toBe(0);
+    expect(result.failed).toBe(2);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]).toMatch(/^wiki\/entities\/A\.md: disk full$/);
   });
 });
 
-// --- 4. merge-duplicates.ts (filter inside mergeDuplicatePages) -----------
-
-describe('PR #384 / #383 — merge-duplicates.ts filter shape', () => {
-  it('FIXED form excludes both leak paths from the allWikiFiles derivation', () => {
-    const allMarkdownFiles = [
-      { path: 'wiki/entities/Foo.md' },
-      { path: 'wiki-archive/Foo.md' },
-      { path: 'wiki.md' },
-    ];
-    const wikiFolder = 'wiki';
-    const sourcePath = 'wiki/entities/Foo.md';
-    // Mirrors merge-duplicates.ts:168-170 post-#384.
-    const allWikiFiles = allMarkdownFiles.filter(
-      f => isInFolderScope(f.path, wikiFolder, false) && f.path !== sourcePath
-    );
-    expect(allWikiFiles.map(f => f.path)).toEqual([]);
-  });
-});
+// --- 4. merge-duplicates.ts -------------------------------------------------
+//
+// No regression test lives here. The original pinned the filter expression by
+// rebuilding it inside the test file — it did not exercise the production
+// function, so a regression stayed green (DocTpoint, #383 follow-up).
+//
+// The filter itself is slated for replacement: #386 (assigned to DocTpoint)
+// rewrites the rewrite to sweep the whole vault and handle the bare-title
+// `[[Foo]]` link form, with a resolve-before-replace safeguard. The real
+// regression coverage for this site belongs to that implementation, which
+// rewrites the function and will assert against its own production code.
 
 // --- 5. auto-maintain.ts (Phase 2 source-pollution scan) -------------------
 //
-// The Phase 2 filter at auto-maintain.ts:408 uses the same shape as
-// preparation.ts: `getMarkdownFiles().filter(f => isInFolderScope(...))`.
-// The shared helper test pins the helper; this test asserts the same
-// exclude-both-leak contract on the same pattern as preparation.ts.
+// Phase 2 previously lived inline in `runStartupCheck` (which sleeps 3s
+// and needs the whole startup surface), so it is extracted into the
+// module-level `normalizeSourcesInFolder` (src/core/sources-normalizer.ts)
+// — the same module-function shape as Phase 3 (`findIncompletePages`).
 
-describe('PR #384 / #383 — auto-maintain.ts (Phase 2) filter shape', () => {
-  it('FIXED form excludes both leak paths from the Phase 2 inventory', () => {
-    const allMarkdownFiles = [
-      { path: 'wiki/sources/Src.md' },
-      { path: 'wiki-archive/Src.md' },
-      { path: 'wiki.md' },
-    ];
-    const wikiFolder = 'wiki';
-    const filtered = allMarkdownFiles.filter(f => isInFolderScope(f.path, wikiFolder, false));
-    expect(filtered.map(f => f.path)).toEqual(['wiki/sources/Src.md']);
+describe('PR #384 / #383 — normalizeSourcesInFolder (production function)', () => {
+  it('processes only polluted files inside the wiki folder', async () => {
+    const processed: string[] = [];
+    const byPath = new Map<string, string>([
+      ['wiki/sources/Polluted.md', '---\nsources: ["[[Notizen/Foo.md]]"]\n---\n# Polluted\n'],
+      ['wiki-archive/Polluted.md', '---\nsources: ["[[Notizen/Foo.md]]"]\n---\n# Polluted\n'],
+      ['wiki.md', '---\nsources: ["[[Notizen/Foo.md]]"]\n---\n# wiki\n'],
+    ]);
+    const app = makeVaultNormalizerApp(byPath, processed);
+
+    const result = await normalizeSourcesInFolder(app as unknown as App, 'wiki', false);
+
+    expect(processed).toEqual(['wiki/sources/Polluted.md']);
+    expect(result).toEqual({ filesCleaned: 1, entriesCleaned: 1 });
+  });
+
+  it('does not process a clean wiki file', async () => {
+    const processed: string[] = [];
+    const byPath = new Map<string, string>([
+      ['wiki/sources/Clean.md', '---\nsources: ["[[sources/Foo]]"]\n---\n# Clean\n'],
+    ]);
+    const app = makeVaultNormalizerApp(byPath, processed);
+
+    const result = await normalizeSourcesInFolder(app as unknown as App, 'wiki', false);
+
+    expect(processed).toEqual([]);
+    expect(result).toEqual({ filesCleaned: 0, entriesCleaned: 0 });
+  });
+
+  it('returns 0 counts when vault.read throws', async () => {
+    const app = {
+      vault: {
+        getMarkdownFiles: () => [{ path: 'wiki/sources/X.md', basename: 'X', extension: 'md' }],
+        read: async () => {
+          throw new Error('IO error');
+        },
+        process: async () => {},
+      },
+    };
+
+    const result = await normalizeSourcesInFolder(app as unknown as App, 'wiki', false);
+
+    expect(result).toEqual({ filesCleaned: 0, entriesCleaned: 0 });
   });
 });
+
+function makeVaultNormalizerApp(
+  byPath: Map<string, string>,
+  processed: string[]
+): {
+  vault: {
+    getMarkdownFiles: () => Array<{ path: string; basename: string; extension: string }>;
+    read: (file: { path: string }) => Promise<string>;
+    process: (file: { path: string }, fn: (d: string) => string | Promise<string>) => Promise<void>;
+  };
+} {
+  return {
+    vault: {
+      getMarkdownFiles: () => Array.from(byPath.keys()).map(p => ({
+        path: p,
+        basename: p.split('/').pop() ?? p,
+        extension: 'md',
+      })),
+      read: async (f: { path: string }) => byPath.get(f.path) ?? '',
+      process: async (f: { path: string }, fn: (d: string) => string | Promise<string>) => {
+        processed.push(f.path);
+        byPath.set(f.path, String(await fn(byPath.get(f.path) ?? '')));
+      },
+    },
+  };
+}
 
 // --- 6. contradictions.ts (missed site fixed in follow-up) ----------------
 
