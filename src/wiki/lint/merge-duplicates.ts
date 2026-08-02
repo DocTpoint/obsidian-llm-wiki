@@ -157,7 +157,12 @@ export async function mergeDuplicatePages(
       ? 'concept'
       : 'source';
 
-  const enforced = enforceFrontmatterConstraints(newContent, pageType, ctx.settings);
+  // Issue #388: `newContent` was serialized from `targetFm` a few lines up, but
+  // the caller is the one that read the target page — pass the date explicitly
+  // rather than relying on it surviving a round trip through the serializer.
+  const enforced = enforceFrontmatterConstraints(newContent, pageType, ctx.settings, {
+    preserveCreated: targetFm?.created,
+  });
   await ctx.createOrUpdateFile(targetPath, enforced);
 
   // Issue #386: retarget every link that resolves to the source page, vault-wide

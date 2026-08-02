@@ -236,6 +236,9 @@ export async function createNewPage(
 
     const cleanedContent = cleanMarkdownResponse(pageContent);
     // Issue #85: pass settings so custom tag vocabulary is honored.
+    // Issue #388: no `preserveCreated` — this page is being created, so there is
+    // no prior file and no real creation date to preserve. Anything `created:`
+    // in the model's reply says about the past is invented by construction.
     const enforcedContent = enforceFrontmatterConstraints(cleanedContent, pageType, ctx.settings);
     const labels = getSectionLabels(ctx.settings);
     // Re-assert the known section labels before the link corrector runs, so a

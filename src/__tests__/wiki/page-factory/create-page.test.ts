@@ -429,3 +429,26 @@ Body.`;
     expect(sourcesLines.length).toBe(1);
   });
 });
+
+describe('createNewPage — created: provenance (Issue #388)', () => {
+  it('stamps today even when the model writes a date of its own', async () => {
+    // The rule the prompt states ("created: … NEVER LLM-generated") is only as
+    // good as the code behind it: on this path no prior file exists, so a date
+    // in the model's reply cannot be anything but invented.
+    const ctx = makeCtx({
+      llmResponse: '---\ntype: entity\ncreated: 2024-11-03\nupdated: 2024-11-03\ntags: [other]\n---\n\n## Description\nBody.',
+    });
+    await createNewPage(
+      ctx,
+      createMockEntity({ name: 'X' }),
+      'entity',
+      { path: 'notes/article.md', basename: 'article.md' },
+      [],
+      'wiki/entities/X.md',
+    );
+    const written = ctx.written.get('wiki/entities/X.md')!;
+    const today = new Date().toISOString().split('T')[0];
+    expect(written).toContain(`created: ${today}`);
+    expect(written).not.toContain('2024-11-03');
+  });
+});
