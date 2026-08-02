@@ -5,8 +5,9 @@ This product includes software developed by the following contributors,
 listed in alphabetical order by GitHub handle:
 
 - DocTpoint — hub-retirement crystallization signal, knn baseline,
-  peer-link quality analysis, cold-start A/B evaluation, and ingest
-  reliability fixes
+  peer-link quality analysis, cold-start A/B evaluation, ingest
+  reliability fixes, #383 folder-boundary boundary analysis,
+  and #386 mergeDuplicates link-rewrite follow-up
 - dmarchevsky — code contributions and review feedback
 - FrancoTampieri — code contributions
 - Greener-Dalii (green-dalii) — project maintainer and primary author

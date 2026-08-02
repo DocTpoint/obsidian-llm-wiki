@@ -2,11 +2,32 @@
 
 > Feature planning and improvement proposals
 
-**Version:** 1.25.12 PATCH (6 commits, on branch `feat/cli-ux-v1.25.12`, awaiting merge). | **Updated:** 2026-08-01
+**Version:** 1.25.11 PATCH (RELEASED, last tagged). v1.26.0 MINOR MERGED to main on 2026-08-02 (awaiting release notes + tag). | **Updated:** 2026-08-02
 
 ## Current Status
 
-**v1.25.11 — POST-MERGE 2026-07-31 (awaiting release notes + tag).** Sequential PATCH on v1.25.10 carrying 3 locked items (#365 sources stamp + #375 README absolute URLs + #169 fine-grained stage hints) plus docs polish. main @ `c73b9af` after PR #379 merge.
+**v1.26.0 — MERGED to main on 2026-08-02 (awaiting release notes + tag).** MINOR release anchored at [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358) (complementary memory model). User-visible surface: the headless ingest CLI (`pnpm llm-wiki ingest`, bin `llm-wiki` in npm) — originally planned as a v1.25.12 PATCH but reclassified as MINOR on review since the CLI is a brand-new user-visible tool with a fresh flag surface. Plus the #383 folder-boundary follow-up (identity-check regression + unanchored configDir leak + shell-test rewrites). Plus PR #357 (DocTpoint source-lemma deterministic merge) — first item of the v1.26.0 design scope.
+
+*Composition (10 commits on `main` since v1.25.11 PATCH, oldest → newest)*:
+- `7825325` chore(tools): expose `llm-wiki` CLI via bin, scripts.ingest, and executable bit (PR #387)
+- `c905ffd` Merge pull request #387 from `feat/cli-ux-v1.25.12`
+- `8cef09b` docs: sync v1.25.12 CLI test count and scope after pre-merge review
+- `1d12989` test(cli): close coverage gaps from code review
+- `e379ff3` fix(cli): friendly `--vault` ENOENT and fire deprecations before required flags
+- `ef28e56` fix(cli): accept `-h` alias at the ingest subcommand level
+- `b634953` fix(cli): trim `--model` and guard integer flags against precision loss
+- `aed3572` fix(cli): reject empty numeric flag values before coercion
+- `ecb7862` fix(cli): harden applyOverrides against prototype-key granularity
+- (PR #372 — `feat(tools): headless ingest CLI` — already on main via `feat/cli-ux-v1.25.12`'s base)
+- (PR #357 — `feat(ingest): guarantee a page for the source note's own subject` — DocTpoint — already on main via v1.25.11 release window)
+- `4229c5c` refactor(folder-scope): centralise picker exclusion rule, close unanchored-prefix leak
+- `3892916` refactor(auto-maintain): extract Phase 2 to module function, match Phase 3 shape
+- `b8b4d80` test(folder-scope-sites): rewrite 3 shell tests as real production-function coverage
+- `f098886` Merge pull request #389 from `fix/v1.26.0-wiki-folder-followup`
+
+*Stats*: 11 files changed, +481 / −143, **2863 tests passing** (213 files), +119 net since v1.25.11 PATCH (57 from CLI parser + 62 from #383 follow-up including the folder-scope centralisation).
+
+*Why MINOR not PATCH*: the CLI ships as a fresh user-visible tool (`pnpm llm-wiki` script, npm bin, subcommand dispatch, complete flag surface) — that is the canonical SemVer trigger for MINOR, not PATCH. The planned `v1.25.12` slot stays unused; the patch slot is not retroactively filled. Version numbers need not be consecutive.
 
 *Composition (8 commits, oldest → newest)*:
 - `9289bdd` fix(page-factory): stamp sources: provenance on freshly generated pages (Closes #365 partial)
@@ -159,7 +180,7 @@ Historic compositions (v1.25.7 and earlier) live in [CHANGELOG.md](./CHANGELOG.m
 |---------|------|----------|
 | **1.25.11 PATCH** | 2026-07-31 | Sequential PATCH on v1.25.10 carrying bug fixes only: #365 sources provenance stamp (Plan A; `appendSourceSlugToFrontmatter` helper, byte-shape identical to `merge-page.ts:93`), #375 README absolute URLs (10 READMEs × language-switcher + PDF-OCR-GUIDE refs; image refs exempted), #169 fine-grained status-bar stage hints (15 keys × 10 locales: 7 ingest + 3 PDF + 5 lint SCAN; NOT ETA). Docs polish: EN banner restored ("Obsidian Review Perfect Score" + "Local-first • No backend • GDPR-Friendly"); comparison table 12→8 rows; star CTA; MinerU online conversion in Ecosystem (Issue #376 tracking reopened). Simplify follow-up: 5-agent audit applied 4 fixes (F2 4× frontmatter re-parse eliminated; F4 analysis-phase migrated to `lintStageAnalyzing`; F5 30 dead i18n entries deleted; F6 dead `fitIndicatorToContainer` alias removed); 2 indicator-related findings (F1+F7) reverted after user e2e. 8 commits, 44 files, +1498 / −329, 2744 tests |
 | **1.25.10 PATCH** | 2026-07-29 | Sequential PATCH on v1.25.9 carrying bug fixes only: #363 Mentions `[[|]]` parser + formatter (DocTpoint PR #371), #364 folder ingest boundary (DocTpoint PR #370), #356 frontmatter-strip, #366 Turkish-aware slug fold (phase 1), #367 lint-perf P0-1 fix-runner parallelisation (P1-1/P1-2 helpers ship dead-code, controller wire deferred to v1.26.0), #368 schema docs + settings UI hint, DocTpoint §4 merge/contradictory route split, alias hardening (3-char → 2-char floor). 16 commits, 78 files, +3499 / −315, 2713 tests |
-| **1.26.0 MINOR** | TBD (in design) | Complementary memory model: per-type registration, typed edges, bidirectional frontmatter, identity ambiguity record, Preview-Confirm gate, stable mutation interface. Anchored at [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358) |
+| **1.26.0 MINOR** | 2026-08-02 (merged to main; awaiting tag) | User-visible: headless ingest CLI (`pnpm llm-wiki` script + npm `llm-wiki` bin, `ingest` subcommand, full flag surface — originally planned as v1.25.12 PATCH, reclassified as MINOR per SemVer because the CLI is a fresh user-visible tool with a fresh flag surface); Tools H2 section in all 10 READMEs. Internal: `--thinking` → `--thinking-mode` (3-state enum) + `--max-rounds` → `--round-base` (both throw deprecation → v1.27.0 removal); parseCliOptions + parseNumber + 57 test cases pinning the parser contract; PR #357 source-lemma deterministic merge (DocTpoint, first item of #358 design scope); PR #389 follow-up to #383 — `isAtOrInFolderScope` + `isExcludedFromSourcePicker` primitives in `src/core/folder-scope.ts` (one rule, three picker sites; closes the unanchored-prefix leak class on the configDir half), 3 shell tests rewritten as real production-function coverage, `normalizeSourcesInFolder` extracted as a module function matching Phase 3's shape. Anchored at [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358). 11 files changed, +481 / −143, 2863 tests |
 | **1.25.9** | 2026-07-25 | PATCH: Re-publish v1.25.8 to recover from a release-engineering incident where the v1.25.8 GitHub release record was inadvertently deleted while Obsidian's automated community plugin review bot was mid-review. No code changes vs v1.25.8. Also fixes `versions.json` trailing-comma JSON syntax error introduced in v1.25.8 bump commit |
 | **1.25.8** | 2026-07-25 | PATCH Hotfix: `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only `hide()`). Fixes v1.25.7 regression where provider switching made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header". +7 tests (6 against real `LLMWikiSettingTab.commitTempSettings` via `Object.create(prototype)` + 1 mock signature update). Bot 0/0 preserved. 2572 tests / 193 files |
 | **1.25.7** | 2026-07-25 | PATCH: API key switching bug fix (regression since v1.25.3 #182, PR #346) + DocTpoint dedup perf PRs #344+#345. Cache-stable prompt layout (54s→1.2s repeat) + slim dedup + top-K candidate pre-filter (660K→372K prompt tokens, −44%). 19 new tests since v1.25.6. Bot 0/0 preserved. 2566 tests / 192 files |

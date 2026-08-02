@@ -1,10 +1,10 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-08-01 (v1.25.12 PATCH on branch `feat/cli-ux-v1.25.12`, 18 commits ahead of main `c905ffd`, awaiting merge). v1.25.11 PATCH MERGED 2026-07-31 (last tagged release). v1.25.12 PATCH scope: CLI UX for the headless ingest CLI from PR #372 — `llm-wiki` bin + `pnpm llm-wiki` (single tool entry, subcommand dispatch ready for lint/query), `--thinking` → `--thinking-mode` (three-state enum) + `--max-rounds` → `--round-base` (both throw deprecation → v1.26.0), Tools README section in 10 locales, parseCliOptions extraction + `parseNumber` helper with ~57 tests pinning the parser contract, plus simplify + code-review hardening (prototype-key guard, empty-numeric rejection, `--model` trim, safe-integer guard, `-h` alias, `--vault` ENOENT, deprecation priority). Tool named `llm-wiki` (not `wiki-ingest`) per first-principles CLI design — one tool = one bin = subcommand dispatch; future lint/query hooks into the dispatch without rename.
+**Last Updated:** 2026-08-02 (v1.26.0 MINOR merged to main, awaiting release notes + tag). v1.25.12 slot stayed unused — the work originally planned as a v1.25.12 PATCH was reclassified as MINOR on review because the CLI is a fresh user-visible tool with a fresh flag surface (SemVer MINOR, not PATCH). v1.26.0 MINOR composition: headless ingest CLI from PR #372 (eucher) + CLI UX via PR #387 + #383 folder-boundary follow-up via PR #389, plus PR #357 source-lemma deterministic merge (DocTpoint, first item of #358 design scope). Tool named `llm-wiki` (not `wiki-ingest`) per first-principles CLI design — one tool = one bin = subcommand dispatch; future lint/query hooks into the dispatch without rename.
 
 ---
 
-## Current Phase: v1.25.11 PATCH MERGED 2026-07-31 (release notes + tag pending); v1.25.10 PATCH RELEASED; v1.26.0 MINOR in design phase.
+## Current Phase: v1.26.0 MINOR MERGED 2026-08-02 (release notes + tag pending); v1.25.11 PATCH RELEASED; v1.26.x follow-on scope in design (per-type registration, typed edges, bidirectional frontmatter, identity ambiguity, Preview-Confirm, stable mutation interface — see [[project_v1_26_0_design]] + `docs/v1.26.0-design.md`).
 
 **v1.25.10 PATCH** (RELEASED 2026-07-29, sequential on v1.25.9): ten-item scope (locked 2026-07-28, expanded from initial 5 after DocTpoint + Guru35 morning batches):
 - admission criterion in Task Requirements (closes DocTpoint §2 "rules stated twice in the same prompt")
