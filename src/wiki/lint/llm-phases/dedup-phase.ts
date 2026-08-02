@@ -38,6 +38,7 @@ import {
   LINT_CANDIDATE_TOKEN_ESTIMATE,
   LINT_MAX_INPUT_TOKENS,
   LINT_DEDUP_BATCH_SIZE,
+  LINT_DEDUP_BIGRAM_TIER1_CUTOFF,
   WIKI_SUBFOLDERS,
 } from '../../../constants';
 
@@ -51,7 +52,7 @@ export interface DedupPhaseInput {
  * controller.ts:runLintWiki lines 184-194.
  *
  * - `crossLang` and `caseVariant` signals are always Tier 1 (high-precision).
- * - `bigram` with score >= 0.6 is Tier 1; below is Tier 2.
+ * - `bigram` with score >= LINT_DEDUP_BIGRAM_TIER1_CUTOFF is Tier 1; below is Tier 2.
  * - `sharedLinks` is always Tier 2.
  *
  * Stable ordering: input order is preserved within each tier.
@@ -65,7 +66,7 @@ export function classifyTiers(
     if (c.signal === 'crossLang' || c.signal === 'caseVariant') {
       tier1.push(c);
     } else if (c.signal === 'bigram') {
-      (c.score >= 0.6 ? tier1 : tier2).push(c);
+      (c.score >= LINT_DEDUP_BIGRAM_TIER1_CUTOFF ? tier1 : tier2).push(c);
     } else if (c.signal === 'sharedLinks') {
       tier2.push(c);
     }

@@ -7,6 +7,9 @@ import {
   LINT_YIELD_EVERY_OUTER,
   LINT_YIELD_EVERY_PHASE1,
   LINT_YIELD_EVERY_COMPARISON,
+  LINT_DEDUP_JACCARD_LINK_THRESHOLD,
+  LINT_DEDUP_JACCARD_BODY_GATE,
+  LINT_DEDUP_BIGRAM_THRESHOLD,
 } from '../../constants';
 
 export interface DuplicateCandidate {
@@ -67,7 +70,7 @@ export function computeJaccard<T>(setA: Set<T>, setB: Set<T>): number {
 // Generate duplicate-page candidates using programmatic signals.
 // Returns candidates for LLM verification, capped by the O(n²) algorithm.
 // Three signals, ordered by reliability:
-//   1. Shared outgoing wiki-links (Jaccard >= 0.4)
+//   1. Shared outgoing wiki-links (Jaccard >= LINT_DEDUP_JACCARD_LINK_THRESHOLD)
 //   2. Character bigram title similarity (catches spelling variants, same-language near-matches)
 //   3. Cross-language alias match
 export async function generateDuplicateCandidates(
@@ -121,7 +124,7 @@ export async function generateDuplicateCandidates(
 
   let comparisonCount = 0;
 
-  // Signal 1: Shared outgoing wiki-links (Jaccard >= 0.4)
+  // Signal 1: Shared outgoing wiki-links (Jaccard >= LINT_DEDUP_JACCARD_LINK_THRESHOLD)
   for (let i = 0; i < metas.length; i++) {
     if (i > 0 && i % LINT_YIELD_EVERY_OUTER === 0) {
       await new Promise(resolve => window.setTimeout(resolve, 0));
@@ -135,12 +138,12 @@ export async function generateDuplicateCandidates(
       const a = metas[i], b = metas[j];
       if (a.links.size === 0 || b.links.size === 0) continue;
       const jaccard = computeJaccard(a.links, b.links);
-      if (jaccard >= 0.4) {
+      if (jaccard >= LINT_DEDUP_JACCARD_LINK_THRESHOLD) {
         // Body similarity gate: pages with different content are not duplicates
         // even if they share the same set of wiki-links (e.g., two unrelated pages
         // both linking only to one popular hub page).
         const bodySim = computeJaccard(a.bodyWords, b.bodyWords);
-        if (bodySim < 0.2) continue;
+        if (bodySim < LINT_DEDUP_JACCARD_BODY_GATE) continue;
         addCandidate(a.path, b.path, `Shared wiki-links (${Math.round(jaccard * 100)}% overlap)`, 'sharedLinks', jaccard);
       }
     }
@@ -169,7 +172,7 @@ export async function generateDuplicateCandidates(
           if (sim > maxSim) maxSim = sim;
         }
       }
-      if (maxSim >= 0.4) {
+      if (maxSim >= LINT_DEDUP_BIGRAM_THRESHOLD) {
         addCandidate(a.path, b.path, `Title/alias similarity (${Math.round(maxSim * 100)}% match)`, 'bigram', maxSim);
       }
 
