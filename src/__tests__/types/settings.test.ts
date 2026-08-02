@@ -30,3 +30,28 @@ describe('v1.25.0 PR3 PDF settings — defaults', () => {
     expect(DEFAULT_SETTINGS).toHaveProperty('writePdfMarkdownToVault');
   });
 });
+
+// v1.26.0 (#382 item 2): dedup threshold overrides — three optional
+// Settings fields default to undefined so the production coalesce falls
+// through to the named constants in src/constants.ts. JSON.stringify
+// drops undefined keys, so first-install data.json does not persist
+// these values; users opt in by setting advancedSettingsMode = 'custom'.
+describe('v1.26.0 dedup threshold settings — defaults', () => {
+  it('lintJaccardLinkThreshold defaults to undefined (constant is the default)', () => {
+    expect(DEFAULT_SETTINGS.lintJaccardLinkThreshold).toBeUndefined();
+  });
+
+  it('lintJaccardBodyGate defaults to undefined', () => {
+    expect(DEFAULT_SETTINGS.lintJaccardBodyGate).toBeUndefined();
+  });
+
+  it('lintBigramThreshold defaults to undefined', () => {
+    expect(DEFAULT_SETTINGS.lintBigramThreshold).toBeUndefined();
+  });
+
+  it('all three fields are present on DEFAULT_SETTINGS (not dropped)', () => {
+    expect(DEFAULT_SETTINGS).toHaveProperty('lintJaccardLinkThreshold');
+    expect(DEFAULT_SETTINGS).toHaveProperty('lintJaccardBodyGate');
+    expect(DEFAULT_SETTINGS).toHaveProperty('lintBigramThreshold');
+  });
+});
