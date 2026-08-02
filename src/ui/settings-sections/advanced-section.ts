@@ -80,14 +80,22 @@ export function renderAdvancedSection(tab: LLMWikiSettingTab, containerEl: HTMLE
         tempSettings.disableThinking = value;
       }));
 
-  // Three temperature / repetition penalty inputs. The local helper takes
-  // string keys and routes them through getTextDynamic (v1.25.1 Phase
-  // C-PR2 simplify pass — keep type-safe getText for literal keys, only
-  // widen for the parametric ones).
-  const renderNumericInput = (
+  // Three temperature / repetition penalty inputs + (v1.26.0) the 3 lint
+  // dedup threshold inputs. Shared local helper: takes string keys and
+  // routes them through getTextDynamic (v1.25.1 Phase C-PR2 simplify pass —
+  // keep type-safe getText for literal keys, only widen for the parametric
+  // ones). `max` parameterizes the HTML range: temperature/penalty fields
+  // use 0..2; dedup thresholds use 0..1 (Jaccard similarity is bounded
+  // [0,1]). The onChange uses Number.isFinite (not isNaN) so ±Infinity /
+  // NaN never land in settings — a value of 1.5 or −0.1 would otherwise
+  // silently disable or flood a dedup signal (the consumption layer clamps
+  // to [0,1] as a second gate).
+  const renderNumberInput = (
     nameKey: string,
     descKey: string,
-    fieldKey: 'extractionTemperature' | 'chatTemperature' | 'repetitionPenalty',
+    fieldKey: 'extractionTemperature' | 'chatTemperature' | 'repetitionPenalty'
+      | 'lintJaccardLinkThreshold' | 'lintJaccardBodyGate' | 'lintBigramThreshold',
+    max: string = '2',
   ): void => {
     new Setting(containerEl)
       .setName(tab.getTextDynamic(nameKey))
@@ -102,22 +110,22 @@ export function renderAdvancedSection(tab: LLMWikiSettingTab, containerEl: HTMLE
               tempSettings[fieldKey] = undefined;
             } else {
               const parsed = parseFloat(trimmed);
-              if (!isNaN(parsed)) {
+              if (Number.isFinite(parsed)) {
                 tempSettings[fieldKey] = parsed;
               }
             }
           });
         text.inputEl.type = 'number';
         text.inputEl.min = '0';
-        text.inputEl.max = '2';
+        text.inputEl.max = max;
         text.inputEl.step = '0.05';
         text.inputEl.classList.add('llm-wiki-number-input');
       });
   };
 
-  renderNumericInput('extractionTemperatureName', 'extractionTemperatureDesc', 'extractionTemperature');
-  renderNumericInput('chatTemperatureName', 'chatTemperatureDesc', 'chatTemperature');
-  renderNumericInput('repetitionPenaltyName', 'repetitionPenaltyDesc', 'repetitionPenalty');
+  renderNumberInput('extractionTemperatureName', 'extractionTemperatureDesc', 'extractionTemperature');
+  renderNumberInput('chatTemperatureName', 'chatTemperatureDesc', 'chatTemperature');
+  renderNumberInput('repetitionPenaltyName', 'repetitionPenaltyDesc', 'repetitionPenalty');
 
   // v1.26.0 (#382 item 2): Lint duplicate-detection thresholds. Rendered
   // as a separate sub-block below the temperature/penalty inputs because
@@ -125,59 +133,12 @@ export function renderAdvancedSection(tab: LLMWikiSettingTab, containerEl: HTMLE
   // sub-heading gives visual separation so users don't mistake them for
   // temperature fields.
   new Setting(containerEl)
-    .setName(tab.getTextDynamic('lintDedupSectionHeading'))
+    .setName(tab.getText('lintDedupSectionHeading'))
     .setHeading();
 
-  // Sibling helper for the 0..1 threshold inputs. Different HTML min/max
-  // than renderNumericInput (temperature fields use 0..2); a sibling
-  // helper keeps each contract honest rather than parameterizing one
-  // helper with conflicting attribute sets.
-  const renderDedupThresholdInput = (
-    nameKey: string,
-    descKey: string,
-    fieldKey: 'lintJaccardLinkThreshold' | 'lintJaccardBodyGate' | 'lintBigramThreshold',
-  ): void => {
-    new Setting(containerEl)
-      .setName(tab.getTextDynamic(nameKey))
-      .setDesc(tab.getTextDynamic(descKey))
-      .addText(text => {
-        text
-          .setPlaceholder(tab.getText('temperaturePlaceholder'))
-          .setValue(tempSettings[fieldKey]?.toString() ?? '')
-          .onChange((value) => {
-            const trimmed = value.trim();
-            if (trimmed === '') {
-              tempSettings[fieldKey] = undefined;
-            } else {
-              const parsed = parseFloat(trimmed);
-              if (!isNaN(parsed)) {
-                tempSettings[fieldKey] = parsed;
-              }
-            }
-          });
-        text.inputEl.type = 'number';
-        text.inputEl.min = '0';
-        text.inputEl.max = '1';
-        text.inputEl.step = '0.05';
-        text.inputEl.classList.add('llm-wiki-number-input');
-      });
-  };
-
-  renderDedupThresholdInput(
-    'lintDedupJaccardLinkThresholdName',
-    'lintDedupJaccardLinkThresholdDesc',
-    'lintJaccardLinkThreshold',
-  );
-  renderDedupThresholdInput(
-    'lintDedupJaccardBodyGateName',
-    'lintDedupJaccardBodyGateDesc',
-    'lintJaccardBodyGate',
-  );
-  renderDedupThresholdInput(
-    'lintDedupBigramThresholdName',
-    'lintDedupBigramThresholdDesc',
-    'lintBigramThreshold',
-  );
+  renderNumberInput('lintDedupJaccardLinkThresholdName', 'lintDedupJaccardLinkThresholdDesc', 'lintJaccardLinkThreshold', '1');
+  renderNumberInput('lintDedupJaccardBodyGateName', 'lintDedupJaccardBodyGateDesc', 'lintJaccardBodyGate', '1');
+  renderNumberInput('lintDedupBigramThresholdName', 'lintDedupBigramThresholdDesc', 'lintBigramThreshold', '1');
 
   // v1.25.0 PR3: PDF force-support toggle (universal escape hatch).
   // Renders for ANY non-native provider.

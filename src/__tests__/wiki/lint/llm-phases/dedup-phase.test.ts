@@ -408,6 +408,59 @@ describe('runDedupPhase — LLM verify path', () => {
     const result = await runDedupPhase(ctx, input, () => {});
     expect(result).toEqual([]);
   });
+
+  // v1.26.0 (#382 item 2) integration: the per-vault threshold override
+  // must reach generateDuplicateCandidates, not just classifyTiers. Two
+  // pages sharing 1/3 of their link graph (jaccard ≈ 0.333) produce NO
+  // sharedLinks candidate at the default 0.4 threshold, so the wiki looks
+  // clean and the LLM is never called. Lowering the override to 0.2 in
+  // settings must generate the candidate and trigger LLM verify.
+  it('threads lintJaccardLinkThreshold override into candidate generation', async () => {
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({
+      llmClient: () => client,
+      settings: {
+        ...makeLintPhaseContext().settings,
+        lintJaccardLinkThreshold: 0.2,
+      } as LintPhaseContext['settings'],
+    });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/alpha.md', basename: 'alpha.md' },
+        { path: 'wiki/entities/beta.md', basename: 'beta.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/alpha.md', '---\ntype: entity\n---\n# Alpha\nSee [[shared]] and [[alpha-specific]] for details. This is the alpha page body about machine learning pipelines.'],
+        ['wiki/entities/beta.md', '---\ntype: entity\n---\n# Beta\nSee [[shared]] and [[beta-specific]] for details. This is the beta page body about machine learning pipelines.'],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    // sharedLinks candidate (jaccard 0.333 >= 0.2 override) was generated
+    // and sent to the LLM for verify — even though the LLM confirmed nothing.
+    expect(createMessage).toHaveBeenCalled();
+    expect(result).toEqual([]);
+  });
+
+  it('default settings do NOT generate the shared-links candidate at 1/3 overlap', async () => {
+    // Same fixture as above WITHOUT the override: jaccard 0.333 < default
+    // 0.4 → no candidate → LLM never called. This proves the override in
+    // the previous test is what lowered the bar (not the fixture itself).
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/alpha.md', basename: 'alpha.md' },
+        { path: 'wiki/entities/beta.md', basename: 'beta.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/alpha.md', '---\ntype: entity\n---\n# Alpha\nSee [[shared]] and [[alpha-specific]] for details. This is the alpha page body about machine learning pipelines.'],
+        ['wiki/entities/beta.md', '---\ntype: entity\n---\n# Beta\nSee [[shared]] and [[beta-specific]] for details. This is the beta page body about machine learning pipelines.'],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    expect(result).toEqual([]);
+    expect(createMessage).not.toHaveBeenCalled();
+  });
 });
 
 describe('runDedupPhase — batching + rate limit', () => {

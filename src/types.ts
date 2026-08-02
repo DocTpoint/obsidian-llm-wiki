@@ -1012,9 +1012,12 @@ export const DEFAULT_SETTINGS: LLMWikiSettings = {
   forcePdfSupport: false,
   writePdfMarkdownToVault: false,
   // v1.26.0 (#382 item 2): dedup threshold overrides — undefined = use the
-  // LINT_DEDUP_* constants in src/constants.ts. Only consulted when
-  // advancedSettingsMode === 'custom'. JSON.stringify drops undefined keys,
-  // so first-install data.json does not contain these keys.
+  // LINT_DEDUP_* constants in src/constants.ts. The UI renders them only
+  // when advancedSettingsMode === 'custom' and clears them on flip back to
+  // 'default'; at consumption the dedup-phase reads them unconditionally
+  // (like extractionTemperature/chatTemperature — the codebase does not
+  // gate advanced fields at use sites). JSON.stringify drops undefined
+  // keys, so first-install data.json does not contain these keys.
   lintJaccardLinkThreshold: undefined,
   lintJaccardBodyGate: undefined,
   lintBigramThreshold: undefined,
