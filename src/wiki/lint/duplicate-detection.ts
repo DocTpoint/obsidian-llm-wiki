@@ -73,9 +73,27 @@ export function computeJaccard<T>(setA: Set<T>, setB: Set<T>): number {
 //   1. Shared outgoing wiki-links (Jaccard >= LINT_DEDUP_JACCARD_LINK_THRESHOLD)
 //   2. Character bigram title similarity (catches spelling variants, same-language near-matches)
 //   3. Cross-language alias match
+//
+// Thresholds are passed as an optional `options` argument (defaults to the
+// named constants in src/constants.ts). Per-vault callers (e.g. the lint
+// dedup-phase) read user-settable overrides from settings and spread them
+// over the constant defaults; see DuplicateDetectionThresholds below.
+export interface DuplicateDetectionThresholds {
+  jaccardLinkThreshold: number;   // 0..1
+  jaccardBodyGate: number;        // 0..1
+  bigramThreshold: number;        // 0..1
+}
+
 export async function generateDuplicateCandidates(
   pages: Array<{ path: string; content: string; title: string }>,
+  options: Partial<DuplicateDetectionThresholds> = {},
 ): Promise<DuplicateCandidate[]> {
+  const thresholds = {
+    jaccardLinkThreshold: LINT_DEDUP_JACCARD_LINK_THRESHOLD,
+    jaccardBodyGate: LINT_DEDUP_JACCARD_BODY_GATE,
+    bigramThreshold: LINT_DEDUP_BIGRAM_THRESHOLD,
+    ...options,
+  };
   interface PageMeta {
     path: string;
     title: string;
@@ -138,12 +156,12 @@ export async function generateDuplicateCandidates(
       const a = metas[i], b = metas[j];
       if (a.links.size === 0 || b.links.size === 0) continue;
       const jaccard = computeJaccard(a.links, b.links);
-      if (jaccard >= LINT_DEDUP_JACCARD_LINK_THRESHOLD) {
+      if (jaccard >= thresholds.jaccardLinkThreshold) {
         // Body similarity gate: pages with different content are not duplicates
         // even if they share the same set of wiki-links (e.g., two unrelated pages
         // both linking only to one popular hub page).
         const bodySim = computeJaccard(a.bodyWords, b.bodyWords);
-        if (bodySim < LINT_DEDUP_JACCARD_BODY_GATE) continue;
+        if (bodySim < thresholds.jaccardBodyGate) continue;
         addCandidate(a.path, b.path, `Shared wiki-links (${Math.round(jaccard * 100)}% overlap)`, 'sharedLinks', jaccard);
       }
     }
@@ -172,7 +190,7 @@ export async function generateDuplicateCandidates(
           if (sim > maxSim) maxSim = sim;
         }
       }
-      if (maxSim >= LINT_DEDUP_BIGRAM_THRESHOLD) {
+      if (maxSim >= thresholds.bigramThreshold) {
         addCandidate(a.path, b.path, `Title/alias similarity (${Math.round(maxSim * 100)}% match)`, 'bigram', maxSim);
       }
 

@@ -59,6 +59,7 @@ export interface DedupPhaseInput {
  */
 export function classifyTiers(
   candidates: DuplicateCandidate[],
+  tier1Cutoff: number = LINT_DEDUP_BIGRAM_TIER1_CUTOFF,
 ): { tier1: DuplicateCandidate[]; tier2: DuplicateCandidate[] } {
   const tier1: DuplicateCandidate[] = [];
   const tier2: DuplicateCandidate[] = [];
@@ -66,7 +67,7 @@ export function classifyTiers(
     if (c.signal === 'crossLang' || c.signal === 'caseVariant') {
       tier1.push(c);
     } else if (c.signal === 'bigram') {
-      (c.score >= LINT_DEDUP_BIGRAM_TIER1_CUTOFF ? tier1 : tier2).push(c);
+      (c.score >= tier1Cutoff ? tier1 : tier2).push(c);
     } else if (c.signal === 'sharedLinks') {
       tier2.push(c);
     }
