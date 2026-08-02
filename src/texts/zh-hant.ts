@@ -508,10 +508,17 @@ export const ZH_HANT_TEXTS = {
     lintReportSummary: 'Wiki 狀態概覽：共 {total} 個頁面，{aliasesMissing} 個缺失別名，重複 {duplicates} 個，斷鏈 {deadLinks} 個（其中 {deadLinkFromDup} 個涉及重複頁面），孤立 {orphans} 個（其中 {orphanFromDup} 個是重複頁面），空洞 {emptyPages} 個，無來源引證 {ungroundedQuotes} 個，標籤越界 {tagViolations} 個。本次 Lint 耗時 {elapsedSeconds} 秒',
 
     // Advanced LLM Settings (Issues #99 / #128)
-    advancedSettingsModeName: '高階引數設定',
-    advancedSettingsModeDesc: '預設模式遵循模型提供商的推薦設定。僅當你有明確理由覆蓋時才切到自定義（例如：某個模型需要固定溫度，或者你想關閉模型的思考輸出）。',
+    // v1.26.0 (#382 item 2): 名稱由「高階引數設定」改為「LLM 高階參數」，
+    // 明確這是 LLM 取樣參數，與底部通用的「進階設定」面板區分。
+    advancedLlmModeName: 'LLM 高階參數',
+    advancedLlmModeDesc: '預設模式遵循模型提供商的推薦設定。僅當你有明確理由覆蓋時才切到自定義（例如：某個模型需要固定溫度，或者你想關閉模型的思考輸出）。',
     advancedSettingsDefault: '預設（遵循提供商）',
     advancedSettingsCustom: '自定義（覆蓋提供商）',
+    // v1.26.0 (#382 item 2): 底部「進階設定」面板 — 所有非 LLM 取樣參數的
+    // 進階使用者設定的通用歸屬（lint 閾值、歡迎頁、未來擴展）。
+    advancedSettingsSection: '進階設定',
+    showAdvancedSettingsName: '顯示進階設定',
+    showAdvancedSettingsDesc: '開啟後顯示下方的高階設定；關閉後會隱藏這些設定並重設為預設值。',
     disableThinkingName: '關閉思考',
     disableThinkingDesc: '關閉模型回應中的思維鏈/推理過程輸出。預設關閉 —— 由模型自己決定是否顯示推理，這樣通常能得到最好的回答。只有當你的提供商把原始推理文字塞進回應、而你希望得到一個乾淨的答案時，才打開它。',
     // Issue #137: 兼容性提示（简短；不列举 provider，避免维护负担）
@@ -522,6 +529,13 @@ export const ZH_HANT_TEXTS = {
     repetitionPenaltyName: '重複懲罰',
     repetitionPenaltyDesc: '阻止模型反覆說相同的字詞。數值越高越能減少重複。只有部分本地模型提供商（Ollama、LM Studio、llama.cpp）接受這個參數；雲端提供商會靜默忽略。大多數使用者留空即可。',
     temperaturePlaceholder: '留空 = 使用提供商預設',
+    // v1.26.0 (#382 item 2): 重複偵測閾值（僅自訂進階模式）。
+    lintDedupJaccardLinkThresholdName: '連結重複相似度',
+    lintDedupJaccardLinkThresholdDesc: '範圍 0–1（預設 0.4）。兩個頁面共同指向的 wiki 連結佔各自連結集合的比例達到該值時，被標記為重複。調低 → 更多「只是都連結到同一中心頁」的近似重複會被納入；調高 → 只標記指向幾乎相同頁面的頁面。若看到不相關頁面恰好連結到同一中心頁造成的誤報，可調高此項。留空使用預設值。',
+    lintDedupJaccardBodyGateName: '內文最低相似度',
+    lintDedupJaccardBodyGateDesc: '範圍 0–1（預設 0.2）。即使兩個頁面共用 wiki 連結，內文相似度（依比例）至少達到該值時才會被標記為重複。調低 → 更多候選進入 LLM 複核；調高 → 只標記內文幾乎相同的頁面。若 LLM 被頻繁要求複核明顯不是重複的頁面，可調高此項。留空使用預設值。',
+    lintDedupBigramThresholdName: '標題相似度',
+    lintDedupBigramThresholdDesc: '範圍 0–1（預設 0.4）。兩個頁面標題（或別名）的字元重合度達到該值時，被標記為重複。調低 → 拼字變體、筆誤、同一概念的不同翻譯都會納入；調高 → 只標記標題幾乎相同的頁面。若 LLM 被要求複核標題差異很大、明顯不是重複的頁面，可調高此項。留空使用預設值。',
     lintDeadLinkSection: '斷鏈（程式檢測）[共 {count} 個]',
     lintEmptyPageSection: '空洞頁面（程式檢測）[共 {count} 個]',
     lintOrphanSection: '孤立頁面（程式檢測）[共 {count} 個]',

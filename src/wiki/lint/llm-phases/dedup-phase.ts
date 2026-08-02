@@ -38,6 +38,7 @@ import {
   LINT_CANDIDATE_TOKEN_ESTIMATE,
   LINT_MAX_INPUT_TOKENS,
   LINT_DEDUP_BATCH_SIZE,
+  LINT_DEDUP_BIGRAM_TIER1_CUTOFF,
   WIKI_SUBFOLDERS,
 } from '../../../constants';
 
@@ -51,13 +52,14 @@ export interface DedupPhaseInput {
  * controller.ts:runLintWiki lines 184-194.
  *
  * - `crossLang` and `caseVariant` signals are always Tier 1 (high-precision).
- * - `bigram` with score >= 0.6 is Tier 1; below is Tier 2.
+ * - `bigram` with score >= LINT_DEDUP_BIGRAM_TIER1_CUTOFF is Tier 1; below is Tier 2.
  * - `sharedLinks` is always Tier 2.
  *
  * Stable ordering: input order is preserved within each tier.
  */
 export function classifyTiers(
   candidates: DuplicateCandidate[],
+  tier1Cutoff: number = LINT_DEDUP_BIGRAM_TIER1_CUTOFF,
 ): { tier1: DuplicateCandidate[]; tier2: DuplicateCandidate[] } {
   const tier1: DuplicateCandidate[] = [];
   const tier2: DuplicateCandidate[] = [];
@@ -65,7 +67,7 @@ export function classifyTiers(
     if (c.signal === 'crossLang' || c.signal === 'caseVariant') {
       tier1.push(c);
     } else if (c.signal === 'bigram') {
-      (c.score >= 0.6 ? tier1 : tier2).push(c);
+      (c.score >= tier1Cutoff ? tier1 : tier2).push(c);
     } else if (c.signal === 'sharedLinks') {
       tier2.push(c);
     }
@@ -148,13 +150,28 @@ export async function runDedupPhase(
     ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStageDedup'));
     ctx.stageNotice?.setMessage(t.lintCheckingDuplicates);
 
-    // Layer 1: Programmatic candidates (3 signals: crossLang, bigram, sharedLinks)
-    const allCandidates = await generateDuplicateCandidates(pagesForDedup);
+    // Layer 1: Programmatic candidates (3 signals: crossLang, bigram, sharedLinks).
+    // v1.26.0 (#382 item 2): per-vault threshold overrides flow from
+    // ctx.settings. The fields are optional; unset values are coalesced
+    // and clamped to [0,1] inside generateDuplicateCandidates (see
+    // DEFAULT_DEDUP_THRESHOLDS there) so users who have not opted into
+    // Custom Advanced Settings see identical behavior. The tier-1 cutoff
+    // is intentionally NOT settable — see the constants.ts docblock for
+    // LINT_DEDUP_BIGRAM_TIER1_CUTOFF for the rationale.
+    const allCandidates = await generateDuplicateCandidates(pagesForDedup, {
+      jaccardLinkThreshold: ctx.settings.lintJaccardLinkThreshold,
+      jaccardBodyGate: ctx.settings.lintJaccardBodyGate,
+      bigramThreshold: ctx.settings.lintBigramThreshold,
+    });
     if (allCandidates.length === 0) {
       console.debug('lintWiki: no duplicate candidates found — wiki is clean');
       return [];
     }
 
+    // v1.26.0 (#382 item 2): classifyTiers uses the default tier1Cutoff
+    // (LINT_DEDUP_BIGRAM_TIER1_CUTOFF — not a settable field; rationale in
+    // the constants.ts docblock). It controls which generated candidates
+    // the LLM sees, not whether a candidate is generated.
     const { tier1, tier2 } = classifyTiers(allCandidates);
     console.debug(`lintWiki: ${allCandidates.length} candidates → Tier 1: ${tier1.length}, Tier 2: ${tier2.length}`);
     // v1.24.0: log candidate breakdown by signal (preserved from the

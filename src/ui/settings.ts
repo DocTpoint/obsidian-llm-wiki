@@ -18,6 +18,7 @@ import { renderAdvancedSection } from './settings-sections/advanced-section';
 import { renderTestConnectionSection } from './settings-sections/test-connection-section';
 import { renderWikiConfigSection } from './settings-sections/wiki-config-section';
 import { renderAutoMaintainSection } from './settings-sections/auto-maintain-section';
+import { renderAdvancedSettingsSection } from './settings-sections/advanced-settings-section';
 import { copyCodexDeviceCode, runCodexDeviceAuth, runCodexModelRefresh, runCodexSignOut } from './openai-codex-auth-controls';
 import { applyCodexModelPolicy } from '../core/openai-codex-model-policy';
 import type { CodexDevicePrompt } from './openai-codex-auth-controls';
@@ -488,5 +489,8 @@ export class LLMWikiSettingTab extends PluginSettingTab {
     // Avoid double-rendering the heading here.
     renderWikiConfigSection(this, containerEl);
     renderAutoMaintainSection(this, containerEl);
+    // v1.26.0 (#382 item 2): bottom-most section — generic advanced-user
+    // settings (lint thresholds, Welcome note) with a section-level toggle.
+    renderAdvancedSettingsSection(this, containerEl);
   }
 }

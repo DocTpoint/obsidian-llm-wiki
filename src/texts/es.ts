@@ -389,7 +389,6 @@ export const ES_TEXTS = {
     autoSmartFixName: 'Corrección inteligente automática',
     autoSmartFixDesc: 'Cuando se ejecute el lint, aplica automáticamente todas las correcciones (Smart Fix All) sin mostrar el modal de informe. El resumen de correcciones se sigue mostrando al finalizar.',
     autoSmartFixNotice: 'Corrección inteligente automática: aplicando todas las correcciones...',
-
     autoIngestLevelName: 'Notificación de ingesta automática',
     autoIngestLevelDesc: 'Cómo notificar cuando la ingesta automática se completa. "Aviso" (transitorio) no bloquea. "Modal" abre el informe completo. Desactivado cuando el modo Watch es "Solo notificar".',
     autoIngestLevelNotice: 'Aviso (no bloqueante)',
@@ -529,10 +528,18 @@ export const ES_TEXTS = {
     lintReportSummary: 'Resumen de estado del wiki: {total} páginas en total, {aliasesMissing} páginas sin alias, {duplicates} duplicados, {deadLinks} enlaces rotos ({deadLinkFromDup} implican duplicados), {orphans} páginas huérfanas ({orphanFromDup} son duplicados), {emptyPages} páginas vacías, {ungroundedQuotes} citas sin fuente, {tagViolations} etiquetas fuera de vocabulario. Lint: {elapsedSeconds}s',
 
     // Advanced LLM Settings (Issues #99 / #128)
-    advancedSettingsModeName: 'Configuración de parámetros avanzados',
-    advancedSettingsModeDesc: 'El modo predeterminado sigue las recomendaciones de tu proveedor. Cambia a Personalizado solo si tienes una razón específica para anular (por ejemplo, un modelo concreto necesita una temperatura fija, o quieres suprimir la salida de razonamiento).',
+    // v1.26.0 (#382 item 2): nombre cambiado de «Configuración de parámetros
+    // avanzados» a «Parámetros avanzados de LLM» — acotado al muestreo LLM,
+    // para distinguirlo del panel genérico «Ajustes avanzados» inferior.
+    advancedLlmModeName: 'Parámetros avanzados de LLM',
+    advancedLlmModeDesc: 'El modo predeterminado sigue las recomendaciones de tu proveedor. Cambia a Personalizado solo si tienes una razón específica para anular (por ejemplo, un modelo concreto necesita una temperatura fija, o quieres suprimir la salida de razonamiento).',
     advancedSettingsDefault: 'Predeterminado (seguir al proveedor)',
     advancedSettingsCustom: 'Personalizado (anular al proveedor)',
+    // v1.26.0 (#382 item 2): panel «Ajustes avanzados» inferior — el hogar
+    // genérico de todos los ajustes avanzados que no son parámetros de LLM.
+    advancedSettingsSection: 'Ajustes avanzados',
+    showAdvancedSettingsName: 'Mostrar ajustes avanzados',
+    showAdvancedSettingsDesc: 'Activar para mostrar los ajustes avanzados abajo. Al desactivar, se ocultan y se restablecen a sus valores predeterminados.',
     disableThinkingName: 'Deshabilitar pensamiento',
     disableThinkingDesc: 'Desactiva la cadena de pensamiento/razonamiento en la respuesta del modelo. Desactivado por defecto — el modelo decide si mostrar razonamiento, lo que suele dar la mejor respuesta. Actívalo solo si tu proveedor inserta texto de razonamiento bruto en la respuesta y quieres una respuesta limpia.',
     // Issue #137: Notas de compatibilidad (breves; sin lista de proveedores)
@@ -543,6 +550,14 @@ export const ES_TEXTS = {
     repetitionPenaltyName: 'Penalización por repetición',
     repetitionPenaltyDesc: 'Evita que el modelo repita las mismas palabras o frases. Valores más altos reducen la repetición. Solo algunos proveedores de modelos locales (Ollama, LM Studio, llama.cpp) aceptan este parámetro; los proveedores en la nube lo ignoran silenciosamente. La mayoría de los usuarios lo dejan vacío.',
     temperaturePlaceholder: 'dejar vacío = valor por defecto del proveedor',
+    // v1.26.0 (#382 item 2): Umbrales de detección de duplicados
+    // (solo modo avanzado personalizado).
+    lintDedupJaccardLinkThresholdName: 'Similitud de enlaces duplicados',
+    lintDedupJaccardLinkThresholdDesc: 'Rango 0–1 (por defecto 0,4). Dos páginas se marcan como duplicadas cuando la proporción de enlaces wiki que ambas comparten respecto a sus enlaces totales alcanza al menos este valor. Más bajo → se capturan más casi-duplicados (incluidas páginas que solo enlazan al mismo centro); más alto → solo se marcan páginas que apuntan a un conjunto casi idéntico. Sube este valor si ves falsos positivos entre páginas no relacionadas que simplemente enlazan al mismo centro. Déjalo en blanco para usar el valor por defecto.',
+    lintDedupJaccardBodyGateName: 'Similitud mínima del cuerpo',
+    lintDedupJaccardBodyGateDesc: 'Rango 0–1 (por defecto 0,2). Aunque dos páginas compartan enlaces wiki, solo se marcan como duplicadas si la similitud de sus textos alcanza al menos este valor. Más bajo → más candidatos llegan a la verificación del LLM; más alto → solo se marcan cuerpos casi idénticos. Sube este valor si el LLM está revisando páginas que obviamente no son duplicadas. Déjalo en blanco para usar el valor por defecto.',
+    lintDedupBigramThresholdName: 'Similitud de títulos',
+    lintDedupBigramThresholdDesc: 'Rango 0–1 (por defecto 0,4). Dos páginas se marcan como duplicadas cuando los caracteres de sus títulos (o alias) coinciden en al menos esta proporción. Más bajo → se capturan variantes ortográficas, erratas y traducciones del mismo concepto; más alto → solo se marcan títulos casi idénticos. Sube este valor si el LLM revisa páginas con nombres muy distintos que en realidad no son duplicadas. Déjalo en blanco para usar el valor por defecto.',
     lintDeadLinkSection: 'Enlaces rotos (detectados) [{count}]',
     lintEmptyPageSection: 'Páginas vacías (detectadas) [{count}]',
     lintOrphanSection: 'Páginas huérfanas (detectadas) [{count}]',

@@ -389,7 +389,7 @@ export const FR_TEXTS = {
     autoSmartFixName: 'Correction intelligente automatique',
     autoSmartFixDesc: 'Lors de l\'exécution du lint, applique automatiquement toutes les corrections (Smart Fix All) sans afficher le modal de rapport. Le résumé des corrections s\'affiche toujours à la fin.',
     autoSmartFixNotice: 'Correction intelligente automatique : application de toutes les corrections...',
-
+    // v1.26.0 (#382 item 2): Interrupteur d\'options avancées dans la section
     autoIngestLevelName: "Notification d'ingestion automatique",
     autoIngestLevelDesc: 'Comment notifier lorsque l\'ingestion automatique se termine. "Avis" (transitoire) est non bloquant. "Modal" ouvre le rapport complet. Désactivé lorsque le mode Watch est "Avis uniquement".',
     autoIngestLevelNotice: 'Avis (non bloquant)',
@@ -511,10 +511,18 @@ export const FR_TEXTS = {
     lintReportSummary: "Aperçu de l'état du wiki : {total} pages au total, {aliasesMissing} pages sans alias, {duplicates} pages dupliquées, {deadLinks} liens cassés ({deadLinkFromDup} impliquent des doublons), {orphans} pages orphelines ({orphanFromDup} sont des doublons), {emptyPages} pages vides, {ungroundedQuotes} citations non fondées, {tagViolations} tags hors vocabulaire. Durée du lint : {elapsedSeconds}s",
 
     // Advanced LLM Settings (Issues #99 / #128)
-    advancedSettingsModeName: 'Paramètres avancés',
-    advancedSettingsModeDesc: 'Le mode par défaut suit les recommandations de votre fournisseur. Passez en mode Personnalisé uniquement si vous avez une raison spécifique de le faire (par exemple, un modèle particulier nécessite une température fixe, ou vous souhaitez supprimer la sortie de raisonnement).',
+    // v1.26.0 (#382 item 2): nom changé de « Paramètres avancés » en
+    // « Paramètres LLM avancés » — restreint à l'échantillonnage LLM, pour le
+    // distinguer du panneau générique « Paramètres avancés » en bas.
+    advancedLlmModeName: 'Paramètres LLM avancés',
+    advancedLlmModeDesc: 'Le mode par défaut suit les recommandations de votre fournisseur. Passez en mode Personnalisé uniquement si vous avez une raison spécifique de le faire (par exemple, un modèle particulier nécessite une température fixe, ou vous souhaitez supprimer la sortie de raisonnement).',
     advancedSettingsDefault: 'Par défaut (suivre le fournisseur)',
     advancedSettingsCustom: 'Personnalisé (remplacer le fournisseur)',
+    // v1.26.0 (#382 item 2): panneau « Paramètres avancés » en bas — le lieu
+    // générique pour tous les réglages avancés qui ne sont pas des paramètres LLM.
+    advancedSettingsSection: 'Paramètres avancés',
+    showAdvancedSettingsName: 'Afficher les paramètres avancés',
+    showAdvancedSettingsDesc: 'Activez pour afficher les réglages avancés ci-dessous. Désactiver les masque et les rétablit aux valeurs par défaut.',
     disableThinkingName: 'Désactiver le raisonnement',
     disableThinkingDesc: 'Désactive l\'affichage de la chaîne de pensée/du raisonnement dans la réponse. Désactivé par défaut — le modèle décide lui-même d\'afficher ou non son raisonnement, ce qui donne généralement la meilleure réponse. Activez-le uniquement si votre fournisseur insère du texte de raisonnement brut dans la réponse et que vous souhaitez une réponse propre.',
     // Issue #137 : Notes de compatibilité (courtes ; pas de liste de fournisseurs)
@@ -525,6 +533,14 @@ export const FR_TEXTS = {
     repetitionPenaltyName: 'Pénalité de répétition',
     repetitionPenaltyDesc: 'Empêche le modèle de répéter les mêmes mots ou phrases. Des valeurs plus élevées réduisent la répétition. Seuls certains fournisseurs de modèles locaux (Ollama, LM Studio, llama.cpp) acceptent ce paramètre ; les fournisseurs cloud l\'ignorent silencieusement. La plupart des utilisateurs laissent ce champ vide.',
     temperaturePlaceholder: 'laisser vide = valeur par défaut du fournisseur',
+    // v1.26.0 (#382 item 2): Seuils de détection des doublons
+    // (mode avancé personnalisé uniquement).
+    lintDedupJaccardLinkThresholdName: 'Similarité des liens en doublon',
+    lintDedupJaccardLinkThresholdDesc: 'Plage 0–1 (par défaut 0,4). Deux pages sont signalées comme doublons lorsque la proportion de liens wiki qu\'elles partagent par rapport à leurs liens totaux atteint au moins cette valeur. Plus bas → davantage de quasi-doublons sont captés (y compris des pages qui pointent simplement vers le même centre) ; plus haut → seules les pages pointant vers un ensemble quasi identique sont signalées. Augmentez cette valeur si des pages sans rapport sont signalées à tort parce qu\'elles pointent vers le même centre. Laissez vide pour utiliser la valeur par défaut.',
+    lintDedupJaccardBodyGateName: 'Similarité minimale du corps',
+    lintDedupJaccardBodyGateDesc: 'Plage 0–1 (par défaut 0,2). Même si deux pages partagent des liens wiki, elles ne sont signalées comme doublons que si la similarité de leurs textes atteint au moins cette valeur. Plus bas → davantage de candidats parviennent à la vérification LLM ; plus haut → seuls les corps quasi identiques sont signalés. Augmentez cette valeur si le LLM examine des pages qui ne sont manifestement pas des doublons. Laissez vide pour utiliser la valeur par défaut.',
+    lintDedupBigramThresholdName: 'Similarité des titres',
+    lintDedupBigramThresholdDesc: 'Plage 0–1 (par défaut 0,4). Deux pages sont signalées comme doublons lorsque les caractères de leurs titres (ou alias) coïncident au moins à cette proportion. Plus bas → les variantes orthographiques, coquilles et traductions d\'un même concept sont captées ; plus haut → seuls les titres quasi identiques sont signalés. Augmentez cette valeur si le LLM examine des pages aux noms très différents qui ne sont pas réellement des doublons. Laissez vide pour utiliser la valeur par défaut.',
     lintDeadLinkSection: 'Liens cassés (détectés) [{count}]',
     lintEmptyPageSection: 'Pages vides (détectées) [{count}]',
     lintOrphanSection: 'Pages orphelines (détectées) [{count}]',

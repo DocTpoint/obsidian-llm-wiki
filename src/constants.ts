@@ -390,6 +390,65 @@ export const LINT_YIELD_EVERY_COMPARISON = 500;
 /** Batch size for vault reads during lint preparation. */
 export const LINT_PREP_BATCH_READ = 200;
 
+/**
+ * v1.26.0 (#382 item 2): Jaccard-similarity threshold for the "shared
+ * outgoing wiki-links" signal in duplicate-detection. Two pages whose
+ * outgoing `[[wiki-links]]` overlap by `>=` this fraction are flagged as
+ * a `sharedLinks` candidate, subject to the body-similarity gate below.
+ *
+ * Calibrated against cross-vault wikis in `src/wiki/lint/duplicate-detection.ts`.
+ * Lowering to ~0.3 surfaces more link-hub collisions; raising to ~0.5
+ * narrows to true co-link clusters. Exposed in Auto Maintenance settings
+ * (advanced-mode toggle) as `lintJaccardLinkThreshold`; leaving the input
+ * blank = use this constant.
+ */
+export const LINT_DEDUP_JACCARD_LINK_THRESHOLD = 0.4;
+
+/**
+ * v1.26.0 (#382 item 2): body-similarity floor for the shared-links
+ * signal. When two pages share outgoing wiki-links but their body-text
+ * overlap is `<` this fraction, they are NOT flagged as duplicates —
+ * even pages with identical link graphs but unrelated prose should not
+ * be merged (e.g. two unrelated pages both linking only to one popular
+ * hub page).
+ *
+ * Calibrated against cross-vault wikis. Raise this if you see false
+ * positives where two unrelated pages happen to link to the same hub.
+ * Exposed in Auto Maintenance settings (advanced-mode toggle) as
+ * `lintJaccardBodyGate`; leaving the input blank = use this constant.
+ */
+export const LINT_DEDUP_JACCARD_BODY_GATE = 0.2;
+
+/**
+ * v1.26.0 (#382 item 2): character-bigram Jaccard threshold for the
+ * title/alias similarity signal. Title/alias pairs whose bigram set
+ * overlap by `>=` this fraction are flagged as a `bigram` candidate
+ * (catches spelling variants and same-language near-matches).
+ *
+ * Calibrated against cross-vault wikis. Lowering catches more spelling
+ * variants and minor typos; raising requires near-identical titles.
+ * Exposed in Auto Maintenance settings (advanced-mode toggle) as
+ * `lintBigramThreshold`; leaving the input blank = use this constant.
+ */
+export const LINT_DEDUP_BIGRAM_THRESHOLD = 0.4;
+
+/**
+ * v1.26.0 (#382 item 2): bigram-score cutoff that decides whether a
+ * `bigram` candidate is sent to the LLM as a Tier-1 (always verify)
+ * or Tier-2 (fills the remaining token budget). Score `>=` this value
+ * → Tier 1; below → Tier 2.
+ *
+ * INTENTIONALLY NOT EXPOSED as a settings field: the cutoff shapes
+ * which generated candidates the LLM sees, which directly re-shapes
+ * the LLM input distribution in ways that need release-time
+ * verification (the LLM contract was verified against the default).
+ * Bumping it without understanding the budget model would either flood
+ * the LLM (cutoff too low) or silently drop candidates (cutoff too
+ * high). If a per-vault override is needed in the future, expose it
+ * with a stronger justification than "tunability".
+ */
+export const LINT_DEDUP_BIGRAM_TIER1_CUTOFF = 0.6;
+
 // ============================================================================
 // Amazon Bedrock Stage 1 (v1.24.1 PATCH) — bedrock-mantle endpoint
 // ============================================================================

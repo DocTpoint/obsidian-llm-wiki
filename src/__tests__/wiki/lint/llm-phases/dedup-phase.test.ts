@@ -93,6 +93,47 @@ describe('classifyTiers', () => {
     const result = classifyTiers(candidates);
     expect(result.tier1.map(c => c.reason)).toEqual(['first', 'second', 'third']);
   });
+
+  // v1.26.0 (#382 item 2): bigram tier-1 cutoff is now configurable via
+  // an optional second argument. Default behavior is unchanged (constant
+  // value 0.6). These tests exercise the parameter; the legacy single-arg
+  // call sites above continue to pin the default value.
+  it('custom tier-1 cutoff moves the bigram boundary', () => {
+    // With cutoff 0.5, bigram@0.5 is tier 1; with default 0.6 it would be tier 2.
+    const atBoundary = classifyTiers([makeCandidate('bigram', 0.5, 'boundary')], 0.5);
+    expect(atBoundary.tier1).toHaveLength(1);
+    expect(atBoundary.tier2).toHaveLength(0);
+
+    // Without the cutoff override, bigram@0.5 would default to tier 2.
+    const withoutOverride = classifyTiers([makeCandidate('bigram', 0.5, 'defaultBoundary')]);
+    expect(withoutOverride.tier1).toHaveLength(0);
+    expect(withoutOverride.tier2).toHaveLength(1);
+  });
+
+  it('high custom tier-1 cutoff demotes previously-tier-1 bigram candidates', () => {
+    // Bigram@0.8 is tier 1 at the default cutoff 0.6; with cutoff 0.9 it drops to tier 2.
+    const lowered = classifyTiers([makeCandidate('bigram', 0.8, 'demoted')], 0.9);
+    expect(lowered.tier1).toHaveLength(0);
+    expect(lowered.tier2).toHaveLength(1);
+
+    // At the default, the same candidate is still tier 1.
+    const defaultCutoff = classifyTiers([makeCandidate('bigram', 0.8, 'stillTier1')]);
+    expect(defaultCutoff.tier1).toHaveLength(1);
+    expect(defaultCutoff.tier2).toHaveLength(0);
+  });
+
+  it('custom tier-1 cutoff does not affect crossLang / caseVariant / sharedLinks', () => {
+    const candidates: DuplicateCandidate[] = [
+      makeCandidate('crossLang', 0.1, 'cl-low-score'),
+      makeCandidate('caseVariant', 0.1, 'cv-low-score'),
+      makeCandidate('sharedLinks', 0.99, 'sl-high-score'),
+    ];
+    // With cutoff 0.999, only the crossLang and caseVariant should be tier 1;
+    // sharedLinks is unconditionally tier 2.
+    const result = classifyTiers(candidates, 0.999);
+    expect(result.tier1.map(c => c.reason).sort()).toEqual(['cl-low-score', 'cv-low-score']);
+    expect(result.tier2.map(c => c.reason)).toEqual(['sl-high-score']);
+  });
 });
 
 // ── Pure helper: computeVerifyBatch ────────────────────────────
@@ -366,6 +407,59 @@ describe('runDedupPhase — LLM verify path', () => {
     };
     const result = await runDedupPhase(ctx, input, () => {});
     expect(result).toEqual([]);
+  });
+
+  // v1.26.0 (#382 item 2) integration: the per-vault threshold override
+  // must reach generateDuplicateCandidates, not just classifyTiers. Two
+  // pages sharing 1/3 of their link graph (jaccard ≈ 0.333) produce NO
+  // sharedLinks candidate at the default 0.4 threshold, so the wiki looks
+  // clean and the LLM is never called. Lowering the override to 0.2 in
+  // settings must generate the candidate and trigger LLM verify.
+  it('threads lintJaccardLinkThreshold override into candidate generation', async () => {
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({
+      llmClient: () => client,
+      settings: {
+        ...makeLintPhaseContext().settings,
+        lintJaccardLinkThreshold: 0.2,
+      } as LintPhaseContext['settings'],
+    });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/alpha.md', basename: 'alpha.md' },
+        { path: 'wiki/entities/beta.md', basename: 'beta.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/alpha.md', '---\ntype: entity\n---\n# Alpha\nSee [[shared]] and [[alpha-specific]] for details. This is the alpha page body about machine learning pipelines.'],
+        ['wiki/entities/beta.md', '---\ntype: entity\n---\n# Beta\nSee [[shared]] and [[beta-specific]] for details. This is the beta page body about machine learning pipelines.'],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    // sharedLinks candidate (jaccard 0.333 >= 0.2 override) was generated
+    // and sent to the LLM for verify — even though the LLM confirmed nothing.
+    expect(createMessage).toHaveBeenCalled();
+    expect(result).toEqual([]);
+  });
+
+  it('default settings do NOT generate the shared-links candidate at 1/3 overlap', async () => {
+    // Same fixture as above WITHOUT the override: jaccard 0.333 < default
+    // 0.4 → no candidate → LLM never called. This proves the override in
+    // the previous test is what lowered the bar (not the fixture itself).
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/alpha.md', basename: 'alpha.md' },
+        { path: 'wiki/entities/beta.md', basename: 'beta.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/alpha.md', '---\ntype: entity\n---\n# Alpha\nSee [[shared]] and [[alpha-specific]] for details. This is the alpha page body about machine learning pipelines.'],
+        ['wiki/entities/beta.md', '---\ntype: entity\n---\n# Beta\nSee [[shared]] and [[beta-specific]] for details. This is the beta page body about machine learning pipelines.'],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    expect(result).toEqual([]);
+    expect(createMessage).not.toHaveBeenCalled();
   });
 });
 

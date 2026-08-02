@@ -225,6 +225,21 @@ export interface LLMWikiSettings {
   autoSmartFix: boolean;
   autoIngestNotificationLevel: 'modal' | 'notice';
 
+  /**
+   * v1.26.0 (#382 item 2): whether the Advanced Settings panel (bottom of
+   * the Settings tab) reveals its advanced-user parameters. Currently that
+   * is the 3 lint dedup thresholds (lintJaccardLinkThreshold /
+   * lintJaccardBodyGate / lintBigramThreshold) + the first-run Welcome
+   * note toggle; future advanced-user settings land here too.
+   *
+   * Independent of `advancedSettingsMode` in the Advanced section — that
+   * gates LLM sampling parameters (temperature / penalty / thinking);
+   * this gates generic non-LLM advanced knobs. Closing the toggle clears
+   * the threshold overrides so a hidden setting never keeps a
+   * no-UI-affordance value.
+   */
+  showAdvancedSettings?: boolean;
+
   // v1.23.0: Phase 5.1.5 — first-run Welcome note. When enabled (default),
   // the plugin detects tier on every onload (no vault state change =
   // short-circuit) and creates <wikiFolder>/Welcome.md on Tier B transitions.
@@ -347,6 +362,32 @@ export interface LLMWikiSettings {
   // Some local models (llama.cpp-based) benefit from a small penalty (e.g. 1.1)
   // to avoid repetition loops at low temperatures.
   repetitionPenalty?: number;
+
+  /**
+   * v1.26.0 (#382 item 2): Jaccard threshold for the shared-outgoing-
+   * wiki-links signal in lint duplicate-detection (0..1). Leave undefined
+   * to use the `LINT_DEDUP_JACCARD_LINK_THRESHOLD` constant in
+   * src/constants.ts. Lower = more link-overlap candidates flagged;
+   * raise to reduce false positives in hub-heavy vaults.
+   */
+  lintJaccardLinkThreshold?: number;
+
+  /**
+   * v1.26.0 (#382 item 2): body-similarity floor (0..1) below which two
+   * pages with shared wiki-links are still NOT flagged as duplicates.
+   * Leave undefined to use `LINT_DEDUP_JACCARD_BODY_GATE`. Raise if you
+   * see false positives where two unrelated pages happen to link to the
+   * same hub.
+   */
+  lintJaccardBodyGate?: number;
+
+  /**
+   * v1.26.0 (#382 item 2): character-bigram Jaccard threshold for
+   * title/alias similarity in lint duplicate-detection (0..1). Leave
+   * undefined to use `LINT_DEDUP_BIGRAM_THRESHOLD`. Lower = catch more
+   * spelling variants; raise to require near-identical titles.
+   */
+  lintBigramThreshold?: number;
 
   // Issue #75: cap max_tokens per LLM call. 0 = no cap.
   // Recommended for local models with small context windows.
@@ -953,6 +994,11 @@ export const DEFAULT_SETTINGS: LLMWikiSettings = {
   startupCheckNoticeLevel: 'visible',  // v1.23.0: show QuickFixes results Notice by default
   autoSmartFix: false,
   autoIngestNotificationLevel: 'notice',  // v1.22.2: default to Notice (no blocking Modal) for auto-ingest
+  // v1.26.0 (#382 item 2): default OFF — the Advanced Settings panel
+  // (bottom of the Settings tab) hides its advanced-user parameters until
+  // the showAdvancedSettings toggle is on. Independent of advancedSettingsMode
+  // (LLM sampling in the Advanced section).
+  showAdvancedSettings: false,
   createWelcomeNote: true,  // v1.23.0: Phase 5.1.5 — Tier-B first-run Welcome note (D8: 1 EN template + LLM dynamic translation)
 
   // Ingestion acceleration (default: 3 parallel for most providers)
@@ -985,6 +1031,17 @@ export const DEFAULT_SETTINGS: LLMWikiSettings = {
   // PDF conversion.
   forcePdfSupport: false,
   writePdfMarkdownToVault: false,
+  // v1.26.0 (#382 item 2): dedup threshold overrides — undefined = use the
+  // LINT_DEDUP_* constants in src/constants.ts. The UI renders them only
+  // when showAdvancedSettings is on (Advanced Settings panel, bottom of the
+  // Settings tab) and clears them when that toggle flips back off; at
+  // consumption the dedup-phase reads them unconditionally (like
+  // extractionTemperature/chatTemperature — the codebase does not gate
+  // advanced fields at use sites). JSON.stringify drops undefined keys,
+  // so first-install data.json does not contain these keys.
+  lintJaccardLinkThreshold: undefined,
+  lintJaccardBodyGate: undefined,
+  lintBigramThreshold: undefined,
   // Issue #111: default to 'lower' for backwards compatibility.
   slugCase: 'lower',
   // v1.24.0 #251: persistent user-supplied instructions appended to the
