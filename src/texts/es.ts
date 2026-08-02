@@ -549,7 +549,7 @@ export const ES_TEXTS = {
     lintDedupJaccardLinkThresholdName: 'Umbral de duplicados por enlaces compartidos',
     lintDedupJaccardLinkThresholdDesc: 'Cuánto deben compartir dos páginas sus enlaces wiki salientes para marcarse como duplicadas. Los valores más bajos detectan más casi-duplicados que enlazan a las mismas páginas centrales; los valores más altos exigen grafos de enlaces casi idénticos. Déjalo en blanco para usar el valor por defecto.',
     lintDedupJaccardBodyGateName: 'Límite de similitud del cuerpo',
-    lintDedupJaccardBodyGateDesc: 'Cuando dos páginas comparten enlaces wiki pero sus textos difieren más de esta cantidad, no se marcan como duplicadas. Sube este valor si ves falsos positivos en los que dos páginas no relacionadas enlazan al mismo centro. Déjalo en blanco para usar el valor por defecto.',
+    lintDedupJaccardBodyGateDesc: 'Cuán similares deben ser los textos de dos páginas (como fracción) para marcarse como duplicadas cuando comparten enlaces wiki. Las páginas cuya similitud de cuerpo es inferior a este valor no se marcan como duplicadas, incluso con grafos de enlaces idénticos. Sube este valor si ves falsos positivos en los que dos páginas no relacionadas enlazan al mismo centro. Déjalo en blanco para usar el valor por defecto.',
     lintDedupBigramThresholdName: 'Umbral de similitud de título/alias',
     lintDedupBigramThresholdDesc: 'Cuánto deben coincidir dos títulos o alias de página (Jaccard de bigramas) para marcarse como duplicados. Los valores más bajos detectan variantes ortográficas y erratas menores; los valores más altos exigen títulos casi idénticos. Déjalo en blanco para usar el valor por defecto.',
     lintDeadLinkSection: 'Enlaces rotos (detectados) [{count}]',

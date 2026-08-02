@@ -535,7 +535,7 @@ export const ZH_TEXTS = {
     lintDedupJaccardLinkThresholdName: '共享链接重复阈值',
     lintDedupJaccardLinkThresholdDesc: '两个页面需共享多少出站 wiki 链接才会被标记为重复。数值越低越能捕捉链接到同一中心页面的近似重复；数值越高则要求链接图几乎完全相同。留空使用默认值。',
     lintDedupJaccardBodyGateName: '正文相似度下限',
-    lintDedupJaccardBodyGateDesc: '当两个页面共享 wiki 链接但正文差异超过此数值时，不会标记为重复。若看到两个不相关页面恰好链接到同一中心页的误报，可调高此值。留空使用默认值。',
+    lintDedupJaccardBodyGateDesc: '当两个页面共享 wiki 链接时，其正文相似度（按比例）需达到多少才会被标记为重复。正文相似度低于此数值的页面不会标记为重复，即使链接图完全相同。若看到两个不相关页面恰好链接到同一中心页的误报，可调高此值。留空使用默认值。',
     lintDedupBigramThresholdName: '标题/别名相似度阈值',
     lintDedupBigramThresholdDesc: '两个页面标题或别名需匹配到何种程度（字符二元组 Jaccard）才会被标记为重复。数值越低越能捕捉拼写变体和轻微笔误；数值越高则要求标题几乎完全相同。留空使用默认值。',
     lintDeadLinkSection: '断链（程序检测）[共 {count} 个]',

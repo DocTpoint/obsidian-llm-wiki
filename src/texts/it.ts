@@ -559,7 +559,7 @@ export const IT_TEXTS = {
     lintDedupJaccardLinkThresholdName: 'Soglia duplicati per link condivisi',
     lintDedupJaccardLinkThresholdDesc: 'Quanto due pagine devono condividere i link wiki in uscita per essere contrassegnate come duplicati. Valori più bassi rilevano più quasi-duplicati che puntano alle stesse pagine hub; valori più alti richiedono grafi di link quasi identici. Lascia vuoto per usare il valore predefinito.',
     lintDedupJaccardBodyGateName: 'Limite di similarità del corpo',
-    lintDedupJaccardBodyGateDesc: 'Quando due pagine condividono link wiki ma i loro testi differiscono oltre questo valore, non vengono contrassegnate come duplicati. Alza questo valore se vedi falsi positivi in cui due pagine non correlate puntano allo stesso hub. Lascia vuoto per usare il valore predefinito.',
+    lintDedupJaccardBodyGateDesc: 'Quanto devono essere simili i testi di due pagine (come frazione) per essere contrassegnate come duplicati quando condividono link wiki. Le pagine la cui similarità del corpo è inferiore a questo valore non vengono contrassegnate come duplicati, anche con grafi di link identici. Alza questo valore se vedi falsi positivi in cui due pagine non correlate puntano allo stesso hub. Lascia vuoto per usare il valore predefinito.',
     lintDedupBigramThresholdName: 'Soglia di similarità titolo/alias',
     lintDedupBigramThresholdDesc: 'Quanto devono corrispondere due titoli o alias di pagina (Jaccard di bigrammi) per essere contrassegnati come duplicati. Valori più bassi rilevano varianti ortografiche e refusi minori; valori più alti richiedono titoli quasi identici. Lascia vuoto per usare il valore predefinito.',
     lintDeadLinkSection: 'Collegamenti interrotti (rilevati) [{count}]',

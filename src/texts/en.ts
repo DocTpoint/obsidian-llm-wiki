@@ -560,7 +560,7 @@ export const EN_TEXTS = {
     lintDedupJaccardLinkThresholdName: 'Shared-link duplicate threshold',
     lintDedupJaccardLinkThresholdDesc: 'How strongly two pages must share outgoing wiki-links to be flagged as duplicates. Lower values catch more near-duplicates that link to the same hub pages; higher values require near-identical link graphs. Leave blank for the default.',
     lintDedupJaccardBodyGateName: 'Body-similarity floor',
-    lintDedupJaccardBodyGateDesc: 'When two pages share wiki-links but their body text differs by more than this amount, they are not flagged as duplicates. Raise this if you see false positives where two unrelated pages happen to link to the same hub. Leave blank for the default.',
+    lintDedupJaccardBodyGateDesc: 'How similar two pages\' body text must be (as a fraction) for them to be flagged as duplicates when their wiki-links overlap. Pages whose body similarity is below this amount are not flagged, even if they share the same link graph. Raise this if you see false positives where two unrelated pages happen to link to the same hub. Leave blank for the default.',
     lintDedupBigramThresholdName: 'Title/alias similarity threshold',
     lintDedupBigramThresholdDesc: 'How closely two page titles or aliases must match (character-bigram Jaccard) to be flagged as duplicates. Lower values catch spelling variants and minor typos; higher values require near-identical titles. Leave blank for the default.',
     lintDeadLinkSection: 'Dead links (detected) [{count}]',

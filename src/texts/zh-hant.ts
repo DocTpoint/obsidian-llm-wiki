@@ -527,7 +527,7 @@ export const ZH_HANT_TEXTS = {
     lintDedupJaccardLinkThresholdName: '共用連結重複閾值',
     lintDedupJaccardLinkThresholdDesc: '兩個頁面需共用多少出站 wiki 連結才會被標記為重複。數值越低越能捕捉連結到同一中心頁面的近似重複；數值越高則要求連結圖幾乎完全相同。留空使用預設值。',
     lintDedupJaccardBodyGateName: '內文相似度下限',
-    lintDedupJaccardBodyGateDesc: '當兩個頁面共用 wiki 連結但內文差異超過此數值時，不會標記為重複。若看到兩個不相關頁面恰好連結到同一中心頁的誤報，可調高此值。留空使用預設值。',
+    lintDedupJaccardBodyGateDesc: '當兩個頁面共用 wiki 連結時，其內文相似度（依比例）需達到多少才會被標記為重複。內文相似度低於此數值的頁面不會標記為重複，即使連結圖完全相同。若看到兩個不相關頁面恰好連結到同一中心頁的誤報，可調高此值。留空使用預設值。',
     lintDedupBigramThresholdName: '標題/別名相似度閾值',
     lintDedupBigramThresholdDesc: '兩個頁面標題或別名需匹配到何種程度（字元二元組 Jaccard）才會被標記為重複。數值越低越能捕捉拼字變體和輕微筆誤；數值越高則要求標題幾乎完全相同。留空使用預設值。',
     lintDeadLinkSection: '斷鏈（程式檢測）[共 {count} 個]',

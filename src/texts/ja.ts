@@ -528,7 +528,7 @@ export const JA_TEXTS = {
     lintDedupJaccardLinkThresholdName: '共有リンク重複しきい値',
     lintDedupJaccardLinkThresholdDesc: '2つのページが重複と判定されるために、どれだけアウトバウンドの wiki リンクを共有する必要があるかを指定します。値を下げると、同じハブページにリンクする近似重複をより多く検出します。値を上げると、ほぼ同一のリンクグラフが必要になります。空欄でデフォルトを使用します。',
     lintDedupJaccardBodyGateName: '本文類似度の下限',
-    lintDedupJaccardBodyGateDesc: '2つのページが wiki リンクを共有していても、本文の差分がこの値を超える場合は重複として判定しません。無関係なページが同じハブにリンクする誤検出が見られる場合は、この値を上げてください。空欄でデフォルトを使用します。',
+    lintDedupJaccardBodyGateDesc: '2つのページが wiki リンクを共有するとき、重複と判定されるために本文の類似度（割合）がどれだけ必要かを指定します。本文の類似度がこの値を下回るページは、リンクグラフが同一でも重複として判定しません。無関係なページが同じハブにリンクする誤検出が見られる場合は、この値を上げてください。空欄でデフォルトを使用します。',
     lintDedupBigramThresholdName: 'タイトル/エイリアス類似度しきい値',
     lintDedupBigramThresholdDesc: '2つのページタイトルまたはエイリアスが、重複と判定されるためにどれだけ一致する必要があるかを指定します（文字バイグラム Jaccard）。値を下げると、表記揺れや軽微なタイポを検出します。値を上げると、ほぼ同一のタイトルが必要になります。空欄でデフォルトを使用します。',
     lintDeadLinkSection: 'デッドリンク（検出）[{count} 件]',

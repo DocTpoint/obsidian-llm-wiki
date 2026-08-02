@@ -552,7 +552,7 @@ export const KO_TEXTS = {
     lintDedupJaccardLinkThresholdName: '공유 링크 중복 임계값',
     lintDedupJaccardLinkThresholdDesc: '두 페이지가 중복으로 표시되기 위해 아웃바운드 wiki 링크를 얼마나 공유해야 하는지 지정합니다. 값을 낮추면 같은 허브 페이지를 링크하는 근사 중복을 더 많이 포착합니다. 값을 높이면 거의 동일한 링크 그래프가 필요합니다. 비워 두면 기본값을 사용합니다.',
     lintDedupJaccardBodyGateName: '본문 유사도 하한',
-    lintDedupJaccardBodyGateDesc: '두 페이지가 wiki 링크를 공유해도 본문 차이가 이 값을 초과하면 중복으로 표시하지 않습니다. 관련 없는 두 페이지가 우연히 같은 허브를 링크하는 오탐이 보이면 이 값을 높이세요. 비워 두면 기본값을 사용합니다.',
+    lintDedupJaccardBodyGateDesc: '두 페이지가 wiki 링크를 공유할 때 중복으로 표시되기 위해 본문 유사도(비율)가 얼마나 필요한지 지정합니다. 본문 유사도가 이 값보다 낮은 페이지는 링크 그래프가 같아도 중복으로 표시하지 않습니다. 관련 없는 두 페이지가 같은 허브를 링크하는 오탐이 보이면 이 값을 높이세요. 비워 두면 기본값을 사용합니다.',
     lintDedupBigramThresholdName: '제목/별칭 유사도 임계값',
     lintDedupBigramThresholdDesc: '두 페이지 제목 또는 별칭이 중복으로 표시되기 위해 얼마나 일치해야 하는지 지정합니다 (문자 바이그램 Jaccard). 값을 낮추면 철자 변형과 사소한 오타를 포착합니다. 값을 높이면 거의 동일한 제목이 필요합니다. 비워 두면 기본값을 사용합니다.',
     lintDeadLinkSection: '데드 링크 (감지됨) [{count}개]',
