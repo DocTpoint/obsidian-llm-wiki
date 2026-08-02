@@ -2,13 +2,33 @@
 
 > Feature planning and improvement proposals
 
-**Version:** 1.25.11 PATCH (RELEASED, last tagged). v1.26.0 MINOR MERGED to main on 2026-08-02 (awaiting release notes + tag). | **Updated:** 2026-08-02
+**Version:** v1.26.0 MINOR — re-scoped on main @ `a253078` (2026-08-02), release deferred. v1.25.11 PATCH RELEASED. | **Updated:** 2026-08-02
 
 ## Current Status
 
-**v1.26.0 — MERGED to main on 2026-08-02 (awaiting release notes + tag).** MINOR release anchored at [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358) (complementary memory model). User-visible surface: the headless ingest CLI (`pnpm llm-wiki ingest`, bin `llm-wiki` in npm) — originally planned as a v1.25.12 PATCH but reclassified as MINOR on review since the CLI is a brand-new user-visible tool with a fresh flag surface. Plus the #383 folder-boundary follow-up (identity-check regression + unanchored configDir leak + shell-test rewrites). Plus PR #357 (DocTpoint source-lemma deterministic merge) — first item of the v1.26.0 design scope.
+**v1.26.0 — RE-SCOPED on 2026-08-02; release deferred pending P0+P1 hardening work.** User decision (2026-08-02): "不立即发版，需要再把高优先级的P0+P1纳入开发后，再发布1.26.0". Main @ `a253078` already contains the v1.26.0 user-visible surface (headless CLI `pnpm llm-wiki` + DocTpoint #357 source-lemma + DocTpoint #386 vault-wide link retarget + DocTpoint #388 `created:` provenance + #383 folder-boundary follow-up + PR #395 lint dedup thresholds) plus the re-scope means the following P0+P1 work must ship before tagging v1.26.0:
 
-*Composition (10 commits on `main` since v1.25.11 PATCH, oldest → newest)*:
+**v1.26.0 P0+P1 final scope** (in execution order; user-revised 2026-08-02 — #317 and #326 deferred to v1.27.0+):
+
+| Bucket | Item | Issue | Type | Effort |
+|---|---|---|---|---|
+| Batch 1 | Streaming/bucketed dedup refactor (precondition for cross-type dedup) | #382 item 3 | P1 (prerequisite) | 1 week |
+| Batch 2 | Cross-type dedup candidate set expansion | #382 item 1 | P0 | 1.5-2 weeks |
+| Batch 3 | P1-1/P1-2 wire-or-delete decision (delete recommended, see #382 item 4) | #382 item 4 | P1 | 0.2 week |
+| Batch 4 | dead-code-as-docs policy (CLAUDE.md + pre-release-gate check) | #382 item 5 | P1 (governance) | 0.3 week |
+| Batch 5 | Settings-owned enum-as-section-value (CVSS-style controlled vocab) | #358 item 8 / #328 §2 | design | 0.5 week |
+
+**Estimated total: ~3.5-4 weeks of focused work before v1.26.0 MINOR ships.**
+
+**Deferred to v1.27.0+ (per user decision 2026-08-02)**:
+
+| Issue | Title | Lands in |
+|---|---|---|
+| #317 | Schema.md changes ignored | v1.27.0 (with Phase 2 per-type registration) |
+| #326 | Defer to canonical pages outside wikiFolder | v1.27.0 (with #358 item 3 bidirectional frontmatter) |
+
+**Composition already on main** (10 commits since v1.25.11 PATCH):
+
 - `7825325` chore(tools): expose `llm-wiki` CLI via bin, scripts.ingest, and executable bit (PR #387)
 - `c905ffd` Merge pull request #387 from `feat/cli-ux-v1.25.12`
 - `8cef09b` docs: sync v1.25.12 CLI test count and scope after pre-merge review
@@ -24,12 +44,111 @@
 - `3892916` refactor(auto-maintain): extract Phase 2 to module function, match Phase 3 shape
 - `b8b4d80` test(folder-scope-sites): rewrite 3 shell tests as real production-function coverage
 - `f098886` Merge pull request #389 from `fix/v1.26.0-wiki-folder-followup`
+- `1893b6e` refactor(constants): extract LINT_DEDUP_* threshold constants
+- `7048386` refactor(lint): thread threshold options through generateDuplicateCandidates + classifyTiers
+- `dd52e8e` feat(types): add lintJaccardLinkThreshold / lintJaccardBodyGate / lintBigramThreshold to Settings
+- `3e1b7da` feat(lint): thread settings overrides into dedup-phase caller
+- `84b3552` feat(ui): render 3 dedup threshold inputs in Advanced (custom mode) + i18n in 10 locales
+- `d9f3e9b` refactor(lint): collapse threshold defaulting into DEFAULT_DEDUP_THRESHOLDS + clamp to [0,1]
+- `12c55df` fix(i18n): correct semantically inverted body-gate description in all 10 locales
+- `7ad991a` refactor(ui): merge dedup threshold helper into renderNumberInput + integration test
+- `81d75fc` refactor(ui): create bottom "Advanced settings" panel + relocate power-user knobs out of daily-driver sections
+- `3110e98` Merge pull request #395 from `feat/v1.26.0-lint-thresholds`
+- `62701c9` fix(merge): retarget links vault-wide and in every form before the delete (PR #392, DocTpoint, Closes #386)
+- `cd734b9` fix(frontmatter): take created: from the caller, never from the content (DocTpoint, Closes #388)
+- `a253078` Merge pull request #396 from `green-dalii/fix/388-created-provenance` (DocTpoint's commit via rebase; see ROADMAP §Process note)
 
-*Stats*: 11 files changed, +481 / −143, **2863 tests passing** (213 files), +119 net since v1.25.11 PATCH (57 from CLI parser + 62 from #383 follow-up including the folder-scope centralisation).
+*Stats*: 2863 tests / 213 files at PR #395 merge → **2895 tests / 215 files** after DocTpoint PR #392 + PR #396 (note: PR #396 closed but the underlying fix commit `cd734b9` is on main, contribution attributed via issue #388 and #393 design thread).
 
 *Why MINOR not PATCH*: the CLI ships as a fresh user-visible tool (`pnpm llm-wiki` script, npm bin, subcommand dispatch, complete flag surface) — that is the canonical SemVer trigger for MINOR, not PATCH. The planned `v1.25.12` slot stays unused; the patch slot is not retroactively filled. Version numbers need not be consecutive.
 
-*Composition (8 commits, oldest → newest)*:
+*Process note (2026-08-02)*: PR #396 was created as the rebased vehicle for DocTpoint's PR #393 to land on main after PR #392 (which #393 depended on). Maintainer-handled rebase + `gh pr update-branch --rebase` would have kept DocTpoint's PR #393 open for the merge credit; lesson recorded to memory. DocTpoint acknowledged + apologized on PR #393. Going forward: `gh pr update-branch --rebase` for any contributor PR that needs a base-branch bump.
+
+## Process discipline (LOCKED for v1.26.0 P0+P1 work)
+
+Per `[[feedback_pr_merge_workflow]]` and `[[feedback_pr_merge_credit_preservation]]`:
+
+- Every follow-on PR goes through `simplify` (4 angles) + `code-review` (max effort 8 angles, via parallel subagents since the skill is disabled in this environment) BEFORE push
+- Findings are reported to user, not auto-fixed; user approves
+- User explicit "merge it" required before any `gh pr merge`
+- For contributor PRs that need rebase after a base-branch move, use `gh pr update-branch --rebase` — NEVER locally fork + push + create a new PR
+- Independent commits (no amend), per CLAUDE.md Git Workflow
+
+## v1.26.0 release flow (after Batches 1-7 ship)
+
+1. Run `obsidian-plugin-release` skill Step 1 (Gate 1) on `main`
+2. Step 2 (Six-Gate evaluation)
+3. Step 3 (version bump + 10 README + CHANGELOG + ROADMAP + CLAUDE + CONTRIBUTING + memory)
+4. Step 4 (pre-release-gate + doc-review, parallel)
+5. Step 5 (commit + push + tag)
+6. Step 6 (release notes + publish)
+7. Step 7 (post-release — close Issues #317, #326, #382 partial, #358 partial, etc.)
+
+## After v1.26.0: v1.27.0 MINOR design track
+
+Items NOT in v1.26.0 P0+P1 scope but in #358 design orbit (target v1.27.0 MINOR):
+
+| Item | Issue | Note |
+|---|---|---|
+| Per-type registration via Settings（#328 Phase 2） | #358 item 1 | 强耦合 cross-type dedup；v1.26.0 完成 D 后即可 kickoff |
+| User-extensible typed edges（frontmatter `relations:`） | #358 item 2 / #285 | 社区等待 |
+| Bidirectional frontmatter（`derived_from` + `wiki_pages`） | #358 item 3 / #220 | source-revision awareness 是基础 |
+| Identity ambiguity record | #358 item 4 / #330 §7 | 核心 invariant |
+| Preview-Confirm gate | #358 item 6 / #330 §2 | 用户体验成本评估待讨论 |
+| Stable mutation interface | #358 item 7 / #330 §8 | 外部 LLM-wiki CLI 兄弟项目前置 |
+
+## v1.27.0+ research track (NOT committed)
+
+- Computable schema (`rules.ts`) — depends on typed edges
+- Query profile selector (4 modes) — depends on rules.ts
+- Periodic consolidation pass — depends on ambiguity records accumulating
+- External LLM-wiki CLI (sibling project) — depends on stable mutation interface
+- Multi-vault isolation (#142) — long-term
+- Explicit event type (#112) — long-term
+- Scheduled ingest (#295) — conflicts with v1.26.0 external orchestration philosophy
+- Obsidian Bases for index (#184) — post-PPR integration
+- Slug-list prompt-share (#306) — DocTpoint self-corrected hypothesis (Pearson r = +0.008), pure perf savings, no quality fix needed
+- Lint details in user README — partial completion via Advanced settings UI; full section TBD
+- OS-async observation window policy — formalize SecretStorage 5-version stabilization pattern
+
+## Milestone structure (2026-08-02 re-audit)
+
+**Milestone 7 (v1.26.0 MINOR)** open issues after re-scope:
+
+| Issue | Title | Lands in |
+|---|---|---|
+| #382 | v1.26.0 hardening | Batches 1-4 |
+| #358 | design anchor | tracked in release notes |
+| #330 | schema can't fix ingest path | design input for Batches 1-2 |
+| #328 | schema three-layer split | Phase 1 done; Phase 2 = v1.27.0 |
+| #285 | OKF Bundle export | v1.27.0 (#358 item 2) |
+| #220 | source-revision awareness | v1.27.0 (#358 item 3) |
+| #358 item 8 | enum-as-section-value | Batch 5 |
+
+**Moved OUT** to milestone 13 (v1.27.0+ research / future MINOR):
+
+| Issue | Title | Target |
+|---|---|---|
+| #306 | compact slug list dominates prompt 77% | v1.27.0+ research (DocTpoint self-corrected, r=0.008) |
+| #295 | scheduled ingest | v1.27.0+ research (conflicts with external orchestration philosophy) |
+| #184 | Obsidian Bases for wiki index | v1.27.0+ research (post-PPR integration) |
+| #317 | schema.md changes ignored | v1.27.0 (with Phase 2 per-type registration, user decision 2026-08-02) |
+| #326 | defer to canonical pages outside wikiFolder | v1.27.0 (with #358 item 3 bidirectional frontmatter, user decision 2026-08-02) |
+
+**Memory correction (2026-08-02)**: `project_v1_26_0_follow_on_compact_prep.md` claimed "two pre-existing #383-shape bugs filed separately (FileSuggestModal `wiki.md` leak + trailing slash on wikiFolder)". This was WRONG — neither bug has an open issue, neither was filed separately. PR #389 (which closed #383) addressed all `isAtOrInFolderScope`-related bugs in the codebase. These two phantom bugs are NOT in v1.26.0 scope. Lesson: verify memory against actual `gh issue list` output before treating compact-prep as authoritative.
+
+## Out of scope (explicit, v1.26.0)
+
+- ❌ Embedding / vector store / RAG retrieval — see [[feedback_no_rag_embedding_perf]]
+- ❌ Plugin → agent framework refactor (we expose interfaces, not an agent runtime)
+- ❌ Multi-vault isolation (cost > observed benefit)
+- ❌ Plugin-internal scheduler for consolidation (external orchestration is the right home)
+
+## i18n expansion
+
+Add `ru` (Русский) to `WIKI_LANGUAGES` + `src/texts/ru.ts` + `docs/README_RU.md` + 11-way language switcher across all READMEs. Driven by recent RU user growth + @eucher's 3 ingest/LLM PRs (RU speaker). No new functionality beyond text strings + 11-locale parity test update. — *(status: still pending; revisit at v1.26.0 release prep or as a follow-up PATCH.)*
+
+## Next: v1.25.10 PATCH follow-ups (post-publish, before v1.26.0 kickoff)
 - `9289bdd` fix(page-factory): stamp sources: provenance on freshly generated pages (Closes #365 partial)
 - `7588034` docs(readme): rewrite relative cross-file links as absolute https://github.com URLs (Closes #375)
 - `98f180c` feat(status): fine-grained stage labels in status bar (Closes #169)
