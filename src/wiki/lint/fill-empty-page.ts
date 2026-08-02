@@ -6,7 +6,7 @@ import {
   applySectionLabels,
   getGranularityFixLimits,
 } from '../system-prompts';
-import { enforceFrontmatterConstraints } from '../../core/frontmatter';
+import { enforceFrontmatterConstraints, parseFrontmatter } from '../../core/frontmatter';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { resolveModelForTask } from '../../core/model-resolver';
 import {
@@ -93,7 +93,12 @@ export async function fillEmptyPage(
   const dateStr = new Date().toISOString().split('T')[0];
   const withDates = normalizeFrontmatterDates(stubFree, dateStr);
   const pageTypeSingular = pageType === WIKI_SUBFOLDERS.entities ? 'entity' : pageType === WIKI_SUBFOLDERS.concepts ? 'concept' : 'source';
-  const enforced = enforceFrontmatterConstraints(withDates, pageTypeSingular, ctx.settings);
+  // Issue #388: the page being filled already exists, so its real creation date
+  // is on disk. `withDates` is the model's reply and its `created:` line, if it
+  // wrote one, is a transcription at best.
+  const enforced = enforceFrontmatterConstraints(withDates, pageTypeSingular, ctx.settings, {
+    preserveCreated: parseFrontmatter(content)?.created,
+  });
 
   await ctx.createOrUpdateFile(pagePath, enforced);
 

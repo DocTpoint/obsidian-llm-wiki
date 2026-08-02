@@ -235,11 +235,16 @@ describe('enforceFrontmatterConstraints', () => {
     expect(result).not.toContain('tags: [other]');
   });
 
-  it('preserves created but forces updated to today', () => {
-    const input = '---\ntype: entity\ncreated: 2026-01-01\nupdated: 2026-05-18\n---\n\nBody';
-    const result = enforceFrontmatterConstraints(input, 'entity');
+  it('preserves the caller-supplied created but forces updated to today', () => {
+    // Issue #388: the prior value arrives as an argument. The `created:` line
+    // in the content is the model's, and is not what gets written.
+    const input = '---\ntype: entity\ncreated: 2024-11-03\nupdated: 2026-05-18\n---\n\nBody';
+    const result = enforceFrontmatterConstraints(input, 'entity', undefined, {
+      preserveCreated: '2026-01-01',
+    });
     const today = new Date().toISOString().split('T')[0];
     expect(result).toContain('created: 2026-01-01');
+    expect(result).not.toContain('created: 2024-11-03');
     expect(result).toContain(`updated: ${today}`);
     expect(result).not.toContain('updated: 2026-05-18');
   });
@@ -282,9 +287,11 @@ describe('enforceFrontmatterConstraints', () => {
     expect(result).not.toContain('tags: [other]');
   });
 
-  it('preserves existing created but forces updated to today', () => {
-    const input = '---\ntype: entity\ncreated: 2025-03-20\nupdated: 2024-12-01\n---\n\nBody';
-    const result = enforceFrontmatterConstraints(input, 'entity');
+  it('preserves the caller-supplied created on a page that already has one', () => {
+    const input = '---\ntype: entity\ncreated: 2024-12-01\nupdated: 2024-12-01\n---\n\nBody';
+    const result = enforceFrontmatterConstraints(input, 'entity', undefined, {
+      preserveCreated: '2025-03-20',
+    });
     const today = new Date().toISOString().split('T')[0];
     expect(result).toContain('created: 2025-03-20');
     expect(result).toContain(`updated: ${today}`);
@@ -297,6 +304,48 @@ describe('enforceFrontmatterConstraints', () => {
     const today = new Date().toISOString().split('T')[0];
     expect(result).toContain(`created: ${today}`);
     expect(result).toContain(`updated: ${today}`);
+  });
+
+  // ── Issue #388: `created:` provenance ────────────────────────────
+
+  it('ignores a created date the caller did not supply', () => {
+    // The generation paths hand this function the model's own reply. Without a
+    // prior file there is nothing to preserve, and a date found in that reply
+    // is invented by construction.
+    const input = '---\ntype: entity\ncreated: 2024-11-03\n---\n\nBody';
+    const result = enforceFrontmatterConstraints(input, 'entity');
+    const today = new Date().toISOString().split('T')[0];
+    expect(result).toContain(`created: ${today}`);
+    expect(result).not.toContain('2024-11-03');
+  });
+
+  it('ignores a caller value that is not an ISO date', () => {
+    const input = '---\ntype: entity\n---\n\nBody';
+    const today = new Date().toISOString().split('T')[0];
+    for (const bogus of ['gestern', '2025-13-99x', '', '   ']) {
+      const result = enforceFrontmatterConstraints(input, 'entity', undefined, {
+        preserveCreated: bogus,
+      });
+      expect(result).toContain(`created: ${today}`);
+    }
+  });
+
+  it('reviewed-guard: keeps the caller-supplied created instead of stamping today', () => {
+    // The reviewed branch returns early and previously forced `created` to
+    // today unconditionally, so a reviewed page lost its real creation date on
+    // every pass. With the value supplied it survives; without one the branch
+    // behaves as before.
+    const input = '---\ntype: entity\nreviewed: true\ncreated: 2024-11-03\nupdated: 2020-01-01\n---\n\nBody';
+    const today = new Date().toISOString().split('T')[0];
+
+    const withValue = enforceFrontmatterConstraints(input, 'entity', undefined, {
+      preserveCreated: '2026-01-05',
+    });
+    expect(withValue).toContain('created: 2026-01-05');
+    expect(withValue).toContain(`updated: ${today}`);
+
+    const withoutValue = enforceFrontmatterConstraints(input, 'entity');
+    expect(withoutValue).toContain(`created: ${today}`);
   });
 });
 
