@@ -5,7 +5,7 @@ import { App, TAbstractFile, TFile, Notice, Plugin } from 'obsidian';
 import { LLMWikiSettings } from '../types';
 import { WikiEngine } from '../wiki/wiki-engine';
 import { TEXTS } from '../texts';
-import { fixPollutedSources, scanPollutedSources } from '../core/sources-normalizer';
+import { normalizeSourcesInFolder } from '../core/sources-normalizer';
 import { findIncompletePages, cleanIncompletePages } from '../core/incomplete-page-cleaner';
 import { needsLogHeaderMigration, migrateLogHeader } from '../core/log-header';
 import { ensureWelcomeNote, type EnsureResult, type VaultAdapter } from '../core/ensure-welcome-note';
@@ -14,7 +14,6 @@ import { resolveModelForTask } from '../core/model-resolver';
 import { isLocalNoKeyProvider } from '../core/local-no-key-provider';
 import { resolveProviderApiKey } from '../llm-sdk/provider-api-key-resolver';
 import type { LLMClient } from '../types';
-import { isInFolderScope } from '../core/folder-scope';
 
 export class AutoMaintainManager {
   private app: App;
@@ -399,35 +398,11 @@ export class AutoMaintainManager {
 
     // ---- Phase 2: Sources field normalize (Issue #81) ----
     // Scans only files in wikiFolder, only writes files that need fixing.
-    let sourcesFilesCleaned = 0;
-    let sourcesEntriesCleaned = 0;
-    let sourcesFilesScanned = 0;
-    let sourcesFilesPolluted = 0;
-    try {
-      const wikiFiles = this.app.vault.getMarkdownFiles()
-        .filter(f => isInFolderScope(f.path, wikiFolder, false));
-      console.debug(`[QuickFixes] Phase 2: scanning ${wikiFiles.length} files in "${wikiFolder}"`);
-      const sourcesPreserveCase = this.settings.slugCase === 'preserve';
-      for (const file of wikiFiles) {
-        sourcesFilesScanned += 1;
-        const content = await this.app.vault.read(file);
-        if (!scanPollutedSources(content, wikiFolder, sourcesPreserveCase)) continue;
-        sourcesFilesPolluted += 1;
-        console.debug(`[QuickFixes] Polluted sources detected in ${file.path}`);
-        const { fixed, content: fixedContent } = fixPollutedSources(content, wikiFolder, sourcesPreserveCase);
-        if (fixed > 0) {
-          await this.app.vault.process(file, () => fixedContent);
-          sourcesFilesCleaned += 1;
-          sourcesEntriesCleaned += fixed;
-          console.debug(`[QuickFixes] Fixed ${file.path} (${fixed} entry normalization)`);
-        } else {
-          console.debug(`[QuickFixes] Scan reported polluted but fix returned 0 for ${file.path} — possible bug`);
-        }
-      }
-      console.debug(`[QuickFixes] Phase 2 complete: ${sourcesFilesScanned} scanned, ${sourcesFilesPolluted} polluted, ${sourcesFilesCleaned} fixed (${sourcesEntriesCleaned} entries)`);
-    } catch (e) {
-      console.warn('[QuickFixes] Phase 2 failed:', e);
-    }
+    // Module-function shape matches Phase 3 (findIncompletePages /
+    // cleanIncompletePages in src/core/incomplete-page-cleaner.ts).
+    const sourcesPreserveCase = this.settings.slugCase === 'preserve';
+    const { filesCleaned: sourcesFilesCleaned, entriesCleaned: sourcesEntriesCleaned } =
+      await normalizeSourcesInFolder(this.app, wikiFolder, sourcesPreserveCase);
 
     // ---- Phase 3: Incomplete-page cleanup (Issue #170) ----
     // Scan wiki/{entities,concepts,sources} for pages whose `generation_complete`

@@ -2,11 +2,12 @@
 // in settings.ts (folder picker) and settings tab flows (file picker).
 //
 // Extracted from the original `src/ui/modals.ts` god file (PR split).
-// No behavior change — pure code movement.
+// The exclusion rule for both pickers lives in `isExcludedFromSourcePicker`
+// (src/core/folder-scope.ts); PR #384 / #383 follow-up centralised it.
 
 import { App, TFile, TFolder, FuzzySuggestModal } from 'obsidian';
 import { COMPATIBLE_SOURCE_EXTENSIONS } from '../../constants';
-import { isInFolderScope } from '../../core/folder-scope';
+import { isExcludedFromSourcePicker } from '../../core/folder-scope';
 
 const isCompatibleSource = (f: TFile): boolean =>
   (COMPATIBLE_SOURCE_EXTENSIONS as readonly string[]).includes(f.extension.toLowerCase());
@@ -24,10 +25,13 @@ export class FileSuggestModal extends FuzzySuggestModal<TFile> {
   getItems(): TFile[] {
     // v1.25.0 PR2: include PDFs in the source picker (PDFs are a first-class
     // source format). Filter by compatible extension + exclude wiki/config
-    // directories, mirroring the legacy markdown-only behavior.
+    // directories, mirroring the legacy markdown-only behavior. The exclusion
+    // rule (`isExcludedFromSourcePicker`) is shared with the folder picker so
+    // the wiki folder itself, its descendants, and configDir siblings of any
+    // shape are all hidden together.
     return this.app.vault.getFiles()
       .filter(f => isCompatibleSource(f))
-      .filter(f => !isInFolderScope(f.path, this.wikiFolder, false) && !f.path.startsWith(this.app.vault.configDir));
+      .filter(f => !isExcludedFromSourcePicker(f.path, this.wikiFolder, this.app.vault.configDir));
   }
 
   getItemText(file: TFile): string {
@@ -54,7 +58,7 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
     const root = this.app.vault.getRoot();
 
     const collect = (folder: TFolder) => {
-      if (!folder.path.startsWith(this.app.vault.configDir) && !isInFolderScope(folder.path, this.wikiFolder, false)) {
+      if (!isExcludedFromSourcePicker(folder.path, this.wikiFolder, this.app.vault.configDir)) {
         folders.push(folder);
       }
       for (const child of folder.children) {

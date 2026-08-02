@@ -16,6 +16,19 @@
  */
 
 import { computeSlug } from './slug';
+import { isInFolderScope } from './folder-scope';
+
+/**
+ * The minimum `app.vault` surface used by `normalizeSourcesInFolder`.
+ * Spelled out so callers and tests don't have to fake the full Obsidian
+ * `App` (the previous extraction needed `{} as unknown as WikiEngine`
+ * junk casts because the shape lived on the AutoMaintainManager class).
+ */
+interface VaultLike {
+  getMarkdownFiles: () => Array<{ path: string }>;
+  read: (file: { path: string }) => Promise<string>;
+  process: (file: { path: string }, fn: (data: string) => string | Promise<string>) => Promise<unknown>;
+}
 
 /**
  * Normalize a single raw source entry to its canonical form.
@@ -199,4 +212,46 @@ export function fixPollutedSources(
     content.substring(fmMatch.index! + fmMatch[0].length);
 
   return { fixed: 1, content: newContent };
+}
+
+/**
+ * Phase 2 of `AutoMaintainManager.runStartupCheck`, extracted as a module
+ * function so the folder-scope filter is testable without standing up the
+ * whole startup surface (which sleeps 3s and needs the wikiEngine/plugin
+ * dependencies). Mirrors the Phase 3 shape (`findIncompletePages` in
+ * `incomplete-page-cleaner.ts`) so all startup phases follow the same
+ * dependency surface.
+ *
+ * Returns `{ filesCleaned, entriesCleaned }` so the caller (runStartupCheck
+ * Phase 5) can build the summary Notice. The function swallows per-call
+ * errors via the underlying `vault.process` and `vault.read` paths the
+ * caller already supplied — the original inline loop did the same.
+ */
+export async function normalizeSourcesInFolder(
+  app: { vault: VaultLike },
+  wikiFolder: string,
+  preserveCase: boolean
+): Promise<{ filesCleaned: number; entriesCleaned: number }> {
+  let filesCleaned = 0;
+  let entriesCleaned = 0;
+  try {
+    const wikiFiles = app.vault.getMarkdownFiles()
+      .filter(f => isInFolderScope(f.path, wikiFolder, false));
+    let polluted = 0;
+    for (const file of wikiFiles) {
+      const content = await app.vault.read(file);
+      if (!scanPollutedSources(content, wikiFolder, preserveCase)) continue;
+      polluted += 1;
+      const { fixed, content: fixedContent } = fixPollutedSources(content, wikiFolder, preserveCase);
+      if (fixed > 0) {
+        await app.vault.process(file, () => fixedContent);
+        filesCleaned += 1;
+        entriesCleaned += fixed;
+      }
+    }
+    console.debug(`[QuickFixes] Phase 2 complete: ${wikiFiles.length} scanned, ${polluted} polluted, ${filesCleaned} fixed (${entriesCleaned} entries)`);
+  } catch (e) {
+    console.warn('[QuickFixes] Phase 2 failed:', e);
+  }
+  return { filesCleaned, entriesCleaned };
 }
