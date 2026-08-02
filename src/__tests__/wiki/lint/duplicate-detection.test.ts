@@ -108,15 +108,43 @@ describe('generateDuplicateCandidates — threshold overrides', () => {
     expect(sl!.signal).toBe('sharedLinks');
   });
 
-  it('raising jaccardLinkThreshold above 1.0 filters out the sharedLinks signal', async () => {
-    // Same fixture as above, but raise the link threshold so neither
-    // shared-links pair clears the bar.
+  it('clamps out-of-range jaccardLinkThreshold to the [0,1] range', async () => {
+    // F2 (code-review finding): thresholds are clamped to [0,1] so a
+    // settings value of 1.5 no longer silently disables the signal
+    // (`x >= 1.5` is never true). 1.5 clamps to 1.0 — a page pair with
+    // 100% shared link graph (jaccard = 1.0) still clears it, proving the
+    // clamp to 1.0 rather than keeping the raw 1.5.
+    const a = makePage('wiki/entities/a.md', 'A', 'See [[shared]] for context. Body has foo bar baz qux.');
+    const b = makePage('wiki/entities/b.md', 'B', 'See [[shared]] for context. Body has foo bar baz extra.');
+    const fullShare = await generateDuplicateCandidates([a, b], {
+      jaccardLinkThreshold: 1.5,   // clamps to 1.0
+    });
+    const sl = findCandidate(fullShare, a.path, b.path);
+    expect(sl).not.toBeNull();
+    expect(sl!.signal).toBe('sharedLinks');
+
+    // Distinguishing case: a partial-share pair (jaccard < 1.0) is filtered
+    // at the clamped 1.0, so the clamp demonstrably took effect.
+    const c = makePage('wiki/entities/c.md', 'C', 'See [[shared]] for context. Body has foo bar baz qux.');
+    const d = makePage('wiki/entities/d.md', 'D', 'See [[other]] for context. Body has foo bar baz extra.');
+    const partialShare = await generateDuplicateCandidates([c, d], {
+      jaccardLinkThreshold: 1.5,   // clamps to 1.0
+    });
+    expect(findCandidate(partialShare, c.path, d.path)).toBeNull();
+  });
+
+  it('non-finite threshold values fall back to the default (no silent disable)', async () => {
+    // F2 (code-review finding): Infinity in a settings value would
+    // previously make `x >= Infinity` always false — silently disabling
+    // the signal while the wiki looks clean. resolveThreshold now falls
+    // back to the default for non-finite inputs.
     const a = makePage('wiki/entities/a.md', 'A', 'See [[shared]] for context. Body has foo bar baz qux.');
     const b = makePage('wiki/entities/b.md', 'B', 'See [[shared]] for context. Body has foo bar baz extra.');
     const candidates = await generateDuplicateCandidates([a, b], {
-      jaccardLinkThreshold: 1.5,   // unreachable — no candidate clears it
+      jaccardLinkThreshold: Number.POSITIVE_INFINITY,
     });
-    expect(findCandidate(candidates, a.path, b.path)).toBeNull();
+    // Infinity → fallback to default 0.4 → jaccard 1.0 >= 0.4 → candidate survives
+    expect(findCandidate(candidates, a.path, b.path)).not.toBeNull();
   });
 
   it('raising bigramThreshold filters out near-title duplicates', async () => {

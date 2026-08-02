@@ -74,14 +74,39 @@ export function computeJaccard<T>(setA: Set<T>, setB: Set<T>): number {
 //   2. Character bigram title similarity (catches spelling variants, same-language near-matches)
 //   3. Cross-language alias match
 //
-// Thresholds are passed as an optional `options` argument (defaults to the
-// named constants in src/constants.ts). Per-vault callers (e.g. the lint
-// dedup-phase) read user-settable overrides from settings and spread them
-// over the constant defaults; see DuplicateDetectionThresholds below.
+// Thresholds are passed as an optional `options` argument. Each field is
+// optional: unset (or non-finite / out-of-[0,1]) values fall back to
+// DEFAULT_DEDUP_THRESHOLDS below. Callers (e.g. the lint dedup-phase)
+// pass settings fields through directly; the callee handles coalescing +
+// clamping so the defaults live in exactly one place.
 export interface DuplicateDetectionThresholds {
-  jaccardLinkThreshold: number;   // 0..1
-  jaccardBodyGate: number;        // 0..1
-  bigramThreshold: number;        // 0..1
+  jaccardLinkThreshold?: number;   // 0..1
+  jaccardBodyGate?: number;        // 0..1
+  bigramThreshold?: number;        // 0..1
+}
+
+/**
+ * Default threshold values, derived from the named constants in
+ * src/constants.ts. This is the single source of truth for the 3
+ * detection thresholds — callers must NOT re-state these defaults
+ * (a caller-side coalesce would fork the value into two places).
+ */
+export const DEFAULT_DEDUP_THRESHOLDS: Required<DuplicateDetectionThresholds> = {
+  jaccardLinkThreshold: LINT_DEDUP_JACCARD_LINK_THRESHOLD,
+  jaccardBodyGate: LINT_DEDUP_JACCARD_BODY_GATE,
+  bigramThreshold: LINT_DEDUP_BIGRAM_THRESHOLD,
+};
+
+/**
+ * Resolve one threshold: fall back to `fallback` when the input is
+ * missing, null, NaN, or ±Infinity; clamp finite values to the [0,1]
+ * Jaccard range. Without the clamp, a settings value of 1.5 would
+ * silently disable a signal (`x >= 1.5` is never true) and −0.1 would
+ * flood every pair into the candidate set (`x >= −0.1` is always true).
+ */
+function resolveThreshold(value: number | undefined, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(1, Math.max(0, value));
 }
 
 export async function generateDuplicateCandidates(
@@ -89,10 +114,18 @@ export async function generateDuplicateCandidates(
   options: Partial<DuplicateDetectionThresholds> = {},
 ): Promise<DuplicateCandidate[]> {
   const thresholds = {
-    jaccardLinkThreshold: LINT_DEDUP_JACCARD_LINK_THRESHOLD,
-    jaccardBodyGate: LINT_DEDUP_JACCARD_BODY_GATE,
-    bigramThreshold: LINT_DEDUP_BIGRAM_THRESHOLD,
-    ...options,
+    jaccardLinkThreshold: resolveThreshold(
+      options.jaccardLinkThreshold,
+      DEFAULT_DEDUP_THRESHOLDS.jaccardLinkThreshold,
+    ),
+    jaccardBodyGate: resolveThreshold(
+      options.jaccardBodyGate,
+      DEFAULT_DEDUP_THRESHOLDS.jaccardBodyGate,
+    ),
+    bigramThreshold: resolveThreshold(
+      options.bigramThreshold,
+      DEFAULT_DEDUP_THRESHOLDS.bigramThreshold,
+    ),
   };
   interface PageMeta {
     path: string;
