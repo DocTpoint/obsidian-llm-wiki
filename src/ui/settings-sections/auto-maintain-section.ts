@@ -15,7 +15,10 @@
  *   - Auto-Watch Debounce number input
  *   - Periodic Lint dropdown (off / daily / weekly / monthly)
  *   - Auto Smart Fix toggle
- *   - Welcome Note toggle (v1.23.0 Phase 5.1.5)
+ *
+ * v1.26.0 (#382 item 2): the Welcome Note toggle moved OUT of this
+ * section into the bottom "Advanced settings" panel — it is a one-time
+ * first-run choice, not a daily-driver auto-behavior knob.
  *
  * Why extracted:
  *   - 160 LOC of auto-behavior configuration. The block has the deepest
@@ -31,7 +34,6 @@
  *     tempSettings.watchedFolders[] (mutated via splice on Remove).
  *   - Web Clipper Preset adds 'Clippings/' to watchedFolders.
  *   - Auto-Watch Debounce is in seconds (UI) but stored as ms.
- *   - Welcome Note toggle is named createWelcomeNote in settings.
  */
 
 import { Setting, Notice } from 'obsidian';
@@ -201,12 +203,4 @@ export function renderAutoMaintainSection(tab: LLMWikiSettingTab, containerEl: H
     .addToggle(toggle => toggle
       .setValue(tempSettings.autoSmartFix)
       .onChange((value) => { tempSettings.autoSmartFix = value; }));
-
-  // v1.23.0 Phase 5.1.5: first-run Welcome note toggle.
-  new Setting(containerEl)
-    .setName(tab.getText('welcomeNoteSettingsToggle'))
-    .setDesc(tab.getText('welcomeNoteSettingsToggleDesc'))
-    .addToggle(toggle => toggle
-      .setValue(tempSettings.createWelcomeNote)
-      .onChange((value) => { tempSettings.createWelcomeNote = value; }));
 }

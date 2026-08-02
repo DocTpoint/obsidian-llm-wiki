@@ -9,6 +9,16 @@
  *   - Three temperature / repetition penalty number inputs
  *   - Force PDF Support toggle (v1.25.0 PR3 universal escape hatch)
  *
+ * NOTE (v1.26.0 #382 item 2): the lint dedup threshold inputs ORIGINALLY
+ * landed in this section, but were moved to the bottom "Advanced settings"
+ * panel (advanced-settings-section.ts) — this section is exclusively LLM
+ * sampling parameters (temperature / penalty / PDF force support / thinking),
+ * and lint quality knobs belong with the generic advanced-user panel, not
+ * with LLM sampling. The number-input helper both panels use lives in
+ * `./shared-inputs`. The mode dropdown key was renamed
+ * `advancedSettingsModeName` → `advancedLlmModeName` to make the LLM-scope
+ * explicit.
+ *
  * Why extracted:
  *   - The block has nested conditional rendering (custom mode gates
  *     4 sub-controls) and one cross-section invariant (forcePdfSupport
@@ -30,14 +40,17 @@
 import { Setting } from 'obsidian';
 import type { LLMWikiSettingTab } from '../settings';
 import { NATIVE_PDF_PROVIDER_IDS } from '../../constants';
+import { renderNumberInput } from './shared-inputs';
 
 export function renderAdvancedSection(tab: LLMWikiSettingTab, containerEl: HTMLElement): void {
   const { tempSettings } = tab;
 
-  // Advanced Settings Mode dropdown
+  // Advanced Settings Mode dropdown (v1.26.0 renamed advancedSettingsModeName
+  // → advancedLlmModeName to disambiguate from the generic bottom "Advanced
+  // settings" panel — this dropdown is specifically about LLM sampling params).
   new Setting(containerEl)
-    .setName(tab.getText('advancedSettingsModeName'))
-    .setDesc(tab.getText('advancedSettingsModeDesc'))
+    .setName(tab.getText('advancedLlmModeName'))
+    .setDesc(tab.getText('advancedLlmModeDesc'))
     .addDropdown(dropdown => {
       dropdown
         .addOption('default', tab.getText('advancedSettingsDefault'))
@@ -54,15 +67,9 @@ export function renderAdvancedSection(tab: LLMWikiSettingTab, containerEl: HTMLE
             // the Advanced block, so hiding the block without resetting
             // the value would leave users with a no-UI-affordance setting.
             tempSettings.forcePdfSupport = false;
-            // v1.26.0 (#382 item 2): reset the three dedup threshold
-            // overrides — same shape as the temperature/penalty fields
-            // above. Leaving them set while the block is hidden would
-            // create a no-UI-affordance setting.
-            tempSettings.lintJaccardLinkThreshold = undefined;
-            tempSettings.lintJaccardBodyGate = undefined;
-            tempSettings.lintBigramThreshold = undefined;
-            // writePdfMarkdownToVault lives in Wiki Configuration (always
-            // visible) and is NOT reset here.
+            // writePdfMarkdownToVault lives in the bottom "Advanced settings"
+            // panel (gated by showAdvancedSettings) and is NOT reset here —
+            // that panel's own toggle reset handles it.
           }
           tab.display();
         });
@@ -80,65 +87,14 @@ export function renderAdvancedSection(tab: LLMWikiSettingTab, containerEl: HTMLE
         tempSettings.disableThinking = value;
       }));
 
-  // Three temperature / repetition penalty inputs + (v1.26.0) the 3 lint
-  // dedup threshold inputs. Shared local helper: takes string keys and
-  // routes them through getTextDynamic (v1.25.1 Phase C-PR2 simplify pass —
-  // keep type-safe getText for literal keys, only widen for the parametric
-  // ones). `max` parameterizes the HTML range: temperature/penalty fields
-  // use 0..2; dedup thresholds use 0..1 (Jaccard similarity is bounded
-  // [0,1]). The onChange uses Number.isFinite (not isNaN) so ±Infinity /
-  // NaN never land in settings — a value of 1.5 or −0.1 would otherwise
-  // silently disable or flood a dedup signal (the consumption layer clamps
-  // to [0,1] as a second gate).
-  const renderNumberInput = (
-    nameKey: string,
-    descKey: string,
-    fieldKey: 'extractionTemperature' | 'chatTemperature' | 'repetitionPenalty'
-      | 'lintJaccardLinkThreshold' | 'lintJaccardBodyGate' | 'lintBigramThreshold',
-    max: string = '2',
-  ): void => {
-    new Setting(containerEl)
-      .setName(tab.getTextDynamic(nameKey))
-      .setDesc(tab.getTextDynamic(descKey))
-      .addText(text => {
-        text
-          .setPlaceholder(tab.getText('temperaturePlaceholder'))
-          .setValue(tempSettings[fieldKey]?.toString() ?? '')
-          .onChange((value) => {
-            const trimmed = value.trim();
-            if (trimmed === '') {
-              tempSettings[fieldKey] = undefined;
-            } else {
-              const parsed = parseFloat(trimmed);
-              if (Number.isFinite(parsed)) {
-                tempSettings[fieldKey] = parsed;
-              }
-            }
-          });
-        text.inputEl.type = 'number';
-        text.inputEl.min = '0';
-        text.inputEl.max = max;
-        text.inputEl.step = '0.05';
-        text.inputEl.classList.add('llm-wiki-number-input');
-      });
-  };
-
-  renderNumberInput('extractionTemperatureName', 'extractionTemperatureDesc', 'extractionTemperature');
-  renderNumberInput('chatTemperatureName', 'chatTemperatureDesc', 'chatTemperature');
-  renderNumberInput('repetitionPenaltyName', 'repetitionPenaltyDesc', 'repetitionPenalty');
-
-  // v1.26.0 (#382 item 2): Lint duplicate-detection thresholds. Rendered
-  // as a separate sub-block below the temperature/penalty inputs because
-  // they belong to a different domain (lint, not LLM sampling). The
-  // sub-heading gives visual separation so users don't mistake them for
-  // temperature fields.
-  new Setting(containerEl)
-    .setName(tab.getText('lintDedupSectionHeading'))
-    .setHeading();
-
-  renderNumberInput('lintDedupJaccardLinkThresholdName', 'lintDedupJaccardLinkThresholdDesc', 'lintJaccardLinkThreshold', '1');
-  renderNumberInput('lintDedupJaccardBodyGateName', 'lintDedupJaccardBodyGateDesc', 'lintJaccardBodyGate', '1');
-  renderNumberInput('lintDedupBigramThresholdName', 'lintDedupBigramThresholdDesc', 'lintBigramThreshold', '1');
+  // Three temperature / repetition penalty inputs. Shared number-input
+  // helper from ./shared-inputs (also used by Auto Maintenance for the
+  // lint dedup thresholds). It takes string keys and routes them through
+  // getTextDynamic (v1.25.1 Phase C-PR2 simplify pass — keep type-safe
+  // getText for literal keys, only widen for the parametric ones).
+  renderNumberInput(tab, containerEl, 'extractionTemperatureName', 'extractionTemperatureDesc', 'extractionTemperature');
+  renderNumberInput(tab, containerEl, 'chatTemperatureName', 'chatTemperatureDesc', 'chatTemperature');
+  renderNumberInput(tab, containerEl, 'repetitionPenaltyName', 'repetitionPenaltyDesc', 'repetitionPenalty');
 
   // v1.25.0 PR3: PDF force-support toggle (universal escape hatch).
   // Renders for ANY non-native provider.

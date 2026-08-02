@@ -389,7 +389,6 @@ export const DE_TEXTS = {
     autoSmartFixName: 'Automatische Smart-Korrektur',
     autoSmartFixDesc: 'Wenn Lint ausgeführt wird, alle Korrekturen (Smart Fix All) automatisch anwenden, ohne das Berichts-Modal anzuzeigen. Die Zusammenfassung wird nach Abschluss weiterhin angezeigt.',
     autoSmartFixNotice: 'Automatische Smart-Korrektur: Alle Korrekturen werden angewendet...',
-
     autoIngestLevelName: 'Auto-Ingest-Benachrichtigung',
     autoIngestLevelDesc: 'Wie nach Abschluss des automatischen Imports benachrichtigt wird. "Hinweis" (transient) ist nicht blockierend. "Modal" öffnet den vollständigen Bericht. Deaktiviert, wenn der Watch-Modus auf "Nur benachrichtigen" gesetzt ist.',
     autoIngestLevelNotice: 'Hinweis (nicht blockierend)',
@@ -529,10 +528,19 @@ export const DE_TEXTS = {
     lintReportSummary: 'Wiki-Statusübersicht: {total} Seiten gesamt, {aliasesMissing} Seiten ohne Aliase, {duplicates} Duplikate, {deadLinks} defekte Links ({deadLinkFromDup} betreffen Duplikate), {orphans} verwaiste Seiten ({orphanFromDup} sind Duplikate), {emptyPages} leere Seiten, {ungroundedQuotes} unbelegte Zitate, {tagViolations} Tags außerhalb des Vokabulars. Lint-Dauer: {elapsedSeconds}s',
 
     // Advanced LLM Settings (Issues #99 / #128)
-    advancedSettingsModeName: 'Erweiterte Parametereinstellungen',
-    advancedSettingsModeDesc: 'Der Standardmodus folgt den Empfehlungen Ihres Modellanbieters. Wechseln Sie zu „Benutzerdefiniert”, nur wenn Sie einen triftigen Grund zum Überschreiben haben (z. B. ein bestimmtes Modell benötigt eine feste Temperatur, oder Sie möchten die Denkprozessausgabe deaktivieren).',
+    // v1.26.0 (#382 item 2): Name von „Erweiterte Parametereinstellungen" in
+    // „LLM-Erweiterte Parameter" geändert — auf LLM-Sampling beschränkt,
+    // um es vom generischen „Erweiterte Einstellungen"-Panel unten zu unterscheiden.
+    advancedLlmModeName: 'LLM-erweiterte Parameter',
+    advancedLlmModeDesc: 'Der Standardmodus folgt den Empfehlungen Ihres Modellanbieters. Wechseln Sie zu „Benutzerdefiniert”, nur wenn Sie einen triftigen Grund zum Überschreiben haben (z. B. ein bestimmtes Modell benötigt eine feste Temperatur, oder Sie möchten die Denkprozessausgabe deaktivieren).',
     advancedSettingsDefault: 'Standard (Anbieter folgen)',
     advancedSettingsCustom: 'Benutzerdefiniert (Anbieter überschreiben)',
+    // v1.26.0 (#382 item 2): Panel „Erweiterte Einstellungen" unten — der
+    // generische Ort für alle erweiterten Benutzereinstellungen, die keine
+    // LLM-Sampling-Parameter sind (Lint-Schwellenwerte, Willkommensnotiz).
+    advancedSettingsSection: 'Erweiterte Einstellungen',
+    showAdvancedSettingsName: 'Erweiterte Einstellungen anzeigen',
+    showAdvancedSettingsDesc: 'Aktivieren, um die erweiterten Einstellungen unten anzuzeigen. Beim Deaktivieren werden sie ausgeblendet und auf die Standardwerte zurückgesetzt.',
     disableThinkingName: 'Thinking deaktivieren',
     disableThinkingDesc: 'Schaltet die Gedankenkette/Denkprozess-Ausgabe des Modells aus. Standardmäßig aus — das Modell entscheidet selbst, ob es Reasoning anzeigt, was in der Regel die beste Antwort ergibt. Schalten Sie dies nur ein, wenn Ihr Anbieter rohen Reasoning-Text in die Antwort einstreut und Sie eine saubere Antwort wünschen.',
     // Issue #137: Kompatibilitätshinweise (kurz gehalten; keine Provider-Liste)
@@ -545,13 +553,12 @@ export const DE_TEXTS = {
     temperaturePlaceholder: 'leer lassen = Anbieter-Standard',
     // v1.26.0 (#382 item 2): Schwellenwerte für die Duplikaterkennung
     // (nur benutzerdefinierter erweiterter Modus).
-    lintDedupSectionHeading: 'Schwellenwerte für Duplikaterkennung',
-    lintDedupJaccardLinkThresholdName: 'Schwelle für Duplikate mit gemeinsamen Links',
-    lintDedupJaccardLinkThresholdDesc: 'Gibt an, wie viele ausgehende Wiki-Links zwei Seiten teilen müssen, um als Duplikate markiert zu werden. Niedrigere Werte erfassen mehr Beinahe-Duplikate, die auf dieselben Hub-Seiten verlinken; höhere Werte erfordern nahezu identische Linkgraphen. Leer lassen, um den Standardwert zu verwenden.',
-    lintDedupJaccardBodyGateName: 'Untergrenze für Textähnlichkeit',
-    lintDedupJaccardBodyGateDesc: 'Gibt an, wie ähnlich die Textkörper zweier Seiten (als Bruchteil) sein müssen, damit sie bei gemeinsamen Wiki-Links als Duplikate markiert werden. Seiten, deren Textähnlichkeit unter diesem Wert liegt, werden nicht als Duplikate markiert, selbst bei identischem Linkgraphen. Erhöhen Sie diesen Wert bei Fehlalarmen, wenn zwei unabhängige Seiten zufällig auf denselben Hub verlinken. Leer lassen, um den Standardwert zu verwenden.',
-    lintDedupBigramThresholdName: 'Ähnlichkeitsschwelle für Titel/Alias',
-    lintDedupBigramThresholdDesc: 'Gibt an, wie stark zwei Seitentitel oder Aliase übereinstimmen müssen (Bigramm-Jaccard), um als Duplikate markiert zu werden. Niedrigere Werte erfassen Schreibvarianten und kleinere Tippfehler; höhere Werte erfordern nahezu identische Titel. Leer lassen, um den Standardwert zu verwenden.',
+    lintDedupJaccardLinkThresholdName: 'Link-Duplikat-Ähnlichkeit',
+    lintDedupJaccardLinkThresholdDesc: 'Bereich 0–1 (Standard 0.4). Zwei Seiten werden als Duplikate markiert, wenn der Anteil der gemeinsam angesteuerten Wiki-Links an der Gesamt-Linkliste mindestens diesem Wert entspricht. Niedriger → mehr Beinahe-Duplikate werden erfasst (auch Seiten, die nur denselben Hub verlinken); höher → nur Seiten mit nahezu identischen Linkzielen. Erhöhen Sie diesen Wert, wenn unabhängige Seiten fälschlich als Duplikate markiert werden, weil sie denselben Hub verlinken. Leer lassen, um den Standardwert zu verwenden.',
+    lintDedupJaccardBodyGateName: 'Mindest-Textähnlichkeit',
+    lintDedupJaccardBodyGateDesc: 'Bereich 0–1 (Standard 0.2). Auch wenn zwei Seiten Wiki-Links gemeinsam haben, werden sie nur dann als Duplikate markiert, wenn ihre Textkörper mindestens diesen Ähnlichkeitswert erreichen. Niedriger → mehr Kandidaten gelangen zur LLM-Prüfung; höher → nur nahezu identische Textkörper werden markiert. Erhöhen Sie diesen Wert, wenn das LLM offensichtlich nicht-duplizierte Seiten prüfen muss. Leer lassen, um den Standardwert zu verwenden.',
+    lintDedupBigramThresholdName: 'Titel-Ähnlichkeit',
+    lintDedupBigramThresholdDesc: 'Bereich 0–1 (Standard 0.4). Zwei Seiten werden als Duplikate markiert, wenn die Zeichen ihrer Titel (oder Aliase) mindestens zu diesem Anteil übereinstimmen. Niedriger → Schreibvarianten, Tippfehler und Übersetzungen desselben Konzepts werden erfasst; höher → nur nahezu identische Titel werden markiert. Erhöhen Sie diesen Wert, wenn das LLM Seiten mit sehr unterschiedlichen Namen prüfen muss, die keine Duplikate sind. Leer lassen, um den Standardwert zu verwenden.',
     lintDeadLinkSection: 'Defekte Links (erkannt) [{count}]',
     lintEmptyPageSection: 'Leere Seiten (erkannt) [{count}]',
     lintOrphanSection: 'Verwaiste Seiten (erkannt) [{count}]',

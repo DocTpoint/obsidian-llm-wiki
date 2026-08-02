@@ -533,10 +533,17 @@ export const KO_TEXTS = {
     lintReportSummary: 'Wiki 상태 개요: 총 {total}페이지, {aliasesMissing}페이지 별칭 누락, 중복 {duplicates}개, 데드 링크 {deadLinks}개 ({deadLinkFromDup}개 중복 관련), 고아 {orphans}개 ({orphanFromDup}개 중복), 빈 페이지 {emptyPages}개, 출처 없는 인용 {ungroundedQuotes}개, 어휘 외 태그 {tagViolations}개. Lint 소요: {elapsedSeconds}초',
 
     // Advanced LLM Settings (Issues #99 / #128)
-    advancedSettingsModeName: '고급 매개변수 설정',
-    advancedSettingsModeDesc: '기본 모드는 모델 공급자가 권장하는 설정을 따릅니다. 명시적으로 재정의할 이유가 있을 때(예: 특정 모델에 고정 온도가 필요하거나, 모델의 사고 출력을 끄고 싶을 때)만 사용자 정의로 전환하세요.',
+    // v1.26.0 (#382 item 2): 이름을 "고급 매개변수 설정"에서 "LLM 고급 매개변수"로
+    // 변경 — LLM 샘플링에 한정하고 하단의 범용 "고급 설정" 패널과 구분.
+    advancedLlmModeName: 'LLM 고급 매개변수',
+    advancedLlmModeDesc: '기본 모드는 모델 공급자가 권장하는 설정을 따릅니다. 명시적으로 재정의할 이유가 있을 때(예: 특정 모델에 고정 온도가 필요하거나, 모델의 사고 출력을 끄고 싶을 때)만 사용자 정의로 전환하세요.',
     advancedSettingsDefault: '기본값 (공급자 따름)',
     advancedSettingsCustom: '사용자 정의 (공급자 재정의)',
+    // v1.26.0 (#382 item 2): 하단의 "고급 설정" 패널 — LLM 샘플링이 아닌
+    // 모든 고급 사용자 설정의 범용 위치(lint 임계값, 웰컴 노트, 향후 확장).
+    advancedSettingsSection: '고급 설정',
+    showAdvancedSettingsName: '고급 설정 표시',
+    showAdvancedSettingsDesc: '켜면 아래 고급 설정이 표시됩니다. 끄면 숨겨지고 기본값으로 재설정됩니다.',
     disableThinkingName: '생각 비활성화',
     disableThinkingDesc: '모델 응답의 사고 연쇄/추론 텍스트 출력을 끕니다. 기본값은 꺼져 있으며, 모델이 추론 표시 여부를 스스로 결정하는데, 이 경우가 보통 가장 좋은 답을 줍니다. 공급자가 응답에 원본 추론 텍스트를 섞어 넣고 깔끔한 답을 원할 때만 켜세요.',
     // Issue #137: 호환성 안내 (간결하게; 공급자 목록 생략)
@@ -548,13 +555,12 @@ export const KO_TEXTS = {
     repetitionPenaltyDesc: '모델이 같은 단어나 문구를 반복하는 것을 억제합니다. 값이 높을수록 반복이 줄어듭니다. 이 파라미터를 받는 것은 일부 로컬 모델 공급자(Ollama, LM Studio, llama.cpp)뿐이며, 클라우드 공급자는 조용히 무시합니다. 대부분의 사용자는 비워 둡니다.',
     temperaturePlaceholder: '비워 두면 = 제공자 기본값',
     // v1.26.0 (#382 item 2): 중복 감지 임계값 (고급 사용자 지정 모드 전용).
-    lintDedupSectionHeading: '중복 감지 임계값',
-    lintDedupJaccardLinkThresholdName: '공유 링크 중복 임계값',
-    lintDedupJaccardLinkThresholdDesc: '두 페이지가 중복으로 표시되기 위해 아웃바운드 wiki 링크를 얼마나 공유해야 하는지 지정합니다. 값을 낮추면 같은 허브 페이지를 링크하는 근사 중복을 더 많이 포착합니다. 값을 높이면 거의 동일한 링크 그래프가 필요합니다. 비워 두면 기본값을 사용합니다.',
-    lintDedupJaccardBodyGateName: '본문 유사도 하한',
-    lintDedupJaccardBodyGateDesc: '두 페이지가 wiki 링크를 공유할 때 중복으로 표시되기 위해 본문 유사도(비율)가 얼마나 필요한지 지정합니다. 본문 유사도가 이 값보다 낮은 페이지는 링크 그래프가 같아도 중복으로 표시하지 않습니다. 관련 없는 두 페이지가 같은 허브를 링크하는 오탐이 보이면 이 값을 높이세요. 비워 두면 기본값을 사용합니다.',
-    lintDedupBigramThresholdName: '제목/별칭 유사도 임계값',
-    lintDedupBigramThresholdDesc: '두 페이지 제목 또는 별칭이 중복으로 표시되기 위해 얼마나 일치해야 하는지 지정합니다 (문자 바이그램 Jaccard). 값을 낮추면 철자 변형과 사소한 오타를 포착합니다. 값을 높이면 거의 동일한 제목이 필요합니다. 비워 두면 기본값을 사용합니다.',
+    lintDedupJaccardLinkThresholdName: '링크 중복 유사도',
+    lintDedupJaccardLinkThresholdDesc: '범위 0–1 (기본값 0.4). 두 페이지가 공통으로 가리키는 wiki 링크의 비율이 각자의 링크 총수 중 최소 이 값에 도달하면 중복으로 표시됩니다. 낮춤 → 근사 중복을 더 많이 포착 (같은 허브만 링크하는 페이지 포함); 높임 → 거의 같은 페이지 묶음을 가리키는 페이지만 표시됩니다. 서로 관련 없는 페이지가 같은 허브만 링크한다는 이유로 오탐이 발생하는 경우 이 값을 높이세요. 비워 두면 기본값을 사용합니다.',
+    lintDedupJaccardBodyGateName: '본문 최소 유사도',
+    lintDedupJaccardBodyGateDesc: '범위 0–1 (기본값 0.2). 두 페이지가 wiki 링크를 공유하더라도 본문 유사도(비율)가 최소 이 값에 도달해야만 중복으로 표시됩니다. 낮춤 → LLM 검증으로 넘어가는 후보가 늘어남; 높임 → 본문이 거의 동일한 페이지만 표시됩니다. 명백히 중복이 아닌 페이지를 LLM이 검증하고 있다면 이 값을 높이세요. 비워 두면 기본값을 사용합니다.',
+    lintDedupBigramThresholdName: '제목 유사도',
+    lintDedupBigramThresholdDesc: '범위 0–1 (기본값 0.4). 두 페이지 제목 (또는 별칭)의 문자 일치율이 최소 이 값에 도달하면 중복으로 표시됩니다. 낮춤 → 철자 변형, 오타, 같은 개념의 번역까지 포착; 높임 → 제목이 거의 동일한 페이지만 표시됩니다. 제목이 크게 다르지만 실제로는 중복이 아닌 페이지를 LLM이 검증하고 있다면 이 값을 높이세요. 비워 두면 기본값을 사용합니다.',
     lintDeadLinkSection: '데드 링크 (감지됨) [{count}개]',
     lintEmptyPageSection: '빈 페이지 (감지됨) [{count}개]',
     lintOrphanSection: '고아 페이지 (감지됨) [{count}개]',

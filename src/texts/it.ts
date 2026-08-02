@@ -398,7 +398,6 @@ export const IT_TEXTS = {
     autoSmartFixName: 'Correzione intelligente automatica',
     autoSmartFixDesc: 'Quando viene eseguito il lint, applica automaticamente tutte le correzioni (Correzione intelligente totale) senza mostrare la modale del report. Il riepilogo delle correzioni viene comunque mostrato al completamento.',
     autoSmartFixNotice: 'Correzione intelligente automatica: applicazione di tutte le correzioni...',
-
     autoIngestLevelName: 'Notifica di acquisizione automatica',
     autoIngestLevelDesc: 'Come notificare quando l\'acquisizione automatica viene completata. "Notifica" (transitoria) non blocca. "Modale" apre il rapporto completo. Disabilitato quando la modalità Watch è "Solo notifica".',
     autoIngestLevelNotice: 'Notifica (non bloccante)',
@@ -538,10 +537,18 @@ export const IT_TEXTS = {
     lintReportSummary: 'Panoramica stato Wiki: {total} pagine totali, {aliasesMissing} pagine senza alias, {duplicates} pagine duplicate, {deadLinks} collegamenti interrotti ({deadLinkFromDup} coinvolgono duplicati), {orphans} pagine orfane ({orphanFromDup} sono duplicati), {emptyPages} pagine vuote, {ungroundedQuotes} citazioni non fondate, {tagViolations} tag fuori vocabolario. Lint completato in: {elapsedSeconds}s',
 
     // Impostazioni LLM avanzate (v1.20.0: predefinito = nessun override specifico del provider)
-    advancedSettingsModeName: 'Impostazioni parametri avanzate',
-    advancedSettingsModeDesc: 'La modalità predefinita segue le raccomandazioni del tuo provider. Passa a Personalizzato solo se hai un motivo specifico per sovrascrivere (ad esempio, un modello particolare ha bisogno di una temperatura fissa, o vuoi sopprimere l\'output di ragionamento).',
+    // v1.26.0 (#382 item 2): nome cambiato da «Impostazioni parametri avanzate» a
+    // «Parametri LLM avanzati» — limitato al campionamento LLM, per distinguerlo
+    // dal pannello generico «Impostazioni avanzate» in basso.
+    advancedLlmModeName: 'Parametri LLM avanzati',
+    advancedLlmModeDesc: 'La modalità predefinita segue le raccomandazioni del tuo provider. Passa a Personalizzato solo se hai un motivo specifico per sovrascrivere (ad esempio, un modello particolare ha bisogno di una temperatura fissa, o vuoi sopprimere l\'output di ragionamento).',
     advancedSettingsDefault: 'Predefinito (segui provider)',
     advancedSettingsCustom: 'Personalizzato (sovrascrivi provider)',
+    // v1.26.0 (#382 item 2): pannello «Impostazioni avanzate» in basso — il
+    // posto generico per tutte le impostazioni avanzate che non sono parametri LLM.
+    advancedSettingsSection: 'Impostazioni avanzate',
+    showAdvancedSettingsName: 'Mostra impostazioni avanzate',
+    showAdvancedSettingsDesc: 'Attiva per mostrare le impostazioni avanzate qui sotto. Disattivandole vengono nascoste e riportate ai valori predefiniti.',
     disableThinkingName: 'Disabilita ragionamento',
     disableThinkingDesc: 'Disattiva la catena di pensiero/ragionamento nella risposta del modello. Spento per impostazione predefinita — il modello decide se mostrare il ragionamento, il che di solito dà la risposta migliore. Attivalo solo se il tuo provider inserisce testo di ragionamento grezzo nella risposta e desideri una risposta pulita.',
     // Issue #137: suggerimenti di compatibilità per le impostazioni avanzate (tenuti brevi; nessuna
@@ -555,13 +562,12 @@ export const IT_TEXTS = {
     temperaturePlaceholder: 'lasciare vuoto = predefinito provider',
     // v1.26.0 (#382 item 2): Soglie di rilevamento duplicati
     // (solo modalità avanzata personalizzata).
-    lintDedupSectionHeading: 'Soglie di rilevamento duplicati',
-    lintDedupJaccardLinkThresholdName: 'Soglia duplicati per link condivisi',
-    lintDedupJaccardLinkThresholdDesc: 'Quanto due pagine devono condividere i link wiki in uscita per essere contrassegnate come duplicati. Valori più bassi rilevano più quasi-duplicati che puntano alle stesse pagine hub; valori più alti richiedono grafi di link quasi identici. Lascia vuoto per usare il valore predefinito.',
-    lintDedupJaccardBodyGateName: 'Limite di similarità del corpo',
-    lintDedupJaccardBodyGateDesc: 'Quanto devono essere simili i testi di due pagine (come frazione) per essere contrassegnate come duplicati quando condividono link wiki. Le pagine la cui similarità del corpo è inferiore a questo valore non vengono contrassegnate come duplicati, anche con grafi di link identici. Alza questo valore se vedi falsi positivi in cui due pagine non correlate puntano allo stesso hub. Lascia vuoto per usare il valore predefinito.',
-    lintDedupBigramThresholdName: 'Soglia di similarità titolo/alias',
-    lintDedupBigramThresholdDesc: 'Quanto devono corrispondere due titoli o alias di pagina (Jaccard di bigrammi) per essere contrassegnati come duplicati. Valori più bassi rilevano varianti ortografiche e refusi minori; valori più alti richiedono titoli quasi identici. Lascia vuoto per usare il valore predefinito.',
+    lintDedupJaccardLinkThresholdName: 'Similarità dei link duplicati',
+    lintDedupJaccardLinkThresholdDesc: 'Intervallo 0–1 (predefinito 0,4). Due pagine vengono contrassegnate come duplicati quando la proporzione di link wiki che condividono rispetto ai link totali raggiunge almeno questo valore. Più basso → vengono catturati più quasi-duplicati (incluse pagine che puntano solo allo stesso hub); più alto → solo pagine che puntano a un insieme quasi identico vengono contrassegnate. Alza questo valore se vedi falsi positivi tra pagine non correlate che puntano allo stesso hub. Lascia vuoto per usare il valore predefinito.',
+    lintDedupJaccardBodyGateName: 'Similarità minima del corpo',
+    lintDedupJaccardBodyGateDesc: 'Intervallo 0–1 (predefinito 0,2). Anche se due pagine condividono link wiki, vengono contrassegnate come duplicati solo se la similarità dei loro testi raggiunge almeno questo valore. Più basso → più candidati arrivano alla verifica LLM; più alto → solo corpi quasi identici vengono contrassegnati. Alza questo valore se l\'LLM sta esaminando pagine che chiaramente non sono duplicati. Lascia vuoto per usare il valore predefinito.',
+    lintDedupBigramThresholdName: 'Similarità dei titoli',
+    lintDedupBigramThresholdDesc: 'Intervallo 0–1 (predefinito 0,4). Due pagine vengono contrassegnate come duplicati quando i caratteri dei loro titoli (o alias) coincidono almeno in questa proporzione. Più basso → varianti ortografiche, refusi e traduzioni dello stesso concetto vengono catturati; più alto → solo titoli quasi identici vengono contrassegnati. Alza questo valore se l\'LLM esamina pagine con nomi molto diversi che non sono realmente duplicati. Lascia vuoto per usare il valore predefinito.',
     lintDeadLinkSection: 'Collegamenti interrotti (rilevati) [{count}]',
     lintEmptyPageSection: 'Pagine vuote (rilevate) [{count}]',
     lintOrphanSection: 'Pagine orfane (rilevate) [{count}]',

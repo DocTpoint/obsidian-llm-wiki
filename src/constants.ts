@@ -398,9 +398,9 @@ export const LINT_PREP_BATCH_READ = 200;
  *
  * Calibrated against cross-vault wikis in `src/wiki/lint/duplicate-detection.ts`.
  * Lowering to ~0.3 surfaces more link-hub collisions; raising to ~0.5
- * narrows to true co-link clusters. Exposed as an Advanced setting in
- * Custom mode (`lintJaccardLinkThreshold`); leaving the input blank =
- * use this constant.
+ * narrows to true co-link clusters. Exposed in Auto Maintenance settings
+ * (advanced-mode toggle) as `lintJaccardLinkThreshold`; leaving the input
+ * blank = use this constant.
  */
 export const LINT_DEDUP_JACCARD_LINK_THRESHOLD = 0.4;
 
@@ -414,8 +414,8 @@ export const LINT_DEDUP_JACCARD_LINK_THRESHOLD = 0.4;
  *
  * Calibrated against cross-vault wikis. Raise this if you see false
  * positives where two unrelated pages happen to link to the same hub.
- * Exposed as an Advanced setting in Custom mode (`lintJaccardBodyGate`);
- * leaving the input blank = use this constant.
+ * Exposed in Auto Maintenance settings (advanced-mode toggle) as
+ * `lintJaccardBodyGate`; leaving the input blank = use this constant.
  */
 export const LINT_DEDUP_JACCARD_BODY_GATE = 0.2;
 
@@ -427,8 +427,8 @@ export const LINT_DEDUP_JACCARD_BODY_GATE = 0.2;
  *
  * Calibrated against cross-vault wikis. Lowering catches more spelling
  * variants and minor typos; raising requires near-identical titles.
- * Exposed as an Advanced setting in Custom mode (`lintBigramThreshold`);
- * leaving the input blank = use this constant.
+ * Exposed in Auto Maintenance settings (advanced-mode toggle) as
+ * `lintBigramThreshold`; leaving the input blank = use this constant.
  */
 export const LINT_DEDUP_BIGRAM_THRESHOLD = 0.4;
 

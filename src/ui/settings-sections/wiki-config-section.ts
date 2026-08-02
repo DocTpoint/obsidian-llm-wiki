@@ -6,13 +6,16 @@
  *
  *   - "Wiki Configuration" H2 heading
  *   - Wiki Folder text input
- *   - Write PDF Markdown to Vault toggle (v1.25.0 PR3)
- *   - Slug Case dropdown
  *   - Extraction Granularity dropdown + custom entity/concept limits
  *   - Tag Vocabulary mode + custom entity/concept chip inputs
  *   - Max Conversation History dropdown
  *   - Schema Management buttons (View + Regenerate)
  *   - Ingestion History button (Issue #122)
+ *
+ * v1.26.0 (#382 item 2): the Write PDF Markdown to Vault toggle, the
+ * Slug Case dropdown, AND the Max Conversation History dropdown moved
+ * OUT to the bottom "Advanced settings" panel — they are power-user
+ * choices that clutter the daily configuration surface.
  *
  * Why extracted:
  *   - 280 LOC of wiki-configuration side effects. Splitting makes the
@@ -49,27 +52,6 @@ export function renderWikiConfigSection(tab: LLMWikiSettingTab, containerEl: HTM
       .setPlaceholder(tab.getText('wikiFolderPlaceholder'))
       .setValue(tempSettings.wikiFolder)
       .onChange((value) => { tempSettings.wikiFolder = value; }));
-
-  // v1.25.0 PR3: opt-in sidecar write. Always visible.
-  new Setting(containerEl)
-    .setName(tab.getText('writePdfMarkdownToVaultName'))
-    .setDesc(tab.getText('writePdfMarkdownToVaultDesc'))
-    .addToggle(toggle => toggle
-      .setValue(tempSettings.writePdfMarkdownToVault === true)
-      .onChange((value) => { tempSettings.writePdfMarkdownToVault = value; }));
-
-  // Slug Case
-  new Setting(containerEl)
-    .setName(tab.getText('slugCaseName'))
-    .setDesc(tab.getText('slugCaseDesc'))
-    .addDropdown(dropdown => {
-      dropdown.addOption('lower', tab.getText('slugCaseLower'));
-      dropdown.addOption('preserve', tab.getText('slugCasePreserve'));
-      dropdown.setValue(tempSettings.slugCase || 'lower');
-      dropdown.onChange((value: string) => {
-        tempSettings.slugCase = value as 'lower' | 'preserve';
-      });
-    });
 
   // Granularity + custom limits
   let customEntitySetting: Setting | null = null;
@@ -222,25 +204,8 @@ export function renderWikiConfigSection(tab: LLMWikiSettingTab, containerEl: HTM
 
   setSettingsVisible([customEntityTagsSetting, customConceptTagsSetting], tempSettings.tagVocabularyMode === 'custom');
 
-  // Max Conversation History
-  new Setting(containerEl)
-    .setName(tab.getText('maxConversationHistoryName'))
-    .setDesc(tab.getText('maxConversationHistoryDesc'))
-    .addDropdown(dropdown => {
-      const presets = [1, 10, 30, 50, 100, 500];
-      for (const n of presets) {
-        dropdown.addOption(n.toString(), n.toString());
-      }
-      const current = tempSettings.maxConversationHistory;
-      const currentStr = presets.includes(current) ? current.toString() : '50';
-      dropdown.setValue(currentStr);
-      dropdown.onChange((value) => {
-        const parsed = parseInt(value);
-        if (!isNaN(parsed) && parsed >= 1) {
-          tempSettings.maxConversationHistory = parsed;
-        }
-      });
-    });
+  // Max Conversation History — moved to Advanced settings panel in v1.26.0
+  // (see renderAdvancedSettingsSection).
 
   // Schema Management
   new Setting(containerEl)

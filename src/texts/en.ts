@@ -537,11 +537,21 @@ export const EN_TEXTS = {
     lintReportTitle: 'Wiki lint report',
     lintReportSummary: 'Wiki status overview: {total} pages total, {aliasesMissing} pages missing aliases, {duplicates} duplicate pages, {deadLinks} dead links ({deadLinkFromDup} involve duplicates), {orphans} orphan pages ({orphanFromDup} are duplicates), {emptyPages} empty pages, {ungroundedQuotes} ungrounded quotes, {tagViolations} out-of-vocabulary tags. Lint elapsed: {elapsedSeconds}s',
 
-    // Advanced LLM Settings (v1.20.0: default = no provider-specific overrides)
-    advancedSettingsModeName: 'Advanced parameter settings',
-    advancedSettingsModeDesc: 'Default mode follows whatever the model provider recommends. Switch to Custom only when you have a specific reason to override (for example: a particular model needs a fixed temperature, or you want to suppress the model\'s reasoning output).',
+    // Advanced LLM Settings (v1.20.0: default = no provider-specific overrides).
+    // v1.26.0 (#382 item 2): renamed advancedSettingsModeName →
+    // advancedLlmModeName so the label scopes to LLM sampling params and is
+    // not confused with the generic bottom "Advanced settings" panel.
+    advancedLlmModeName: 'Advanced LLM parameters',
+    advancedLlmModeDesc: 'Default mode follows whatever the model provider recommends. Switch to Custom only when you have a specific reason to override (for example: a particular model needs a fixed temperature, or you want to suppress the model\'s reasoning output).',
     advancedSettingsDefault: 'Default (follow provider)',
     advancedSettingsCustom: 'Custom (override provider)',
+    // v1.26.0 (#382 item 2): bottom "Advanced settings" panel — generic
+    // home for all advanced-user settings that are NOT LLM sampling params
+    // (those live under advancedLlmModeName above). Off by default; the
+    // toggle reveals lint thresholds, the Welcome note, and future knobs.
+    advancedSettingsSection: 'Advanced settings',
+    showAdvancedSettingsName: 'Show advanced settings',
+    showAdvancedSettingsDesc: 'Turn on to reveal advanced settings below. Turning off hides them and resets them to defaults.',
     disableThinkingName: 'Disable thinking',
     disableThinkingDesc: 'Turn off the model\'s chain-of-thought / reasoning output in its response. Default off — the model decides whether to show reasoning, and that usually gives the best answer. Turn this on only if your provider dumps raw reasoning text into the response and you want a clean answer.',
     // Issue #137: compatibility hints for advanced settings (kept short; no
@@ -553,16 +563,16 @@ export const EN_TEXTS = {
     repetitionPenaltyName: 'Repetition penalty',
     repetitionPenaltyDesc: 'Discourages the model from repeating the same words or phrases. Higher numbers mean less repetition. Only certain local-model providers (Ollama, LM Studio, llama.cpp) accept this; cloud providers will silently ignore it. Most users leave this blank.',
     temperaturePlaceholder: 'leave blank = provider default',
-    // v1.26.0 (#382 item 2): Lint dedup threshold overrides (Advanced /
-    // Custom mode only). The "leave blank" placeholder above is reused
-    // so the input row reads the same as the temperature rows.
-    lintDedupSectionHeading: 'Duplicate detection thresholds',
-    lintDedupJaccardLinkThresholdName: 'Shared-link duplicate threshold',
-    lintDedupJaccardLinkThresholdDesc: 'How strongly two pages must share outgoing wiki-links to be flagged as duplicates. Lower values catch more near-duplicates that link to the same hub pages; higher values require near-identical link graphs. Leave blank for the default.',
-    lintDedupJaccardBodyGateName: 'Body-similarity floor',
-    lintDedupJaccardBodyGateDesc: 'How similar two pages\' body text must be (as a fraction) for them to be flagged as duplicates when their wiki-links overlap. Pages whose body similarity is below this amount are not flagged, even if they share the same link graph. Raise this if you see false positives where two unrelated pages happen to link to the same hub. Leave blank for the default.',
-    lintDedupBigramThresholdName: 'Title/alias similarity threshold',
-    lintDedupBigramThresholdDesc: 'How closely two page titles or aliases must match (character-bigram Jaccard) to be flagged as duplicates. Lower values catch spelling variants and minor typos; higher values require near-identical titles. Leave blank for the default.',
+    // v1.26.0 (#382 item 2): Lint dedup threshold overrides (bottom
+    // "Advanced settings" panel, showAdvancedSettings toggle on). The
+    // "leave blank" placeholder above is reused so the input row reads the
+    // same as the temperature rows in the Advanced section.
+    lintDedupJaccardLinkThresholdName: 'Duplicate link similarity',
+    lintDedupJaccardLinkThresholdDesc: 'Range 0–1 (default 0.4). Two pages are flagged as duplicates when the wiki-links they both point to overlap by at least this fraction. Lower → catches more near-duplicates (including pages that just share common hubs); higher → only flags pages that point to nearly the same set of pages. Raise if you see false positives between pages that happen to link to the same hub. Leave blank for the default.',
+    lintDedupJaccardBodyGateName: 'Minimum body similarity',
+    lintDedupJaccardBodyGateDesc: 'Range 0–1 (default 0.2). Even if two pages share wiki-links, they\'re only flagged as duplicates when their body text is at least this similar (as a fraction). Lower → more candidates pass through to LLM verification; higher → only nearly-identical bodies get flagged. Raise if LLM is being asked about pages that obviously aren\'t duplicates. Leave blank for the default.',
+    lintDedupBigramThresholdName: 'Title similarity',
+    lintDedupBigramThresholdDesc: 'Range 0–1 (default 0.4). Two pages are flagged as duplicates when the characters in their titles (or aliases) overlap by at least this fraction. Lower → catches spelling variants, typos, and translations of the same concept; higher → only flags near-identical titles. Raise if LLM is reviewing pages with very different names that aren\'t actually duplicates. Leave blank for the default.',
     lintDeadLinkSection: 'Dead links (detected) [{count}]',
     lintEmptyPageSection: 'Empty pages (detected) [{count}]',
     lintOrphanSection: 'Orphan pages (detected) [{count}]',

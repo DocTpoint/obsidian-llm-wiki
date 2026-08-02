@@ -55,3 +55,18 @@ describe('v1.26.0 dedup threshold settings — defaults', () => {
     expect(DEFAULT_SETTINGS).toHaveProperty('lintBigramThreshold');
   });
 });
+
+// v1.26.0 (#382 item 2): Advanced Settings panel toggle (bottom of the
+// Settings tab). Defaults to false so the lint dedup threshold inputs and
+// other advanced-user settings stay hidden unless the user opts in.
+// Independent of advancedSettingsMode (that gates LLM sampling in the
+// Advanced section; this gates the generic advanced-user panel).
+describe('v1.26.0 Advanced Settings panel — default', () => {
+  it('showAdvancedSettings defaults to false (advanced-user panel hidden)', () => {
+    expect(DEFAULT_SETTINGS.showAdvancedSettings).toBe(false);
+  });
+
+  it('field is present on DEFAULT_SETTINGS (not dropped)', () => {
+    expect(DEFAULT_SETTINGS).toHaveProperty('showAdvancedSettings');
+  });
+});
