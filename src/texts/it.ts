@@ -553,6 +553,15 @@ export const IT_TEXTS = {
     repetitionPenaltyName: 'Penalità di ripetizione',
     repetitionPenaltyDesc: 'Impedisce al modello di ripetere le stesse parole o frasi. Valori più alti riducono la ripetizione. Solo alcuni provider di modelli locali (Ollama, LM Studio, llama.cpp) accettano questo parametro; i provider cloud lo ignorano silenziosamente. La maggior parte degli utenti lascia vuoto.',
     temperaturePlaceholder: 'lasciare vuoto = predefinito provider',
+    // v1.26.0 (#382 item 2): Soglie di rilevamento duplicati
+    // (solo modalità avanzata personalizzata).
+    lintDedupSectionHeading: 'Soglie di rilevamento duplicati',
+    lintDedupJaccardLinkThresholdName: 'Soglia duplicati per link condivisi',
+    lintDedupJaccardLinkThresholdDesc: 'Quanto due pagine devono condividere i link wiki in uscita per essere contrassegnate come duplicati. Valori più bassi rilevano più quasi-duplicati che puntano alle stesse pagine hub; valori più alti richiedono grafi di link quasi identici. Lascia vuoto per usare il valore predefinito.',
+    lintDedupJaccardBodyGateName: 'Limite di similarità del corpo',
+    lintDedupJaccardBodyGateDesc: 'Quando due pagine condividono link wiki ma i loro testi differiscono oltre questo valore, non vengono contrassegnate come duplicati. Alza questo valore se vedi falsi positivi in cui due pagine non correlate puntano allo stesso hub. Lascia vuoto per usare il valore predefinito.',
+    lintDedupBigramThresholdName: 'Soglia di similarità titolo/alias',
+    lintDedupBigramThresholdDesc: 'Quanto devono corrispondere due titoli o alias di pagina (Jaccard di bigrammi) per essere contrassegnati come duplicati. Valori più bassi rilevano varianti ortografiche e refusi minori; valori più alti richiedono titoli quasi identici. Lascia vuoto per usare il valore predefinito.',
     lintDeadLinkSection: 'Collegamenti interrotti (rilevati) [{count}]',
     lintEmptyPageSection: 'Pagine vuote (rilevate) [{count}]',
     lintOrphanSection: 'Pagine orfane (rilevate) [{count}]',

@@ -543,6 +543,15 @@ export const PT_TEXTS = {
     repetitionPenaltyName: 'Penalidade de repetição',
     repetitionPenaltyDesc: 'Impede o modelo de repetir as mesmas palavras ou frases. Valores mais altos reduzem a repetição. Apenas alguns provedores de modelos locais (Ollama, LM Studio, llama.cpp) aceitam este parâmetro; provedores em nuvem ignoram-no silenciosamente. A maioria dos usuários deixa vazio.',
     temperaturePlaceholder: 'deixar vazio = padrão do provedor',
+    // v1.26.0 (#382 item 2): Limiares de detecção de duplicados
+    // (somente modo avançado personalizado).
+    lintDedupSectionHeading: 'Limiares de detecção de duplicados',
+    lintDedupJaccardLinkThresholdName: 'Limiar de duplicados por links compartilhados',
+    lintDedupJaccardLinkThresholdDesc: 'Quanto duas páginas devem compartilhar seus links wiki de saída para serem sinalizadas como duplicadas. Valores mais baixos detectam mais quase-duplicados que apontam para as mesmas páginas centrais; valores mais altos exigem grafos de links quase idênticos. Deixe em branco para usar o padrão.',
+    lintDedupJaccardBodyGateName: 'Limite de similaridade do corpo',
+    lintDedupJaccardBodyGateDesc: 'Quando duas páginas compartilham links wiki mas seus textos diferem além desse valor, elas não são sinalizadas como duplicadas. Aumente este valor se vir falsos positivos em que duas páginas não relacionadas apontam para o mesmo hub. Deixe em branco para usar o padrão.',
+    lintDedupBigramThresholdName: 'Limiar de similaridade título/alias',
+    lintDedupBigramThresholdDesc: 'Quanto dois títulos ou aliases de página devem corresponder (Jaccard de bigramas) para serem sinalizados como duplicados. Valores mais baixos detectam variantes ortográficas e erros de digitação menores; valores mais altos exigem títulos quase idênticos. Deixe em branco para usar o padrão.',
     lintDeadLinkSection: 'Links quebrados (detectados) [{count}]',
     lintEmptyPageSection: 'Páginas vazias (detectadas) [{count}]',
     lintOrphanSection: 'Páginas órfãs (detectadas) [{count}]',

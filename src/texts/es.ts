@@ -543,6 +543,15 @@ export const ES_TEXTS = {
     repetitionPenaltyName: 'Penalización por repetición',
     repetitionPenaltyDesc: 'Evita que el modelo repita las mismas palabras o frases. Valores más altos reducen la repetición. Solo algunos proveedores de modelos locales (Ollama, LM Studio, llama.cpp) aceptan este parámetro; los proveedores en la nube lo ignoran silenciosamente. La mayoría de los usuarios lo dejan vacío.',
     temperaturePlaceholder: 'dejar vacío = valor por defecto del proveedor',
+    // v1.26.0 (#382 item 2): Umbrales de detección de duplicados
+    // (solo modo avanzado personalizado).
+    lintDedupSectionHeading: 'Umbrales de detección de duplicados',
+    lintDedupJaccardLinkThresholdName: 'Umbral de duplicados por enlaces compartidos',
+    lintDedupJaccardLinkThresholdDesc: 'Cuánto deben compartir dos páginas sus enlaces wiki salientes para marcarse como duplicadas. Los valores más bajos detectan más casi-duplicados que enlazan a las mismas páginas centrales; los valores más altos exigen grafos de enlaces casi idénticos. Déjalo en blanco para usar el valor por defecto.',
+    lintDedupJaccardBodyGateName: 'Límite de similitud del cuerpo',
+    lintDedupJaccardBodyGateDesc: 'Cuando dos páginas comparten enlaces wiki pero sus textos difieren más de esta cantidad, no se marcan como duplicadas. Sube este valor si ves falsos positivos en los que dos páginas no relacionadas enlazan al mismo centro. Déjalo en blanco para usar el valor por defecto.',
+    lintDedupBigramThresholdName: 'Umbral de similitud de título/alias',
+    lintDedupBigramThresholdDesc: 'Cuánto deben coincidir dos títulos o alias de página (Jaccard de bigramas) para marcarse como duplicados. Los valores más bajos detectan variantes ortográficas y erratas menores; los valores más altos exigen títulos casi idénticos. Déjalo en blanco para usar el valor por defecto.',
     lintDeadLinkSection: 'Enlaces rotos (detectados) [{count}]',
     lintEmptyPageSection: 'Páginas vacías (detectadas) [{count}]',
     lintOrphanSection: 'Páginas huérfanas (detectadas) [{count}]',

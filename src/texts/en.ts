@@ -553,6 +553,16 @@ export const EN_TEXTS = {
     repetitionPenaltyName: 'Repetition penalty',
     repetitionPenaltyDesc: 'Discourages the model from repeating the same words or phrases. Higher numbers mean less repetition. Only certain local-model providers (Ollama, LM Studio, llama.cpp) accept this; cloud providers will silently ignore it. Most users leave this blank.',
     temperaturePlaceholder: 'leave blank = provider default',
+    // v1.26.0 (#382 item 2): Lint dedup threshold overrides (Advanced /
+    // Custom mode only). The "leave blank" placeholder above is reused
+    // so the input row reads the same as the temperature rows.
+    lintDedupSectionHeading: 'Duplicate detection thresholds',
+    lintDedupJaccardLinkThresholdName: 'Shared-link duplicate threshold',
+    lintDedupJaccardLinkThresholdDesc: 'How strongly two pages must share outgoing wiki-links to be flagged as duplicates. Lower values catch more near-duplicates that link to the same hub pages; higher values require near-identical link graphs. Leave blank for the default.',
+    lintDedupJaccardBodyGateName: 'Body-similarity floor',
+    lintDedupJaccardBodyGateDesc: 'When two pages share wiki-links but their body text differs by more than this amount, they are not flagged as duplicates. Raise this if you see false positives where two unrelated pages happen to link to the same hub. Leave blank for the default.',
+    lintDedupBigramThresholdName: 'Title/alias similarity threshold',
+    lintDedupBigramThresholdDesc: 'How closely two page titles or aliases must match (character-bigram Jaccard) to be flagged as duplicates. Lower values catch spelling variants and minor typos; higher values require near-identical titles. Leave blank for the default.',
     lintDeadLinkSection: 'Dead links (detected) [{count}]',
     lintEmptyPageSection: 'Empty pages (detected) [{count}]',
     lintOrphanSection: 'Orphan pages (detected) [{count}]',

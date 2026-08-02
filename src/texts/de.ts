@@ -543,6 +543,15 @@ export const DE_TEXTS = {
     repetitionPenaltyName: 'Wiederholungsstrafe',
     repetitionPenaltyDesc: 'Verhindert, dass das Modell dieselben Wörter oder Phrasen wiederholt. Höhere Werte bedeuten weniger Wiederholungen. Nur bestimmte lokale Modellanbieter (Ollama, LM Studio, llama.cpp) akzeptieren diesen Parameter; Cloud-Anbieter ignorieren ihn stillschweigend. Die meisten Benutzer lassen dies leer.',
     temperaturePlaceholder: 'leer lassen = Anbieter-Standard',
+    // v1.26.0 (#382 item 2): Schwellenwerte für die Duplikaterkennung
+    // (nur benutzerdefinierter erweiterter Modus).
+    lintDedupSectionHeading: 'Schwellenwerte für Duplikaterkennung',
+    lintDedupJaccardLinkThresholdName: 'Schwelle für Duplikate mit gemeinsamen Links',
+    lintDedupJaccardLinkThresholdDesc: 'Gibt an, wie viele ausgehende Wiki-Links zwei Seiten teilen müssen, um als Duplikate markiert zu werden. Niedrigere Werte erfassen mehr Beinahe-Duplikate, die auf dieselben Hub-Seiten verlinken; höhere Werte erfordern nahezu identische Linkgraphen. Leer lassen, um den Standardwert zu verwenden.',
+    lintDedupJaccardBodyGateName: 'Untergrenze für Textähnlichkeit',
+    lintDedupJaccardBodyGateDesc: 'Wenn zwei Seiten Wiki-Links teilen, sich im Text aber um mehr als diesen Betrag unterscheiden, werden sie nicht als Duplikate markiert. Erhöhen Sie diesen Wert bei Fehlalarmen, wenn zwei unabhängige Seiten zufällig auf denselben Hub verlinken. Leer lassen, um den Standardwert zu verwenden.',
+    lintDedupBigramThresholdName: 'Ähnlichkeitsschwelle für Titel/Alias',
+    lintDedupBigramThresholdDesc: 'Gibt an, wie stark zwei Seitentitel oder Aliase übereinstimmen müssen (Bigramm-Jaccard), um als Duplikate markiert zu werden. Niedrigere Werte erfassen Schreibvarianten und kleinere Tippfehler; höhere Werte erfordern nahezu identische Titel. Leer lassen, um den Standardwert zu verwenden.',
     lintDeadLinkSection: 'Defekte Links (erkannt) [{count}]',
     lintEmptyPageSection: 'Leere Seiten (erkannt) [{count}]',
     lintOrphanSection: 'Verwaiste Seiten (erkannt) [{count}]',

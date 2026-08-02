@@ -525,6 +525,15 @@ export const FR_TEXTS = {
     repetitionPenaltyName: 'Pénalité de répétition',
     repetitionPenaltyDesc: 'Empêche le modèle de répéter les mêmes mots ou phrases. Des valeurs plus élevées réduisent la répétition. Seuls certains fournisseurs de modèles locaux (Ollama, LM Studio, llama.cpp) acceptent ce paramètre ; les fournisseurs cloud l\'ignorent silencieusement. La plupart des utilisateurs laissent ce champ vide.',
     temperaturePlaceholder: 'laisser vide = valeur par défaut du fournisseur',
+    // v1.26.0 (#382 item 2): Seuils de détection des doublons
+    // (mode avancé personnalisé uniquement).
+    lintDedupSectionHeading: 'Seuils de détection des doublons',
+    lintDedupJaccardLinkThresholdName: 'Seuil de doublons par liens partagés',
+    lintDedupJaccardLinkThresholdDesc: 'Dans quelle mesure deux pages doivent partager leurs liens wiki sortants pour être signalées comme doublons. Les valeurs plus basses détectent davantage de quasi-doublons qui pointent vers les mêmes pages centrales ; les valeurs plus hautes exigent des graphes de liens quasi identiques. Laissez vide pour utiliser la valeur par défaut.',
+    lintDedupJaccardBodyGateName: 'Seuil de similarité du corps',
+    lintDedupJaccardBodyGateDesc: 'Lorsque deux pages partagent des liens wiki mais que leurs textes diffèrent au-delà de ce montant, elles ne sont pas signalées comme doublons. Augmentez ce seuil si vous voyez des faux positifs où deux pages sans rapport pointent vers le même centre. Laissez vide pour utiliser la valeur par défaut.',
+    lintDedupBigramThresholdName: 'Seuil de similarité titre/alias',
+    lintDedupBigramThresholdDesc: 'Dans quelle mesure deux titres ou alias de page doivent correspondre (Jaccard de bigrammes) pour être signalés comme doublons. Les valeurs plus basses détectent les variantes orthographiques et les coquilles mineures ; les valeurs plus hautes exigent des titres quasi identiques. Laissez vide pour utiliser la valeur par défaut.',
     lintDeadLinkSection: 'Liens cassés (détectés) [{count}]',
     lintEmptyPageSection: 'Pages vides (détectées) [{count}]',
     lintOrphanSection: 'Pages orphelines (détectées) [{count}]',

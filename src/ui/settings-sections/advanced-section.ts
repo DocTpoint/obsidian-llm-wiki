@@ -54,6 +54,13 @@ export function renderAdvancedSection(tab: LLMWikiSettingTab, containerEl: HTMLE
             // the Advanced block, so hiding the block without resetting
             // the value would leave users with a no-UI-affordance setting.
             tempSettings.forcePdfSupport = false;
+            // v1.26.0 (#382 item 2): reset the three dedup threshold
+            // overrides — same shape as the temperature/penalty fields
+            // above. Leaving them set while the block is hidden would
+            // create a no-UI-affordance setting.
+            tempSettings.lintJaccardLinkThreshold = undefined;
+            tempSettings.lintJaccardBodyGate = undefined;
+            tempSettings.lintBigramThreshold = undefined;
             // writePdfMarkdownToVault lives in Wiki Configuration (always
             // visible) and is NOT reset here.
           }
@@ -111,6 +118,66 @@ export function renderAdvancedSection(tab: LLMWikiSettingTab, containerEl: HTMLE
   renderNumericInput('extractionTemperatureName', 'extractionTemperatureDesc', 'extractionTemperature');
   renderNumericInput('chatTemperatureName', 'chatTemperatureDesc', 'chatTemperature');
   renderNumericInput('repetitionPenaltyName', 'repetitionPenaltyDesc', 'repetitionPenalty');
+
+  // v1.26.0 (#382 item 2): Lint duplicate-detection thresholds. Rendered
+  // as a separate sub-block below the temperature/penalty inputs because
+  // they belong to a different domain (lint, not LLM sampling). The
+  // sub-heading gives visual separation so users don't mistake them for
+  // temperature fields.
+  new Setting(containerEl)
+    .setName(tab.getTextDynamic('lintDedupSectionHeading'))
+    .setHeading();
+
+  // Sibling helper for the 0..1 threshold inputs. Different HTML min/max
+  // than renderNumericInput (temperature fields use 0..2); a sibling
+  // helper keeps each contract honest rather than parameterizing one
+  // helper with conflicting attribute sets.
+  const renderDedupThresholdInput = (
+    nameKey: string,
+    descKey: string,
+    fieldKey: 'lintJaccardLinkThreshold' | 'lintJaccardBodyGate' | 'lintBigramThreshold',
+  ): void => {
+    new Setting(containerEl)
+      .setName(tab.getTextDynamic(nameKey))
+      .setDesc(tab.getTextDynamic(descKey))
+      .addText(text => {
+        text
+          .setPlaceholder(tab.getText('temperaturePlaceholder'))
+          .setValue(tempSettings[fieldKey]?.toString() ?? '')
+          .onChange((value) => {
+            const trimmed = value.trim();
+            if (trimmed === '') {
+              tempSettings[fieldKey] = undefined;
+            } else {
+              const parsed = parseFloat(trimmed);
+              if (!isNaN(parsed)) {
+                tempSettings[fieldKey] = parsed;
+              }
+            }
+          });
+        text.inputEl.type = 'number';
+        text.inputEl.min = '0';
+        text.inputEl.max = '1';
+        text.inputEl.step = '0.05';
+        text.inputEl.classList.add('llm-wiki-number-input');
+      });
+  };
+
+  renderDedupThresholdInput(
+    'lintDedupJaccardLinkThresholdName',
+    'lintDedupJaccardLinkThresholdDesc',
+    'lintJaccardLinkThreshold',
+  );
+  renderDedupThresholdInput(
+    'lintDedupJaccardBodyGateName',
+    'lintDedupJaccardBodyGateDesc',
+    'lintJaccardBodyGate',
+  );
+  renderDedupThresholdInput(
+    'lintDedupBigramThresholdName',
+    'lintDedupBigramThresholdDesc',
+    'lintBigramThreshold',
+  );
 
   // v1.25.0 PR3: PDF force-support toggle (universal escape hatch).
   // Renders for ANY non-native provider.
