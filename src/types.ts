@@ -701,6 +701,7 @@ export const WIKI_LANGUAGES: Record<string, string> = {
   'es': 'Español',
   'pt': 'Português',
   'it': 'Italiano',
+  'ru': 'Русский',        // v1.26.0: Russian
 };
 
 // Valid frontmatter tag values per schema classification rules.

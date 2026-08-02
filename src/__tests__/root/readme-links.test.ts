@@ -59,6 +59,7 @@ const README_FILES: ReadmeLocation[] = [
   { label: 'docs/README_ES.md', path: join(REPO_ROOT, 'docs/README_ES.md') },
   { label: 'docs/README_PT.md', path: join(REPO_ROOT, 'docs/README_PT.md') },
   { label: 'docs/README_IT.md', path: join(REPO_ROOT, 'docs/README_IT.md') },
+  { label: 'docs/README_RU.md', path: join(REPO_ROOT, 'docs/README_RU.md') },
 ];
 
 /**
@@ -135,16 +136,16 @@ describe('v1.25.11 PATCH #375 — README links are absolute https:// or known-sa
     });
   }
 
-  it('every locale README references all 9 sibling locale READMEs (language switcher)', () => {
+  it('every locale README references all 10 sibling locale READMEs (language switcher)', () => {
     for (const { label, path } of README_FILES) {
       const body = readFileSync(path, 'utf8');
-      // The switcher block contains 10 entries: 1 plain-text bold marker
-      // for the current locale (e.g. `**English**`) plus 9 absolute
+      // The switcher block contains 11 entries: 1 plain-text bold marker
+      // for the current locale (e.g. `**English**`) plus 10 absolute
       // `https://github.com/.../blob/main/...` anchors pointing at the
       // other locales. We count the absolute anchors here — every locale
-      // must carry exactly 9.
+      // must carry exactly 10. (v1.26.0: Russian (ru) added as the 11th locale.)
       const totalLinkCount = (body.match(/blob\/main\/(README\.md|docs\/README_)/g) ?? []).length;
-      expect(totalLinkCount, `expected exactly 9 absolute README anchors in ${label} switcher`).toBe(9);
+      expect(totalLinkCount, `expected exactly 10 absolute README anchors in ${label} switcher`).toBe(10);
     }
   });
 

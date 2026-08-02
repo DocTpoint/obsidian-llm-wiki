@@ -1,10 +1,32 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-08-02 (v1.26.0 MINOR merged to main, awaiting release notes + tag). v1.25.12 slot stayed unused — the work originally planned as a v1.25.12 PATCH was reclassified as MINOR on review because the CLI is a fresh user-visible tool with a fresh flag surface (SemVer MINOR, not PATCH). v1.26.0 MINOR composition: headless ingest CLI from PR #372 (eucher) + CLI UX via PR #387 + #383 folder-boundary follow-up via PR #389, plus PR #357 source-lemma deterministic merge (DocTpoint, first item of #358 design scope). Tool named `llm-wiki` (not `wiki-ingest`) per first-principles CLI design — one tool = one bin = subcommand dispatch; future lint/query hooks into the dispatch without rename.
+**Last Updated:** 2026-08-02 (v1.26.0 MINOR re-scoped on main @ `a253078`, release deferred pending 5-batch P0+P1 work). v1.25.11 PATCH RELEASED. User decision (2026-08-02): include P0+P1 hardening before tag v1.26.0.
 
 ---
 
-## Current Phase: v1.26.0 MINOR MERGED 2026-08-02 (release notes + tag pending); v1.25.11 PATCH RELEASED; v1.26.x follow-on scope in design (per-type registration, typed edges, bidirectional frontmatter, identity ambiguity, Preview-Confirm, stable mutation interface — see [[project_v1_26_0_design]] + `docs/v1.26.0-design.md`).
+## Current Phase: v1.26.0 MINOR RE-SCOPED on main (release deferred pending 5-batch P0+P1 work); v1.25.11 PATCH RELEASED
+
+**v1.26.0 P0+P1 final scope** (user-revised 2026-08-02, 5 batches):
+
+| Batch | Item | Issue | Type | Effort |
+|---|---|---|---|---|
+| 1 | Streaming/bucketed dedup refactor | #382 item 3 | P1 (prerequisite) | 1 week |
+| 2 | Cross-type dedup candidate set expansion | #382 item 1 | P0 | 1.5-2 weeks |
+| 3 | P1-1/P1-2 wire-or-delete decision (delete recommended) | #382 item 4 | P1 | 0.2 week |
+| 4 | dead-code-as-docs policy (CLAUDE.md + pre-release-gate check) | #382 item 5 | P1 (governance) | 0.3 week |
+| 5 | Settings-owned enum-as-section-value (CVSS-style controlled vocab) | #358 item 8 / #328 §2 | design | 0.5 week |
+
+**Estimated total:** ~3.5-4 weeks focused work before v1.26.0 MINOR ships.
+
+**Deferred to v1.27.0+ (per user decision 2026-08-02):** #317 (schema.md changes ignored), #326 (defer to canonical pages outside wikiFolder), #306, #295, #184.
+
+**v1.26.0 MINOR scope (already on main, awaiting tag):** headless ingest CLI (`pnpm llm-wiki` script + npm bin) + #383 folder-boundary follow-up (PR #389) + DocTpoint source-lemma deterministic merge (PR #357) + lint dedup thresholds hardening (PR #395) + vault-wide link retarget for `mergeDuplicates` (PR #392, DocTpoint) + `created:` provenance fix (commit `cd734b9`, DocTpoint via PR #396). 10 commits on `main` since v1.25.11 PATCH, 2895 tests / 215 files passing.
+
+**Per-PR discipline (LOCKED after PR #393/#396 incident 2026-08-02):** for contributor PRs that need rebase after base-branch move, use `gh pr update-branch --rebase` — NEVER locally fork + push + create a new PR. See `[[feedback_pr_merge_credit_preservation]]`. DocTpoint acknowledged + apologized on PR #393.
+
+**v1.25.11 PATCH (2026-07-31, 8 commits, ~80 files, 2744 tests):**
+
+- Sources provenance stamp (#365 partial); README absolute URLs (#375); fine-grained status-bar stage hints (#169); simplify follow-up applied 4 fixes (F2+F4+F5+F6) with 2 indicator findings (F1, F7) reverted after user e2e feedback.
 
 **v1.25.10 PATCH** (RELEASED 2026-07-29, sequential on v1.25.9): ten-item scope (locked 2026-07-28, expanded from initial 5 after DocTpoint + Guru35 morning batches):
 - admission criterion in Task Requirements (closes DocTpoint §2 "rules stated twice in the same prompt")

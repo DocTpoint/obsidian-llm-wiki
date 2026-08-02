@@ -26,6 +26,7 @@ export const DE_TEXTS = {
     languageEs: 'Español',
     languagePt: 'Português',
     languageIt: 'Italiano',
+    languageRu: 'Русский',
 
     // Status
     statusTitle: 'LLM-Client-Status',

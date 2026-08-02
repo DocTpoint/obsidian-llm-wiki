@@ -11,13 +11,15 @@ import { FR_TEXTS } from './texts/fr';
 import { ES_TEXTS } from './texts/es';
 import { PT_TEXTS } from './texts/pt';
 import { IT_TEXTS } from './texts/it';
+import { RU_TEXTS } from './texts/ru';
 
 // v1.22.0: TEXTS keys are BCP-47 tags to match settings.language and
 // WIKI_LANGUAGES. zh-Hant is a regional subtag (vs. zh = zh-Hans by default).
+// v1.26.0: ru added for full Russian translation.
 // Type assertion is needed because TS would otherwise try to verify the
-// runtime shape of every export (EN/ZH/.../IT) against the inferred type
+// runtime shape of every export (EN/ZH/.../IT/RU) against the inferred type
 // of the object literal — and the inferred type wouldn't include 'zh-Hant'
-// without help. The i18n-parity test enforces key completeness.
+// or 'ru' without help. The i18n-parity test enforces key completeness.
 export const TEXTS = {
   en: EN_TEXTS,
   zh: ZH_TEXTS,
@@ -29,4 +31,5 @@ export const TEXTS = {
   es: ES_TEXTS,
   pt: PT_TEXTS,
   it: IT_TEXTS,
+  ru: RU_TEXTS,
 } as const;
