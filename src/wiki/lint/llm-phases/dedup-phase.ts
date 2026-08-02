@@ -38,6 +38,9 @@ import {
   LINT_CANDIDATE_TOKEN_ESTIMATE,
   LINT_MAX_INPUT_TOKENS,
   LINT_DEDUP_BATCH_SIZE,
+  LINT_DEDUP_JACCARD_LINK_THRESHOLD,
+  LINT_DEDUP_JACCARD_BODY_GATE,
+  LINT_DEDUP_BIGRAM_THRESHOLD,
   LINT_DEDUP_BIGRAM_TIER1_CUTOFF,
   WIKI_SUBFOLDERS,
 } from '../../../constants';
@@ -150,13 +153,37 @@ export async function runDedupPhase(
     ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStageDedup'));
     ctx.stageNotice?.setMessage(t.lintCheckingDuplicates);
 
-    // Layer 1: Programmatic candidates (3 signals: crossLang, bigram, sharedLinks)
-    const allCandidates = await generateDuplicateCandidates(pagesForDedup);
+    // Layer 1: Programmatic candidates (3 signals: crossLang, bigram, sharedLinks).
+    // v1.26.0 (#382 item 2): per-vault threshold overrides flow from
+    // ctx.settings. The Settings fields are optional (default undefined);
+    // undefined coalesces to the named constants in src/constants.ts so
+    // users who have not opted into Custom Advanced Settings see identical
+    // behavior. The tier-1 cutoff (LINT_DEDUP_BIGRAM_TIER1_CUTOFF) is
+    // intentionally NOT settable from settings — it controls which
+    // generated candidates the LLM sees (budget allocation), not whether
+    // a candidate is generated, and tuning it casually would either flood
+    // the LLM (cutoff too low) or silently drop candidates (cutoff too
+    // high). See classifyTiers call site below for the same constant.
+    const allCandidates = await generateDuplicateCandidates(pagesForDedup, {
+      jaccardLinkThreshold: ctx.settings.lintJaccardLinkThreshold
+        ?? LINT_DEDUP_JACCARD_LINK_THRESHOLD,
+      jaccardBodyGate: ctx.settings.lintJaccardBodyGate
+        ?? LINT_DEDUP_JACCARD_BODY_GATE,
+      bigramThreshold: ctx.settings.lintBigramThreshold
+        ?? LINT_DEDUP_BIGRAM_THRESHOLD,
+    });
     if (allCandidates.length === 0) {
       console.debug('lintWiki: no duplicate candidates found — wiki is clean');
       return [];
     }
 
+    // v1.26.0 (#382 item 2): classifyTiers uses the default tier1Cutoff
+    // (LINT_DEDUP_BIGRAM_TIER1_CUTOFF constant) — this cutoff is NOT
+    // surfaced as a Settings field because it controls which generated
+    // candidates the LLM sees, not whether a candidate is generated.
+    // Tuning it casually would either flood the LLM (cutoff too low) or
+    // silently drop candidates (cutoff too high). See generateDuplicateCandidates
+    // call site above for the settings-threaded overrides.
     const { tier1, tier2 } = classifyTiers(allCandidates);
     console.debug(`lintWiki: ${allCandidates.length} candidates → Tier 1: ${tier1.length}, Tier 2: ${tier2.length}`);
     // v1.24.0: log candidate breakdown by signal (preserved from the
