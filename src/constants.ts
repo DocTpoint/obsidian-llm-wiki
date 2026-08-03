@@ -387,6 +387,30 @@ export const LINT_YIELD_EVERY_PHASE1 = 50;
  */
 export const LINT_YIELD_EVERY_COMPARISON = 500;
 
+/**
+ * v1.26.0 (#382 item 3, Batch 1): number of title-prefix buckets used by
+ * the dual-key bucketed dedup refactor. Each page is hashed into one
+ * `tp:<prefix>` bucket keyed by the first {@link LINT_DEDUP_BUCKET_PREFIX_LEN}
+ * characters of its normalised title. Calibrated as 26 × 26 for English /
+ * Latin-script wikis (letters + digits per `normalizeForMatch`).
+ *
+ * NOT user-tunable: changing the bucket count would silently drop or
+ * recover recall depending on vault content distribution. The partition
+ * helper in `duplicate-detection.ts` uses this constant directly; tests
+ * pin behaviour against the documented value.
+ */
+export const LINT_DEDUP_BUCKET_COUNT = 676;
+
+/**
+ * v1.26.0 (#382 item 3, Batch 1): length of the title prefix used as the
+ * first dimension of the dual-key bucket. Combined with the second
+ * dimension (link-hash from outgoing wiki-links), this gives recall in
+ * the 97-98% range for cross-vault wikis (down from 100% for O(n²)
+ * all-pairs, but eliminates the O(N²) memory peak that OOMs at ~2000
+ * pages). See the Batch 1 plan in memory for the full recall analysis.
+ */
+export const LINT_DEDUP_BUCKET_PREFIX_LEN = 2;
+
 /** Batch size for vault reads during lint preparation. */
 export const LINT_PREP_BATCH_READ = 200;
 
