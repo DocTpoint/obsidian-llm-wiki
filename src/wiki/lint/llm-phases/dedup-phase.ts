@@ -162,6 +162,13 @@ export async function runDedupPhase(
       jaccardLinkThreshold: ctx.settings.lintJaccardLinkThreshold,
       jaccardBodyGate: ctx.settings.lintJaccardBodyGate,
       bigramThreshold: ctx.settings.lintBigramThreshold,
+    }, {
+      // v1.26.0 (#382 item 3, Batch 1): abort promptly when the user
+      // cancels. generateDuplicateCandidates invokes checkCancelled at
+      // every bucket boundary in the bucketed dedup path, so a long
+      // bucket fan-out on a 2000-page vault can no longer block cancel
+      // for the full scan duration.
+      checkCancelled,
     });
     if (allCandidates.length === 0) {
       console.debug('lintWiki: no duplicate candidates found — wiki is clean');

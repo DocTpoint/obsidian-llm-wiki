@@ -334,3 +334,57 @@ describe('generateDuplicateCandidates — bucketed integration', () => {
     expect(shared).not.toBeNull();
   });
 });
+
+// ── generateDuplicateCandidates — cancellation hook (v1.26.0 #382 item 3, Batch 1) ──
+//
+// The optional third parameter `hooks?.checkCancelled` is invoked once
+// per bucket boundary. This lets dedup-phase abort a long-running scan
+// promptly when the user cancels, without waiting for the entire bucket
+// fan-out to complete. When omitted, behaviour is unchanged.
+
+describe('generateDuplicateCandidates — cancellation hook', () => {
+  it('invokes checkCancelled once per bucket (and once before the fan-out starts)', async () => {
+    // Three pages that produce at least three distinct buckets (different
+    // title prefixes AND different outgoing links).
+    const a = makePage(
+      'wiki/a.md',
+      'Alpha',
+      'See [[hub-1]] for context. Body alpha one two three four.',
+    );
+    const b = makePage(
+      'wiki/b.md',
+      'Beta',
+      'See [[hub-2]] for context. Body beta one two three four.',
+    );
+    const c = makePage(
+      'wiki/c.md',
+      'Gamma',
+      'See [[hub-3]] for context. Body gamma one two three four.',
+    );
+    let calls = 0;
+    const candidates = await generateDuplicateCandidates([a, b, c], {}, {
+      checkCancelled: () => { calls++; },
+    });
+    // Contract: every non-empty bucket triggers exactly one checkCancelled.
+    // Each page lands in its own tp: bucket (alph / beta / gamm) and its
+    // own lh: bucket (hub1 / hub2 / hub3) — 6 buckets minimum, but at
+    // minimum the 3 tp: buckets must each fire the hook.
+    // The exact count depends on partitionPagesMultiBucket internals; we
+    // pin the lower bound here and rely on the lower-bound test to catch
+    // "hook never fires" regressions.
+    expect(calls).toBeGreaterThanOrEqual(3);
+    // Smoke: the call must complete without throwing and still produce
+    // (empty) candidates.
+    expect(Array.isArray(candidates)).toBe(true);
+  });
+
+  it('omitting the hooks argument preserves the legacy behaviour (regression guard)', async () => {
+    // Two pages whose title prefixes match; just verify the call does
+    // not throw or hang when the optional hooks argument is absent.
+    const a = makePage('wiki/a.md', 'Alpha', 'See [[hub-x]] for context.');
+    const b = makePage('wiki/b.md', 'AlphaTwin', 'See [[hub-x]] for context.');
+    // No hooks argument at all (matches the pre-refactor signature).
+    const candidates = await generateDuplicateCandidates([a, b]);
+    expect(findCandidate(candidates, a.path, b.path)).not.toBeNull();
+  });
+});

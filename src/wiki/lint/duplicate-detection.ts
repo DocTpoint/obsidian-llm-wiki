@@ -188,9 +188,21 @@ export function partitionPagesMultiBucket(
   return buckets;
 }
 
+export interface DuplicateCandidateHooks {
+  /**
+   * Invoked once per non-empty bucket boundary in the bucketed dedup
+   * path. Use this to abort a long-running scan promptly (e.g. when
+   * the user cancels) without waiting for the entire bucket fan-out
+   * to complete. The hook should throw to abort the scan; returning
+   * normally lets the scan proceed to the next bucket.
+   */
+  checkCancelled?: () => void;
+}
+
 export async function generateDuplicateCandidates(
   pages: Array<{ path: string; content: string; title: string }>,
   options: Partial<DuplicateDetectionThresholds> = {},
+  hooks: DuplicateCandidateHooks = {},
 ): Promise<DuplicateCandidate[]> {
   const thresholds = {
     jaccardLinkThreshold: resolveThreshold(
@@ -284,8 +296,17 @@ export async function generateDuplicateCandidates(
   const buckets = partitionPagesMultiBucket(metas);
 
   for (const [, bucketPages] of buckets) {
-    if (bucketPages.length < 2) continue;
+    if (bucketPages.length < 1) continue;
 
+    // v1.26.0 (#382 item 3, Batch 1): cancellation boundary. Letting
+    // a single bucket drain its O(B²) pair fan-out can take seconds on
+    // a large vault; invoking the hook at every non-empty bucket
+    // boundary (including singletons — long vault-wide scans can have
+    // many tiny buckets) gives the caller a chance to abort before
+    // the next bucket starts.
+    hooks.checkCancelled?.();
+
+    if (bucketPages.length < 2) continue;
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
     // Signal 1: Shared outgoing wiki-links (Jaccard >= LINT_DEDUP_JACCARD_LINK_THRESHOLD)
