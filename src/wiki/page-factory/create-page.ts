@@ -227,6 +227,7 @@ export async function createNewPage(
     const finalPrompt = applySectionLabels(prompt, ctx.settings);
 
     const pageContent = await client.createMessage({
+      task: 'page-generate',
       model: resolveModelForTask(ctx.settings, 'ingest'),
       max_tokens: TOKENS_PAGE_GENERATION,
       system: await ctx.buildSystemPrompt(pageType),

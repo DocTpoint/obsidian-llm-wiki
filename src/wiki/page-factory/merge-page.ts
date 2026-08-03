@@ -199,6 +199,7 @@ export async function mergePage(
     const finalPrompt = applySectionLabels(prompt, ctx.settings);
 
     const mergedBody = await client.createMessage({
+      task: 'merge-body',
       model: resolveModelForTask(ctx.settings, 'ingest'),
       max_tokens: TOKENS_PAGE_GENERATION,
       system: await ctx.buildSystemPrompt('merge'),
@@ -295,6 +296,7 @@ export async function appendToReviewedPage(
     const finalPrompt = applySectionLabels(prompt, ctx.settings);
 
     const newContent = await client.createMessage({
+      task: 'reviewed-append',
       model: resolveModelForTask(ctx.settings, 'ingest'),
       max_tokens: TOKENS_APPEND_REVIEWED,
       system: await ctx.buildSystemPrompt('merge'),

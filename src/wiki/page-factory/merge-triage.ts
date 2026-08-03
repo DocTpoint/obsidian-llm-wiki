@@ -102,6 +102,7 @@ export async function classifyMergeNeed(
   const finalPrompt = applySectionLabels(triagePrompt, ctx.settings);
 
   const response = await client.createMessage({
+    task: 'merge-triage',
     model: resolveModelForTask(ctx.settings, 'ingest'),
     max_tokens: TOKENS_MERGE_TRIAGE,
     system: await ctx.buildSystemPrompt('merge'),

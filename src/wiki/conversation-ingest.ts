@@ -151,6 +151,7 @@ CRITICAL RULES:
 - Names should be suitable for [[wiki-links]] referencing (judge appropriate naming based on Wiki index)`;
 
     const analysis = await client.createMessage({
+      task: 'conversation-extract',
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
       max_tokens: TOKENS_CONVERSATION_EXTRACTION,
       system: await this.ctx.buildSystemPrompt('conversation'),
@@ -165,6 +166,7 @@ CRITICAL RULES:
     const parsed = await parseJsonResponse(analysis, async (malformedJson: string) => {
       const repairPrompt = `Fix the following malformed JSON. Only fix JSON syntax errors (unescaped quotes, trailing commas, missing brackets). Do NOT change any values or content. Output ONLY the fixed JSON, no other text.\n\n${malformedJson}`;
       return await client.createMessage({
+        task: 'conversation-extract-retry',
         model: resolveModelForTask(this.ctx.settings, 'ingest'),
         max_tokens: TOKENS_PAGE_GENERATION,
         system: await this.ctx.buildSystemPrompt('conversation'),
@@ -230,6 +232,7 @@ CRITICAL RULES:
 
     this.ctx.onProgress?.('Generating summary page...');
     const summaryPageContent = await client.createMessage({
+      task: 'conversation-page',
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
       max_tokens: TOKENS_CONVERSATION_PAGE,
       system: await this.ctx.buildSystemPrompt('summary'),
@@ -321,6 +324,7 @@ CRITICAL RULES:
     if (!client) throw new Error('LLM client not initialized');
 
     const response = await client.createMessage({
+      task: 'conversation-save-dedup',
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
       max_tokens: TOKENS_QUERY_SAVE_DEDUP,
       system: await this.ctx.buildSystemPrompt('conversation'),

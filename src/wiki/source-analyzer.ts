@@ -367,6 +367,7 @@ export class SourceAnalyzer {
         // does not narrow it to its initializer across the callback.
         const finish: { reason: LLMFinishReason; usage?: LLMUsage } = { reason: 'unknown' };
         const response = await client.createMessage({
+          task: 'extract',
           model: resolvedModel,
           max_tokens: batchMaxTokens,
           system: systemPrompt,
@@ -418,6 +419,7 @@ export class SourceAnalyzer {
           : async (malformedJson: string) => {
             const repairPrompt = `Fix the following malformed JSON. Only fix JSON syntax errors (unescaped quotes, trailing commas, missing brackets). Do NOT change any values or content. Output ONLY the fixed JSON, no other text.\n\n${malformedJson}`;
             return await client.createMessage({
+              task: 'extract-retry',
               model: resolveModelForTask(this.ctx.settings, 'ingest'),
               max_tokens: retryCap, // Repair may need full output if original was truncated at retryCap
               system: await this.ctx.buildSystemPrompt('analyze'),
@@ -770,6 +772,7 @@ Respond with this JSON object and nothing else: {"kind": "entity"} or {"kind": "
     const system = await this.ctx.buildSystemPrompt('analyze');
     try {
       const response = await client.createMessage({
+        task: 'lemma-classify',
         model: resolveModelForTask(this.ctx.settings, 'ingest'),
         max_tokens: TOKENS_LEMMA_CLASSIFY,
         system,

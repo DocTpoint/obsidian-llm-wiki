@@ -165,6 +165,7 @@ export async function convertPdfToMarkdown(ctx: PdfConversionContext): Promise<C
   // system prompt lives in src/wiki/prompts/pdf.ts alongside every other
   // LLM-call prompt in the project (barrel re-exported by src/prompts.ts).
   const response = await llmClient.createMessage({
+    task: 'pdf-convert',
     model,
     max_tokens: TOKENS_PDF_CONVERSION,
     system: PDF_PROMPTS.systemPrompt,

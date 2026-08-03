@@ -138,11 +138,21 @@ export function applyThinkingMode(
   if (mode === 'server-default') settings.disableThinking = false;
 }
 
+interface TaskUsage {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Wall time inside createMessage. Overlaps when calls run concurrently. */
+  millis: number;
+}
+
 interface LLMUsageTotals {
   calls: number;
   extractionRounds: number;
   inputTokens: number;
   outputTokens: number;
+  /** The same numbers split by `params.task`, so a run says where its time went. */
+  byTask: Map<string, TaskUsage>;
 }
 
 /**
@@ -468,17 +478,58 @@ function withUsageAccounting(client: LLMClient, totals: LLMUsageTotals): LLMClie
   accounting.createMessage = params => {
     totals.calls++;
     if (params.cacheBreakpoint !== undefined) totals.extractionRounds++;
+
+    const label = params.task ?? 'untagged';
+    let bucket = totals.byTask.get(label);
+    if (!bucket) {
+      bucket = { calls: 0, inputTokens: 0, outputTokens: 0, millis: 0 };
+      totals.byTask.set(label, bucket);
+    }
+    bucket.calls++;
+
     const callerOnFinish = params.onFinish;
-    return client.createMessage({
+    const startedAt = Date.now();
+    const done = client.createMessage({
       ...params,
       onFinish: meta => {
         totals.inputTokens += meta.usage?.inputTokens ?? 0;
         totals.outputTokens += meta.usage?.outputTokens ?? 0;
+        bucket.inputTokens += meta.usage?.inputTokens ?? 0;
+        bucket.outputTokens += meta.usage?.outputTokens ?? 0;
         callerOnFinish?.(meta);
       },
     });
+    // Timed around the whole call, not inside onFinish: a call that throws still
+    // spent the time, and leaving it out would flatter whichever step fails.
+    return done.finally(() => { bucket.millis += Date.now() - startedAt; });
   };
   return accounting;
+}
+
+/**
+ * Where an ingest spent itself, per pipeline step. A single total cannot say
+ * that: the ten call sites of an ingest have different shapes — extraction
+ * writes long replies over a long prompt and is decode-bound, dedup answers in
+ * a dozen tokens over a page list and is prefill-bound — and tuning one of them
+ * against a single number is guesswork.
+ *
+ * Seconds are summed per call, so concurrent page generation double-counts
+ * against the wall clock. The share column is the honest one; compare it.
+ */
+function printTimeByStep(totals: LLMUsageTotals): void {
+  if (totals.byTask.size === 0) return;
+  console.log('');
+  console.log('=== Where the time went ===');
+  console.log('  step               calls   out tok    seconds   share');
+  const rows = [...totals.byTask.entries()].sort((a, b) => b[1].millis - a[1].millis);
+  const wall = rows.reduce((sum, [, usage]) => sum + usage.millis, 0) || 1;
+  for (const [name, usage] of rows) {
+    console.log(
+      `  ${name.padEnd(18)} ${String(usage.calls).padStart(5)}`
+      + ` ${String(usage.outputTokens).padStart(9)}`
+      + ` ${(usage.millis / 1000).toFixed(1).padStart(10)}`
+      + ` ${(100 * usage.millis / wall).toFixed(0).padStart(6)}%`);
+  }
 }
 
 function resolveSourceFile(app: ReturnType<typeof createVaultApp>, sourcePath: string): TFile {
@@ -532,6 +583,7 @@ function printSummary(
   console.log(`  llm calls         ${totals.calls}`);
   console.log(`  tokens in         ${totals.inputTokens}`);
   console.log(`  tokens out        ${totals.outputTokens}`);
+  printTimeByStep(totals);
   console.log(`  elapsed           ${(elapsedMs / 1000).toFixed(1)}s`);
 }
 
@@ -568,7 +620,9 @@ async function runIngest(argv: string[]): Promise<void> {
   const sourceFile = resolveSourceFile(app, options.source);
 
   await preloadLLMClientModules();
-  const totals: LLMUsageTotals = { calls: 0, extractionRounds: 0, inputTokens: 0, outputTokens: 0 };
+  const totals: LLMUsageTotals = {
+    calls: 0, extractionRounds: 0, inputTokens: 0, outputTokens: 0, byTask: new Map(),
+  };
   const client = withUsageAccounting(createLLMClient(settings), totals);
   const getClient = (): LLMClient => client;
 
