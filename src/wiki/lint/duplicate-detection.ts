@@ -176,10 +176,18 @@ export function partitionPagesMultiBucket(
       addToBucket(`tp:${titleKey}`, meta);
     }
 
-    // Link-hash buckets (lh:) — one per outgoing wiki-link.
+    // Link-hash buckets (lh:) — one per outgoing wiki-link. The
+    // Set's identity already deduplicates raw link strings, but two
+    // distinct raw strings can still normalise to the same bucket key
+    // (e.g. "[[A-B]]" and "[[A B]]" both become "ab"). Without
+    // per-page normalisation dedup, the same meta gets pushed into
+    // the same lh: bucket twice — a singleton bucket then has length
+    // 2 and the signal loops generate a self-pair (pathA === pathB).
+    const seenLinkKeys = new Set<string>();
     for (const link of meta.links) {
       const linkKey = normalizeForMatch(link);
-      if (linkKey.length > 0) {
+      if (linkKey.length > 0 && !seenLinkKeys.has(linkKey)) {
+        seenLinkKeys.add(linkKey);
         addToBucket(`lh:${linkKey}`, meta);
       }
     }

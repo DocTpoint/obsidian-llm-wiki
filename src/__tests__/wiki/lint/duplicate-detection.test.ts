@@ -282,6 +282,26 @@ describe('partitionPagesMultiBucket', () => {
     expect(buckets.has('tp:42')).toBe(true);
     expect(buckets.has('tp:中文')).toBe(true);
   });
+
+  // Code-review finding (Batch 1): if a page has two distinct raw link
+  // strings that normalize to the same key (e.g. "[[A-B]]" and "[[A B]]"),
+  // the partition helper pushes the page into the same lh: bucket twice
+  // — the bucket array contains the same meta reference twice. A singleton
+  // bucket then has length 2 and the signal loops generate a self-pair
+  // (pathA === pathB). Test that the partition helper deduplicates by
+  // normalised key inside each page.
+  it('deduplicates the same meta within one lh bucket when its links share a normalised key', () => {
+    const page = makeMeta({
+      path: 'wiki/dup-link.md',
+      title: 'Dup Links',
+      links: new Set(['shared-hub', 'Shared Hub']),  // both normalize to 'sharedhub'
+    });
+    const buckets = partitionPagesMultiBucket([page]);
+    // Both raw strings normalise to 'sharedhub'; the page must land
+    // exactly once in the lh:sharedhub bucket.
+    expect(buckets.get('lh:sharedhub')?.length).toBe(1);
+    expect(buckets.get('lh:sharedhub')?.[0]).toBe(page);
+  });
 });
 
 // ── generateDuplicateCandidates — bucketed integration (v1.26.0 #382 item 3, Batch 1) ──
