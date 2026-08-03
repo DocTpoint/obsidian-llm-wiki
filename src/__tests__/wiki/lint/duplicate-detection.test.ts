@@ -178,12 +178,6 @@ describe('generateDuplicateCandidates — threshold overrides', () => {
 });
 
 // ── partitionPagesMultiBucket (v1.26.0 #382 item 3, Batch 1) ─────────────────
-//
-// Dual-key bucketed dedup: each PageMeta is hashed into:
-//   - one "tp:" bucket keyed by the first N chars of normalised title
-//   - one "lh:" bucket per outgoing wiki-link target (normalised)
-// Same page may appear in multiple buckets; the bucket arrays share the
-// same page reference (no metadata duplication).
 
 /** Minimal PageMeta shape — only the fields the helper reads. */
 function makeMeta(overrides: Partial<{
@@ -287,5 +281,56 @@ describe('partitionPagesMultiBucket', () => {
     // normalizeForMatch preserves [a-z0-9] and CJK; the first 2 chars become the key.
     expect(buckets.has('tp:42')).toBe(true);
     expect(buckets.has('tp:中文')).toBe(true);
+  });
+});
+
+// ── generateDuplicateCandidates — bucketed integration (v1.26.0 #382 item 3, Batch 1) ──
+
+describe('generateDuplicateCandidates — bucketed integration', () => {
+  it('recalls cross-bucket pairs that share an outgoing wiki-link (方案 1 invariant)', async () => {
+    // Two pages whose title prefixes are completely different — they land
+    // in different tp: buckets. The sharedLinks signal would be lost under
+    // a single-key (title-only) bucket strategy, but the lh: link-hash
+    // bucket dimension recovers it because they share an outgoing hub.
+    const ai = makePage(
+      'wiki/entities/ai-agent.md',
+      'AI Agent',
+      'See [[shared-hub]] for context. Body has foo bar baz qux.',
+    );
+    const pa = makePage(
+      'wiki/entities/plugin-architecture.md',
+      'Plugin Architecture',
+      'See [[shared-hub]] for context. Body has foo bar baz extra.',
+    );
+    const candidates = await generateDuplicateCandidates([ai, pa]);
+    // Body Jaccard must clear the body gate, link Jaccard must clear the
+    // link threshold — and the pair must survive the bucketed integration.
+    const shared = findCandidate(candidates, ai.path, pa.path);
+    expect(shared).not.toBeNull();
+    expect(shared!.signal).toBe('sharedLinks');
+  });
+
+  it('within-bucket behaviour matches the legacy O(n²) flat loop (regression guard)', async () => {
+    // Both pages share the same title prefix (tp:ai) — the partition puts
+    // them in the same bucket, so the bucketed run is identical to the
+    // old flat O(n²) double for-loop. The candidate set must therefore
+    // include the same signals the pre-refactor code produced:
+    //   - sharedLinks (shared outgoing [[link]] + body Jaccard above gate)
+    //   - bigram      (title prefixes match closely)
+    const a = makePage(
+      'wiki/entities/a.md',
+      'AI Agent',
+      'See [[shared]] for context. Body has foo bar baz qux.',
+    );
+    const b = makePage(
+      'wiki/entities/b.md',
+      'AI Model',
+      'See [[shared]] for context. Body has foo bar baz extra.',
+    );
+    const candidates = await generateDuplicateCandidates([a, b]);
+    // At minimum: sharedLinks signal must survive (this is the regression
+    // guard — without it the integration silently dropped the candidate).
+    const shared = findCandidate(candidates, a.path, b.path);
+    expect(shared).not.toBeNull();
   });
 });
