@@ -369,13 +369,6 @@ export const CUSTOM_QUERY_INSTRUCTIONS_MAX_CHARS = 5000;
 // ============================================================================
 
 /**
- * Outer-loop yield cadence for lint duplicate-detection. Mirrors
- * YIELD_EVERY_ITERATIONS but kept separately so lint-tuning changes don't
- * risk spilling into other consumers (settings UI, wiki-engine status).
- */
-export const LINT_YIELD_EVERY_OUTER = 200;
-
-/**
  * Phase-1 (page parsing) yield cadence in duplicate-detection — finer than
  * the outer loop because parsing is cheap per item but the set accumulates.
  */

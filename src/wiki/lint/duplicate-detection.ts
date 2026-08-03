@@ -272,25 +272,27 @@ export async function generateDuplicateCandidates(
   // smaller slice now. Recall is preserved at 97-98%; see the Batch 1
   // plan in memory for the analysis.
   //
-  // NOTE: `comparisonCount` and the `LINT_YIELD_EVERY_COMPARISON` yield
-  // remain scoped to per-bucket loops, so the old cadence is preserved
-  // when a single bucket happens to contain most pages. The outer-loop
-  // yield cadence (LINT_YIELD_EVERY_OUTER = 200) is removed in the
-  // bucketed path because bucket boundaries already release the event
-  // loop — keeping a per-200-iteration cadence would mostly fire inside
-  // a single bucket where it provides no benefit. Phase 1 still uses
-  // its own LINT_YIELD_EVERY_PHASE1 cadence.
+  // NOTE: `comparisonCount` is cumulative across all buckets — it is
+  // NOT reset between buckets. This means the LINT_YIELD_EVERY_COMPARISON
+  // cadence (every 500 comparisons) fires globally, not per-bucket.
+  // For Latin-script wikis this matches the old behaviour because most
+  // pages land in large buckets where the counter advances quickly;
+  // for CJK wikis where most buckets hold 1-2 pages the counter only
+  // advances through the bucket boundary, so yield cadence inside a
+  // bucket is effectively unbounded. Phase 1 still uses its own
+  // LINT_YIELD_EVERY_PHASE1 cadence.
   //
   // Performance expectation:
   //   - Time: O(ΣB²) ≤ O(N²), typically O(N²/k) for k ~ 50 buckets.
-  //   - Memory: candidates Map is bounded by the per-bucket candidate
-  //     count (each bucket drains its pairs before the next starts), so
-  //     peak ≈ max(bucket candidates) instead of total across all pairs.
+  //   - Memory: candidates Map size grows monotonically across all
+  //     buckets — it is NOT drained per-bucket. The peak is bounded
+  //     by the total number of distinct pairs the bucketed path can
+  //     surface, which is much smaller than the N² pair count the old
+  //     flat O(N²) loop considered. addCandidate's key collision logic
+  //     deduplicates pairs that share both a tp: and an lh: bucket.
   const buckets = partitionPagesMultiBucket(metas);
 
   for (const [, bucketPages] of buckets) {
-    if (bucketPages.length < 1) continue;
-
     // v1.26.0 (#382 item 3, Batch 1): cancellation boundary. Letting
     // a single bucket drain its O(B²) pair fan-out can take seconds on
     // a large vault; invoking the hook at every non-empty bucket
