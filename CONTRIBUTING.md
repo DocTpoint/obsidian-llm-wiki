@@ -126,8 +126,6 @@ src/
 │   ├── contradicted-marker.ts  # `contradictions:` frontmatter marker (#312 §4, v1.25.10)
 │   ├── source-language.ts      # Source-frontmatter language directive builder (#350 follow-on, v1.25.10)
 │   ├── template-renderer.ts    # {{placeholder}} substitution with named keys (#244/v1.25.10)
-│   ├── lint-analysis-cache.ts  # Content-hash lint analysis cache (P1-1 helper, v1.25.10; controller wire deferred)
-│   └── lint-smart-skip.ts      # Per-phase verdict helpers (P1-2 helper, v1.25.10; controller wire deferred)
 ├── wiki/                # Wiki engine modules
 │   ├── wiki-engine.ts   # Orchestrator (ingest, lint, log) — v1.25.1: 4 internal modules extracted
 │   ├── graph-cache.ts   # (v1.25.1) `_cachedGraph` + invalidate logic
