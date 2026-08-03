@@ -10,6 +10,7 @@ import {
   LINT_DEDUP_JACCARD_LINK_THRESHOLD,
   LINT_DEDUP_JACCARD_BODY_GATE,
   LINT_DEDUP_BIGRAM_THRESHOLD,
+  LINT_DEDUP_BUCKET_PREFIX_LEN,
 } from '../../constants';
 
 export interface DuplicateCandidate {
@@ -107,6 +108,85 @@ export const DEFAULT_DEDUP_THRESHOLDS: Required<DuplicateDetectionThresholds> = 
 function resolveThreshold(value: number | undefined, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
   return Math.min(1, Math.max(0, value));
+}
+
+// v1.26.0 (#382 item 3, Batch 1): the local PageMeta shape used inside
+// generateDuplicateCandidates. Exported so the partition helper below
+// can accept the same input type without forcing callers to reconstruct
+// it.
+export interface LintPageMeta {
+  path: string;
+  title: string;
+  aliases: string[];
+  links: Set<string>;
+  bodyWords: Set<string>;
+}
+
+/**
+ * v1.26.0 (#382 item 3, Batch 1): dual-key bucket partition for the
+ * bucketed dedup refactor. Each page is hashed into:
+ *
+ *   - one `tp:` bucket keyed by the first {@link LINT_DEDUP_BUCKET_PREFIX_LEN}
+ *     characters of the title, normalised via {@link normalizeForMatch}.
+ *     This preserves the title-prefix-similar pages in the same bucket,
+ *     so the `bigram` / `crossLang` / `caseVariant` signals still fire
+ *     in O(B²) within the bucket.
+ *
+ *   - one `lh:` bucket per outgoing wiki-link target (also normalised).
+ *     This is the second dimension: pages sharing an outgoing hub link
+ *     end up in the same `lh:<hub>` bucket regardless of title prefix,
+ *     recovering sharedLinks recall that would otherwise be lost.
+ *
+ * The same `meta` object reference is shared across the buckets it
+ * lands in — no metadata duplication, no deep copy. Page order within
+ * each bucket follows input order, which keeps signal-pair ordering
+ * deterministic for the LLM verify phase.
+ *
+ * Pure: no IO, no yield, no global state. Suitable for unit tests.
+ *
+ * Bucket key prefixes (`tp:` / `lh:`) make the partition self-describing
+ * when reading debug output and prevent collisions between the two
+ * dimensions.
+ */
+export function partitionPagesMultiBucket(
+  metas: LintPageMeta[],
+): Map<string, LintPageMeta[]> {
+  const buckets = new Map<string, LintPageMeta[]>();
+
+  const addToBucket = (key: string, meta: LintPageMeta): void => {
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.push(meta);
+    } else {
+      buckets.set(key, [meta]);
+    }
+  };
+
+  for (const meta of metas) {
+    // Title-prefix bucket (tp:).
+    const titleKey = normalizeForMatch(meta.title).slice(
+      0,
+      LINT_DEDUP_BUCKET_PREFIX_LEN,
+    );
+    // When the title has fewer than PREFIX_LEN normalised chars (e.g.
+    // a single CJK ideograph), slice returns whatever is available —
+    // empty string for empty titles. Pages with empty keys all land
+    // in the same `tp:` bucket (empty-suffix bucket); they are
+    // inherently few, and over-partitioning them would not help recall.
+    if (titleKey.length > 0) {
+      addToBucket(`tp:${titleKey}`, meta);
+    }
+
+    // Link-hash buckets (lh:) — one per outgoing wiki-link.
+    for (const link of meta.links) {
+      const linkKey = normalizeForMatch(link);
+      if (linkKey.length > 0) {
+        addToBucket(`lh:${linkKey}`, meta);
+      }
+    }
+  }
+
+  return buckets;
 }
 
 export async function generateDuplicateCandidates(

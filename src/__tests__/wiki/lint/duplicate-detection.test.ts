@@ -3,6 +3,7 @@ import {
   bodyWordSet,
   computeJaccard,
   generateDuplicateCandidates,
+  partitionPagesMultiBucket,
 } from '../../../wiki/lint/duplicate-detection';
 import type { DuplicateCandidate } from '../../../wiki/lint/duplicate-detection';
 
@@ -173,5 +174,118 @@ describe('generateDuplicateCandidates — threshold overrides', () => {
     const withOptions = await generateDuplicateCandidates([a, b], {});
     const withoutOptions = await generateDuplicateCandidates([a, b]);
     expect(withOptions).toEqual(withoutOptions);
+  });
+});
+
+// ── partitionPagesMultiBucket (v1.26.0 #382 item 3, Batch 1) ─────────────────
+//
+// Dual-key bucketed dedup: each PageMeta is hashed into:
+//   - one "tp:" bucket keyed by the first N chars of normalised title
+//   - one "lh:" bucket per outgoing wiki-link target (normalised)
+// Same page may appear in multiple buckets; the bucket arrays share the
+// same page reference (no metadata duplication).
+
+/** Minimal PageMeta shape — only the fields the helper reads. */
+function makeMeta(overrides: Partial<{
+  path: string;
+  title: string;
+  aliases: string[];
+  links: Set<string>;
+  bodyWords: Set<string>;
+}> = {}) {
+  return {
+    path: overrides.path ?? 'default.md',
+    title: overrides.title ?? 'Default',
+    aliases: overrides.aliases ?? [],
+    links: overrides.links ?? new Set<string>(),
+    bodyWords: overrides.bodyWords ?? new Set<string>(),
+  };
+}
+
+describe('partitionPagesMultiBucket', () => {
+  it('returns an empty map for an empty input', () => {
+    const buckets = partitionPagesMultiBucket([]);
+    expect(buckets.size).toBe(0);
+  });
+
+  it('puts a single page into one tp bucket only (no links)', () => {
+    const page = makeMeta({ path: 'wiki/ai.md', title: 'AI Agent' });
+    const buckets = partitionPagesMultiBucket([page]);
+    expect(buckets.size).toBe(1);
+    expect(buckets.has('tp:ai')).toBe(true);
+    expect(buckets.get('tp:ai')).toEqual([page]);
+  });
+
+  it('separates pages with different title prefixes into different tp buckets', () => {
+    const ai = makeMeta({ path: 'wiki/ai.md', title: 'AI Agent' });
+    const db = makeMeta({ path: 'wiki/db.md', title: 'Database' });
+    const buckets = partitionPagesMultiBucket([ai, db]);
+    expect(buckets.get('tp:ai')).toEqual([ai]);
+    expect(buckets.get('tp:da')).toEqual([db]);
+  });
+
+  it('puts pages sharing the same title prefix into the same tp bucket', () => {
+    const ai1 = makeMeta({ path: 'wiki/ai1.md', title: 'AI Agent' });
+    const ai2 = makeMeta({ path: 'wiki/ai2.md', title: 'AIModel' });
+    const buckets = partitionPagesMultiBucket([ai1, ai2]);
+    expect(buckets.get('tp:ai')).toEqual([ai1, ai2]);
+  });
+
+  it('puts pages sharing an outgoing wiki-link into the same lh bucket', () => {
+    const wiki = makeMeta({
+      path: 'wiki/wiki-plugin.md',
+      title: 'Wiki Plugin',
+      links: new Set(['shared-hub', 'obsidian']),
+    });
+    const arch = makeMeta({
+      path: 'wiki/arch.md',
+      title: 'Plugin Architecture',
+      links: new Set(['shared-hub', 'plugin']),
+    });
+    const buckets = partitionPagesMultiBucket([wiki, arch]);
+    // Link keys are normalised via normalizeForMatch — hyphens removed,
+    // so "shared-hub" becomes "sharedhub".
+    expect(buckets.has('lh:sharedhub')).toBe(true);
+    expect(buckets.get('lh:sharedhub')).toContain(wiki);
+    expect(buckets.get('lh:sharedhub')).toContain(arch);
+  });
+
+  it('puts pages with non-overlapping links into different lh buckets', () => {
+    const a = makeMeta({
+      path: 'a.md',
+      title: 'A',
+      links: new Set(['hub-x']),
+    });
+    const b = makeMeta({
+      path: 'b.md',
+      title: 'B',
+      links: new Set(['hub-y']),
+    });
+    const buckets = partitionPagesMultiBucket([a, b]);
+    expect(buckets.get('lh:hubx')).toEqual([a]);
+    expect(buckets.get('lh:huby')).toEqual([b]);
+  });
+
+  it('puts pages with multiple links into multiple lh buckets (shared references)', () => {
+    const page = makeMeta({
+      path: 'p.md',
+      title: 'P',
+      links: new Set(['hub-1', 'hub-2', 'hub-3']),
+    });
+    const buckets = partitionPagesMultiBucket([page]);
+    expect(buckets.get('lh:hub1')).toEqual([page]);
+    expect(buckets.get('lh:hub2')).toEqual([page]);
+    expect(buckets.get('lh:hub3')).toEqual([page]);
+    // Same object reference across buckets (no duplicate metadata).
+    expect(buckets.get('lh:hub1')![0]).toBe(buckets.get('lh:hub2')![0]);
+  });
+
+  it('routes CJK and digit-prefixed titles by their first 2 chars (no __other__ fallback)', () => {
+    const num = makeMeta({ path: 'num.md', title: '42 Things' });
+    const cjk = makeMeta({ path: 'cjk.md', title: '中文测试' });
+    const buckets = partitionPagesMultiBucket([num, cjk]);
+    // normalizeForMatch preserves [a-z0-9] and CJK; the first 2 chars become the key.
+    expect(buckets.has('tp:42')).toBe(true);
+    expect(buckets.has('tp:中文')).toBe(true);
   });
 });
