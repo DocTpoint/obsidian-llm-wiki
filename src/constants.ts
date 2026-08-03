@@ -388,26 +388,20 @@ export const LINT_YIELD_EVERY_PHASE1 = 50;
 export const LINT_YIELD_EVERY_COMPARISON = 500;
 
 /**
- * v1.26.0 (#382 item 3, Batch 1): number of title-prefix buckets used by
- * the dual-key bucketed dedup refactor. Each page is hashed into one
- * `tp:<prefix>` bucket keyed by the first {@link LINT_DEDUP_BUCKET_PREFIX_LEN}
- * characters of its normalised title. Calibrated as 26 × 26 for English /
- * Latin-script wikis (letters + digits per `normalizeForMatch`).
- *
- * NOT user-tunable: changing the bucket count would silently drop or
- * recover recall depending on vault content distribution. The partition
- * helper in `duplicate-detection.ts` uses this constant directly; tests
- * pin behaviour against the documented value.
- */
-export const LINT_DEDUP_BUCKET_COUNT = 676;
-
-/**
  * v1.26.0 (#382 item 3, Batch 1): length of the title prefix used as the
  * first dimension of the dual-key bucket. Combined with the second
  * dimension (link-hash from outgoing wiki-links), this gives recall in
  * the 97-98% range for cross-vault wikis (down from 100% for O(n²)
  * all-pairs, but eliminates the O(N²) memory peak that OOMs at ~2000
  * pages). See the Batch 1 plan in memory for the full recall analysis.
+ *
+ * Calibrated for Latin-script wikis. For non-Latin scripts (CJK,
+ * Cyrillic), `normalizeForMatch` strips most characters (only
+ * `[a-z0-9一-鿿]` survive), so titles in those scripts land in the
+ * empty-string prefix bucket or get dropped — those pages depend
+ * entirely on the `lh:` link-hash dimension for recall. This is a
+ * known limitation; expanding the partition to script-aware prefix
+ * lengths is future work (Batch 2+).
  */
 export const LINT_DEDUP_BUCKET_PREFIX_LEN = 2;
 
