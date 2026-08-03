@@ -193,8 +193,13 @@ export interface DuplicateCandidateHooks {
    * Invoked once per non-empty bucket boundary in the bucketed dedup
    * path. Use this to abort a long-running scan promptly (e.g. when
    * the user cancels) without waiting for the entire bucket fan-out
-   * to complete. The hook should throw to abort the scan; returning
-   * normally lets the scan proceed to the next bucket.
+   * to complete.
+   *
+   * Contract: throw `new DOMException('Lint cancelled by user',
+   * 'AbortError')` to abort the scan, matching the convention used by
+   * every other lint sub-phase (`fix-runners.ts`, `wiki-engine.ts`,
+   * `controller.ts`). Returning normally lets the scan proceed to
+   * the next bucket.
    */
   checkCancelled?: () => void;
 }
@@ -257,7 +262,7 @@ export async function generateDuplicateCandidates(
     }
   };
 
-  let comparisonCount = 0;
+  const comparisonCountRef = { n: 0 };
 
   // v1.26.0 (#382 item 3, Batch 1): bucketed dedup. Previously each of
   // the three signals ran an O(N²) double for-loop across all pages; at
@@ -303,99 +308,175 @@ export async function generateDuplicateCandidates(
 
     if (bucketPages.length < 2) continue;
     await new Promise(resolve => window.setTimeout(resolve, 0));
+    await runSignalsForBucket(bucketPages, thresholds, addCandidate, comparisonCountRef);
+  }
 
-    // Signal 1: Shared outgoing wiki-links (Jaccard >= LINT_DEDUP_JACCARD_LINK_THRESHOLD)
-    for (let i = 0; i < bucketPages.length; i++) {
-      for (let j = i + 1; j < bucketPages.length; j++) {
-        comparisonCount++;
-        if (comparisonCount % LINT_YIELD_EVERY_COMPARISON === 0) {
-          await new Promise(resolve => window.setTimeout(resolve, 0));
-        }
+  return Array.from(candidates.values());
+}
 
-        const a = bucketPages[i], b = bucketPages[j];
-        if (a.links.size === 0 || b.links.size === 0) continue;
-        const jaccard = computeJaccard(a.links, b.links);
-        if (jaccard >= thresholds.jaccardLinkThreshold) {
-          // Body similarity gate: pages with different content are not duplicates
-          // even if they share the same set of wiki-links (e.g., two unrelated pages
-          // both linking only to one popular hub page).
-          const bodySim = computeJaccard(a.bodyWords, b.bodyWords);
-          if (bodySim < thresholds.jaccardBodyGate) continue;
-          addCandidate(a.path, b.path, `Shared wiki-links (${Math.round(jaccard * 100)}% overlap)`, 'sharedLinks', jaccard);
-        }
+// v1.26.0 (#382 item 3, Batch 1): encapsulate the three duplicate-detection
+// signals for a single bucket. Each signal is its own pair loop with
+// its own yield cadence (cumulative via comparisonCountRef.n). Splitting
+// the signals into named helpers makes it cheap to add a 4th signal later
+// and keeps the bucket-iteration shell in generateDuplicateCandidates
+// to ~5 lines.
+//
+// Signal summary (pre-refactor order preserved):
+//   1. Shared outgoing wiki-links (Jaccard on link sets, gated by body
+//      similarity) — the only signal sensitive to the lh: link-hash
+//      bucket dimension.
+//   2. Character bigram Jaccard on titles/aliases (catches spelling
+//      variants) AND cross-language alias match — both signals fit the
+//      same pair loop because they share the namesA/namesB derivations.
+//   3. Case-variant title collision — title-cased-only check, no body /
+//      link / alias involvement. Runs without yielding because each
+//      comparison is a single toLowerCase() and a string equality test.
+async function runSignalsForBucket(
+  bucketPages: LintPageMeta[],
+  thresholds: Required<DuplicateDetectionThresholds>,
+  addCandidate: (
+    pathA: string,
+    pathB: string,
+    reason: string,
+    signal: DuplicateCandidate['signal'],
+    score: number,
+  ) => void,
+  comparisonCountRef: { n: number },
+): Promise<void> {
+  await runSharedLinksSignal(bucketPages, thresholds, addCandidate, comparisonCountRef);
+  await runBigramCrossLangSignal(bucketPages, thresholds, addCandidate, comparisonCountRef);
+  runCaseVariantSignal(bucketPages, addCandidate);
+}
+
+// Cumulative comparison yield: increment the counter, yield every
+// LINT_YIELD_EVERY_COMPARISON iterations. The counter is shared across
+// all signals in all buckets — see the comment block in
+// generateDuplicateCandidates for the rationale.
+async function yieldForComparison(comparisonCountRef: { n: number }): Promise<void> {
+  comparisonCountRef.n++;
+  if (comparisonCountRef.n % LINT_YIELD_EVERY_COMPARISON === 0) {
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+  }
+}
+
+async function runSharedLinksSignal(
+  bucketPages: LintPageMeta[],
+  thresholds: Required<DuplicateDetectionThresholds>,
+  addCandidate: (
+    pathA: string,
+    pathB: string,
+    reason: string,
+    signal: DuplicateCandidate['signal'],
+    score: number,
+  ) => void,
+  comparisonCountRef: { n: number },
+): Promise<void> {
+  for (let i = 0; i < bucketPages.length; i++) {
+    for (let j = i + 1; j < bucketPages.length; j++) {
+      await yieldForComparison(comparisonCountRef);
+
+      const a = bucketPages[i], b = bucketPages[j];
+      if (a.links.size === 0 || b.links.size === 0) continue;
+      const jaccard = computeJaccard(a.links, b.links);
+      if (jaccard >= thresholds.jaccardLinkThreshold) {
+        // Body similarity gate: pages with different content are not duplicates
+        // even if they share the same set of wiki-links (e.g., two unrelated pages
+        // both linking only to one popular hub page).
+        const bodySim = computeJaccard(a.bodyWords, b.bodyWords);
+        if (bodySim < thresholds.jaccardBodyGate) continue;
+        addCandidate(a.path, b.path, `Shared wiki-links (${Math.round(jaccard * 100)}% overlap)`, 'sharedLinks', jaccard);
       }
     }
+  }
+}
 
-    // Signal 2: Bigram + cross-language on titles/aliases
-    for (let i = 0; i < bucketPages.length; i++) {
-      for (let j = i + 1; j < bucketPages.length; j++) {
-        comparisonCount++;
-        if (comparisonCount % LINT_YIELD_EVERY_COMPARISON === 0) {
-          await new Promise(resolve => window.setTimeout(resolve, 0));
+async function runBigramCrossLangSignal(
+  bucketPages: LintPageMeta[],
+  thresholds: Required<DuplicateDetectionThresholds>,
+  addCandidate: (
+    pathA: string,
+    pathB: string,
+    reason: string,
+    signal: DuplicateCandidate['signal'],
+    score: number,
+  ) => void,
+  comparisonCountRef: { n: number },
+): Promise<void> {
+  for (let i = 0; i < bucketPages.length; i++) {
+    for (let j = i + 1; j < bucketPages.length; j++) {
+      await yieldForComparison(comparisonCountRef);
+
+      const a = bucketPages[i], b = bucketPages[j];
+      const namesA = [a.title, ...a.aliases];
+      const namesB = [b.title, ...b.aliases];
+
+      // 2a: Bigram similarity on all names (titles + aliases)
+      let maxSim = 0;
+      for (const nameA of namesA) {
+        for (const nameB of namesB) {
+          const sim = computeJaccard(bigrams(nameA), bigrams(nameB));
+          if (sim > maxSim) maxSim = sim;
         }
+      }
+      if (maxSim >= thresholds.bigramThreshold) {
+        addCandidate(a.path, b.path, `Title/alias similarity (${Math.round(maxSim * 100)}% match)`, 'bigram', maxSim);
+      }
 
-        const a = bucketPages[i], b = bucketPages[j];
-        const namesA = [a.title, ...a.aliases];
-        const namesB = [b.title, ...b.aliases];
+      // 2b: Cross-language alias match
+      const normalizedNamesA = namesA.map(n => normalizeForMatch(n));
+      const normalizedAliasesB = b.aliases.map(n => normalizeForMatch(n));
+      const normalizedTitleB = normalizeForMatch(b.title);
 
-        // 2a: Bigram similarity on all names (titles + aliases)
-        let maxSim = 0;
-        for (const nameA of namesA) {
-          for (const nameB of namesB) {
-            const sim = computeJaccard(bigrams(nameA), bigrams(nameB));
-            if (sim > maxSim) maxSim = sim;
-          }
+      let crossLangMatch = false;
+      for (const normA of normalizedNamesA) {
+        if (normA && (normalizedAliasesB.includes(normA) || normalizedTitleB === normA)) {
+          addCandidate(a.path, b.path, 'Cross-language match (alias or title overlap)', 'crossLang', 1.0);
+          crossLangMatch = true;
+          break;
         }
-        if (maxSim >= thresholds.bigramThreshold) {
-          addCandidate(a.path, b.path, `Title/alias similarity (${Math.round(maxSim * 100)}% match)`, 'bigram', maxSim);
-        }
+      }
 
-        // 2b: Cross-language alias match
-        const normalizedNamesA = namesA.map(n => normalizeForMatch(n));
-        const normalizedAliasesB = b.aliases.map(n => normalizeForMatch(n));
-        const normalizedTitleB = normalizeForMatch(b.title);
+      if (!crossLangMatch) {
+        const normalizedNamesB = namesB.map(n => normalizeForMatch(n));
+        const normalizedAliasesA = a.aliases.map(n => normalizeForMatch(n));
+        const normalizedTitleA = normalizeForMatch(a.title);
 
-        let crossLangMatch = false;
-        for (const normA of normalizedNamesA) {
-          if (normA && (normalizedAliasesB.includes(normA) || normalizedTitleB === normA)) {
+        for (const normB of normalizedNamesB) {
+          if (normB && (normalizedAliasesA.includes(normB) || normalizedTitleA === normB)) {
             addCandidate(a.path, b.path, 'Cross-language match (alias or title overlap)', 'crossLang', 1.0);
-            crossLangMatch = true;
             break;
           }
-        }
-
-        if (!crossLangMatch) {
-          const normalizedNamesB = namesB.map(n => normalizeForMatch(n));
-          const normalizedAliasesA = a.aliases.map(n => normalizeForMatch(n));
-          const normalizedTitleA = normalizeForMatch(a.title);
-
-          for (const normB of normalizedNamesB) {
-            if (normB && (normalizedAliasesA.includes(normB) || normalizedTitleA === normB)) {
-              addCandidate(a.path, b.path, 'Cross-language match (alias or title overlap)', 'crossLang', 1.0);
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // Signal 3: Case-variant title collision
-    // Two pages whose titles differ only in casing are highly likely duplicates.
-    // e.g., "Unix" vs "unix", "Claude Code" vs "claude-code"
-    for (let i = 0; i < bucketPages.length; i++) {
-      for (let j = i + 1; j < bucketPages.length; j++) {
-        const a = bucketPages[i], b = bucketPages[j];
-        const lowerA = a.title.toLowerCase();
-        const lowerB = b.title.toLowerCase();
-        if (lowerA === lowerB && a.title !== b.title) {
-          // Always pick lowercase-as-slug as target (deterministic merge direction)
-          const [canonical, variant] = a.title < b.title ? [a, b] : [b, a];
-          addCandidate(canonical.path, variant.path,
-            `Case-variant duplicate: "${a.title}" ↔ "${b.title}"`, 'caseVariant', 0.9);
         }
       }
     }
   }
+}
 
-  return Array.from(candidates.values());
+// Signal 3: Case-variant title collision.
+// Two pages whose titles differ only in casing are highly likely duplicates.
+// e.g., "Unix" vs "unix", "Claude Code" vs "claude-code"
+// Runs without yielding: each pair is a single toLowerCase + string compare.
+function runCaseVariantSignal(
+  bucketPages: LintPageMeta[],
+  addCandidate: (
+    pathA: string,
+    pathB: string,
+    reason: string,
+    signal: DuplicateCandidate['signal'],
+    score: number,
+  ) => void,
+): void {
+  for (let i = 0; i < bucketPages.length; i++) {
+    for (let j = i + 1; j < bucketPages.length; j++) {
+      const a = bucketPages[i], b = bucketPages[j];
+      const lowerA = a.title.toLowerCase();
+      const lowerB = b.title.toLowerCase();
+      if (lowerA === lowerB && a.title !== b.title) {
+        // Always pick lowercase-as-slug as target (deterministic merge direction)
+        const [canonical, variant] = a.title < b.title ? [a, b] : [b, a];
+        addCandidate(canonical.path, variant.path,
+          `Case-variant duplicate: "${a.title}" ↔ "${b.title}"`, 'caseVariant', 0.9);
+      }
+    }
+  }
 }
