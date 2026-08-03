@@ -218,15 +218,8 @@ export async function generateDuplicateCandidates(
       DEFAULT_DEDUP_THRESHOLDS.bigramThreshold,
     ),
   };
-  interface PageMeta {
-    path: string;
-    title: string;
-    aliases: string[];
-    links: Set<string>;
-    bodyWords: Set<string>;
-  }
 
-  const metas: PageMeta[] = [];
+  const metas: LintPageMeta[] = [];
   const linkRegex = /\[\[([^\]|#]+)(?:[|#][^\]]+)?\]\]/g;
 
   for (let i = 0; i < pages.length; i++) {
