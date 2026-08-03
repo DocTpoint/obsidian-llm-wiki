@@ -393,16 +393,19 @@ describe('generateDuplicateCandidates — cancellation hook', () => {
 //
 // Synthetic recall benchmark. The plan calls for N≥500 with recall ≥ 95%.
 // We use N=200 here to keep CI under a few seconds while still exercising
-// the bucket fan-out path. The fixture seeds three classes of true pairs:
-//   - intra-tp-bucket: pages share the title-prefix bucket AND are close
-//     enough for the bigram/sharedLinks signals to fire.
-//   - cross-tp, intra-lh-bucket: pages land in different tp: buckets
-//     but share an outgoing hub link; recall depends on the lh:
-//     dimension recovering the pair.
-//   - cross-both (worst case): pages share neither bucket AND bigram
-//     similarity is below threshold; recall deliberately drops here.
-// The e2e assertion requires ≥95% recall of the union of recoverable
-// pairs (intra-tp + cross-tp-intra-lh).
+// the bucket fan-out path. The fixture builds 10 buckets of 20 pages each,
+// where every page shares a title prefix (tp-bucket) with its bucket-mates
+// AND at least one of 4 outgoing hubs (lh-bucket) with adjacent pages
+// inside the bucket.
+//
+// Planted pairs are strictly WITHIN each bucket — consecutive page indices
+// inside one bucket share the title prefix AND at least one outgoing hub,
+// so both the tp: and lh: dimensions can recover them. Cross-bucket pairs
+// are NOT planted because by construction the fixture gives them different
+// tp prefixes AND no shared outgoing hub, so they are unrecoverable by
+// design (the dual-key partition's residual 2-3% recall loss).
+//
+// The e2e assertion requires ≥ 95% recall on the planted recoverable set.
 
 describe('generateDuplicateCandidates — e2e recall on synthetic N=200', () => {
   it('recovers ≥95% of true duplicate pairs under bucketed dedup', async () => {
@@ -427,7 +430,13 @@ describe('generateDuplicateCandidates — e2e recall on synthetic N=200', () => 
 
     const pages: Array<{ path: string; title: string; content: string }> = [];
     let pageIdx = 0;
+    // Track the start index of each bucket so planted pairs stay
+    // WITHIN the bucket boundary — pairs that straddle buckets cannot
+    // be recalled (different tp: prefix AND different outgoing hubs by
+    // construction) and would silently inflate the unrecovered count.
+    const bucketStartIdx: Record<string, number> = {};
     for (const bk of bucketKeys) {
+      bucketStartIdx[bk] = pageIdx;
       const labels = bucketLabels[bk];
       for (let i = 0; i < 20; i++) {
         const baseTitle = labels[i % labels.length];
@@ -446,13 +455,17 @@ describe('generateDuplicateCandidates — e2e recall on synthetic N=200', () => 
     // Truncate to exactly N.
     pages.length = N;
 
-    // Plant recoverable pairs: every consecutive pair within the same
-    // tp-bucket (pages 0-1, 2-3, ...). They share title prefix AND at
+    // Plant recoverable pairs strictly within each bucket: consecutive
+    // page indices inside one bucket share the title-prefix AND at
     // least one shared-hub → both tp and lh bucket dimensions recover
-    // them.
+    // them. Cross-bucket pairs are deliberately not planted.
     const plantedPairs: Array<{ a: number; b: number; expected: 'recoverable' }> = [];
-    for (let i = 0; i + 1 < N; i += 2) {
-      plantedPairs.push({ a: i, b: i + 1, expected: 'recoverable' });
+    for (const bk of bucketKeys) {
+      const start = bucketStartIdx[bk];
+      const end = start + 20;
+      for (let i = start; i + 1 < Math.min(end, N); i += 2) {
+        plantedPairs.push({ a: i, b: i + 1, expected: 'recoverable' });
+      }
     }
 
     const candidates = await generateDuplicateCandidates(pages);
