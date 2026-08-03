@@ -2,23 +2,25 @@
 
 > Feature planning and improvement proposals
 
-**Version:** v1.26.0 MINOR — re-scoped on main @ `a253078` (2026-08-02), release deferred. v1.25.11 PATCH RELEASED. | **Updated:** 2026-08-02
+**Version:** v1.26.0 MINOR — re-scoped on main @ `429d956` (2026-08-03), release deferred. Russian i18n MERGED. v1.25.11 PATCH RELEASED. | **Updated:** 2026-08-03
 
 ## Current Status
 
-**v1.26.0 — RE-SCOPED on 2026-08-02; release deferred pending P0+P1 hardening work.** User decision (2026-08-02): "不立即发版，需要再把高优先级的P0+P1纳入开发后，再发布1.26.0". Main @ `a253078` already contains the v1.26.0 user-visible surface (headless CLI `pnpm llm-wiki` + DocTpoint #357 source-lemma + DocTpoint #386 vault-wide link retarget + DocTpoint #388 `created:` provenance + #383 folder-boundary follow-up + PR #395 lint dedup thresholds) plus the re-scope means the following P0+P1 work must ship before tagging v1.26.0:
+**v1.26.0 — RE-SCOPED on 2026-08-02; release deferred pending P0+P1 hardening work.** User decision (2026-08-02): "不立即发版，需要再把高优先级的P0+P1纳入开发后，再发布1.26.0". Main @ `429d956` already contains the v1.26.0 user-visible surface (headless CLI `pnpm llm-wiki` + DocTpoint #357 source-lemma + DocTpoint #386 vault-wide link retarget + DocTpoint #388 `created:` provenance + #383 folder-boundary follow-up + PR #395 lint dedup thresholds + **Russian i18n (PR #397)**) plus the re-scope means the following P0+P1 work must ship before tagging v1.26.0:
 
-**v1.26.0 P0+P1 final scope** (in execution order; user-revised 2026-08-02 — #317 and #326 deferred to v1.27.0+):
+**v1.26.0 P0+P1 final scope** (in execution order; user-revised 2026-08-02 — #317 and #326 deferred to v1.27.0+; **Batch 1 rev 2 simplified 2026-08-03** to 方案 1 dual-key bucket only, abandoning方案 4 spillover + 方案 7 hub bridge per ROI analysis):
 
 | Bucket | Item | Issue | Type | Effort |
 |---|---|---|---|---|
-| Batch 1 | Streaming/bucketed dedup refactor (precondition for cross-type dedup) | #382 item 3 | P1 (prerequisite) | 1 week |
+| **Batch 1** (in progress, branch `feat/v1.26.0-batch-1-dedup-streaming`) | **Dual-key bucketed dedup** (tp-prefix + lh-link-hash buckets) | #382 item 3 | P1 (prerequisite) | **0.8 week** |
 | Batch 2 | Cross-type dedup candidate set expansion | #382 item 1 | P0 | 1.5-2 weeks |
 | Batch 3 | P1-1/P1-2 wire-or-delete decision (delete recommended, see #382 item 4) | #382 item 4 | P1 | 0.2 week |
 | Batch 4 | dead-code-as-docs policy (CLAUDE.md + pre-release-gate check) | #382 item 5 | P1 (governance) | 0.3 week |
 | Batch 5 | Settings-owned enum-as-section-value (CVSS-style controlled vocab) | #358 item 8 / #328 §2 | design | 0.5 week |
 
-**Estimated total: ~3.5-4 weeks of focused work before v1.26.0 MINOR ships.**
+**Estimated total: ~3.3-3.8 weeks of focused work before v1.26.0 MINOR ships.**
+
+**Batch 1 plan reference**: see `~/.claude/projects/-Users-greener-project-obsidian-llm-wiki/memory/project_v1_26_0_batch_1_dedup_streaming.md` (rev 2, 2026-08-03). 5 independent commits: (1) extract bucket constants → (2) `partitionPagesMultiBucket` pure helper → (3) integrate multi-bucket into `generateDuplicateCandidates` → (4) `checkCancelled` at bucket boundary in dedup-phase → (5) e2e recall + memory profile. Expected recall ≥ 95% (旧版 80-90%,方案 1 单独 97-98%); memory peak O(N² candidates) → O(B² per bucket).
 
 **Deferred to v1.27.0+ (per user decision 2026-08-02)**:
 
@@ -57,8 +59,14 @@
 - `62701c9` fix(merge): retarget links vault-wide and in every form before the delete (PR #392, DocTpoint, Closes #386)
 - `cd734b9` fix(frontmatter): take created: from the caller, never from the content (DocTpoint, Closes #388)
 - `a253078` Merge pull request #396 from `green-dalii/fix/388-created-provenance` (DocTpoint's commit via rebase; see ROADMAP §Process note)
+- `9422dd8` docs: re-scope v1.26.0 MINOR — 5-batch P0+P1 work + Russian i18n before tag
+- `ba09997` feat(i18n): register Russian locale + full UI translation (667 keys)
+- `ebca969` feat(i18n): add Russian section labels for wiki output system prompts
+- `292873f` test(i18n): pin Russian locale wiring + README switcher count
+- `cc7ad5d` docs(i18n): add Russian to all 10 README dropdowns + full README_RU translation
+- `429d956` Merge pull request #397 from `green-dalii/feat/v1.26.0-russian-i18n`
 
-*Stats*: 2863 tests / 213 files at PR #395 merge → **2895 tests / 215 files** after DocTpoint PR #392 + PR #396 (note: PR #396 closed but the underlying fix commit `cd734b9` is on main, contribution attributed via issue #388 and #393 design thread).
+*Stats*: 2863 tests / 213 files at PR #395 merge → **2895 tests / 215 files** after DocTpoint PR #392 + PR #396 → **2904 tests / 215 files** after Russian i18n PR #397 (note: PR #396 closed but the underlying fix commit `cd734b9` is on main, contribution attributed via issue #388 and #393 design thread).
 
 *Why MINOR not PATCH*: the CLI ships as a fresh user-visible tool (`pnpm llm-wiki` script, npm bin, subcommand dispatch, complete flag surface) — that is the canonical SemVer trigger for MINOR, not PATCH. The planned `v1.25.12` slot stays unused; the patch slot is not retroactively filled. Version numbers need not be consecutive.
 

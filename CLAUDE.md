@@ -1,22 +1,22 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-08-02 (v1.26.0 MINOR re-scoped on main @ `a253078`, release deferred pending 5-batch P0+P1 work). v1.25.11 PATCH RELEASED. User decision (2026-08-02): include P0+P1 hardening before tag v1.26.0.
+**Last Updated:** 2026-08-03 (v1.26.0 MINOR re-scoped on main @ `429d956`, release deferred pending 5-batch P0+P1 work; Russian i18n MERGED via PR #397; Batch 1 rev 2 simplified to 方案 1 dual-key bucket per ROI analysis). v1.25.11 PATCH RELEASED. User decision (2026-08-02): include P0+P1 hardening before tag v1.26.0.
 
 ---
 
 ## Current Phase: v1.26.0 MINOR RE-SCOPED on main (release deferred pending 5-batch P0+P1 work); v1.25.11 PATCH RELEASED
 
-**v1.26.0 P0+P1 final scope** (user-revised 2026-08-02, 5 batches):
+**v1.26.0 P0+P1 final scope** (user-revised 2026-08-02, 5 batches; **Batch 1 rev 2 simplified 2026-08-03**):
 
 | Batch | Item | Issue | Type | Effort |
 |---|---|---|---|---|
-| 1 | Streaming/bucketed dedup refactor | #382 item 3 | P1 (prerequisite) | 1 week |
+| **1** (in progress) | **Dual-key bucketed dedup** (tp-prefix + lh-link-hash buckets) | #382 item 3 | P1 (prerequisite) | **0.8 week** |
 | 2 | Cross-type dedup candidate set expansion | #382 item 1 | P0 | 1.5-2 weeks |
 | 3 | P1-1/P1-2 wire-or-delete decision (delete recommended) | #382 item 4 | P1 | 0.2 week |
 | 4 | dead-code-as-docs policy (CLAUDE.md + pre-release-gate check) | #382 item 5 | P1 (governance) | 0.3 week |
 | 5 | Settings-owned enum-as-section-value (CVSS-style controlled vocab) | #358 item 8 / #328 §2 | design | 0.5 week |
 
-**Estimated total:** ~3.5-4 weeks focused work before v1.26.0 MINOR ships.
+**Estimated total:** ~3.3-3.8 weeks focused work before v1.26.0 MINOR ships.
 
 **Deferred to v1.27.0+ (per user decision 2026-08-02):** #317 (schema.md changes ignored), #326 (defer to canonical pages outside wikiFolder), #306, #295, #184.
 
