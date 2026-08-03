@@ -162,6 +162,13 @@ export async function runDedupPhase(
       jaccardLinkThreshold: ctx.settings.lintJaccardLinkThreshold,
       jaccardBodyGate: ctx.settings.lintJaccardBodyGate,
       bigramThreshold: ctx.settings.lintBigramThreshold,
+    }, {
+      // v1.26.0 (#382 item 3, Batch 1): abort promptly when the user
+      // cancels. generateDuplicateCandidates invokes checkCancelled at
+      // every bucket boundary in the bucketed dedup path, so a long
+      // bucket fan-out on a 2000-page vault can no longer block cancel
+      // for the full scan duration.
+      checkCancelled,
     });
     if (allCandidates.length === 0) {
       console.debug('lintWiki: no duplicate candidates found — wiki is clean');
@@ -317,6 +324,21 @@ export async function runDedupPhase(
     console.debug(`lintWiki: LLM confirmed ${allDuplicates.length} duplicate pairs total`);
     return allDuplicates;
   } catch (e) {
+    // v1.26.0 (#382 item 3, Batch 1): AbortError is the user-cancellation
+    // signal from hooks.checkCancelled (and from any other lint sub-phase
+    // that propagates cancellation up the chain). The phase's contract
+    // is to absorb errors and return [] rather than re-throw — see the
+    // function header docstring and the v1.24.0 review comment on
+    // controller.ts dedup behaviour — so we keep the early-return here.
+    // We do, however, skip the "Duplicate detection failed" Notice
+    // because that message is misleading when the user actually
+    // cancelled (which is not a failure). The user-initiated cancel
+    // path does not deserve an error Notice — the status bar / cancel
+    // feedback lives in the controller layer.
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      console.debug('lintWiki: dedup-phase aborted by user (no error Notice shown)');
+      return [];
+    }
     // v1.22.6 #204: errors in dedup phase should not crash the entire lint.
     // Log and return empty so subsequent phases can still report.
     console.error('Duplicate detection failed:', e);

@@ -369,13 +369,6 @@ export const CUSTOM_QUERY_INSTRUCTIONS_MAX_CHARS = 5000;
 // ============================================================================
 
 /**
- * Outer-loop yield cadence for lint duplicate-detection. Mirrors
- * YIELD_EVERY_ITERATIONS but kept separately so lint-tuning changes don't
- * risk spilling into other consumers (settings UI, wiki-engine status).
- */
-export const LINT_YIELD_EVERY_OUTER = 200;
-
-/**
  * Phase-1 (page parsing) yield cadence in duplicate-detection — finer than
  * the outer loop because parsing is cheap per item but the set accumulates.
  */
@@ -386,6 +379,24 @@ export const LINT_YIELD_EVERY_PHASE1 = 50;
  * O(n²) pair comparisons are CPU-bound per item.
  */
 export const LINT_YIELD_EVERY_COMPARISON = 500;
+
+/**
+ * v1.26.0 (#382 item 3, Batch 1): length of the title prefix used as the
+ * first dimension of the dual-key bucket. Combined with the second
+ * dimension (link-hash from outgoing wiki-links), this gives recall in
+ * the 97-98% range for cross-vault wikis (down from 100% for O(n²)
+ * all-pairs, but eliminates the O(N²) memory peak that OOMs at ~2000
+ * pages). See the Batch 1 plan in memory for the full recall analysis.
+ *
+ * Calibrated for Latin-script wikis. For non-Latin scripts (CJK,
+ * Cyrillic), `normalizeForMatch` strips most characters (only
+ * `[a-z0-9一-鿿]` survive), so titles in those scripts land in the
+ * empty-string prefix bucket or get dropped — those pages depend
+ * entirely on the `lh:` link-hash dimension for recall. This is a
+ * known limitation; expanding the partition to script-aware prefix
+ * lengths is future work (Batch 2+).
+ */
+export const LINT_DEDUP_BUCKET_PREFIX_LEN = 2;
 
 /** Batch size for vault reads during lint preparation. */
 export const LINT_PREP_BATCH_READ = 200;

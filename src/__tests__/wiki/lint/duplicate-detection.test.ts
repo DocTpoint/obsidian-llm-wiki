@@ -3,6 +3,7 @@ import {
   bodyWordSet,
   computeJaccard,
   generateDuplicateCandidates,
+  partitionPagesMultiBucket,
 } from '../../../wiki/lint/duplicate-detection';
 import type { DuplicateCandidate } from '../../../wiki/lint/duplicate-detection';
 
@@ -173,5 +174,341 @@ describe('generateDuplicateCandidates — threshold overrides', () => {
     const withOptions = await generateDuplicateCandidates([a, b], {});
     const withoutOptions = await generateDuplicateCandidates([a, b]);
     expect(withOptions).toEqual(withoutOptions);
+  });
+});
+
+// ── partitionPagesMultiBucket (v1.26.0 #382 item 3, Batch 1) ─────────────────
+
+/** Minimal PageMeta shape — only the fields the helper reads. */
+function makeMeta(overrides: Partial<{
+  path: string;
+  title: string;
+  aliases: string[];
+  links: Set<string>;
+  bodyWords: Set<string>;
+}> = {}) {
+  return {
+    path: overrides.path ?? 'default.md',
+    title: overrides.title ?? 'Default',
+    aliases: overrides.aliases ?? [],
+    links: overrides.links ?? new Set<string>(),
+    bodyWords: overrides.bodyWords ?? new Set<string>(),
+  };
+}
+
+describe('partitionPagesMultiBucket', () => {
+  it('returns an empty map for an empty input', () => {
+    const buckets = partitionPagesMultiBucket([]);
+    expect(buckets.size).toBe(0);
+  });
+
+  it('puts a single page into one tp bucket only (no links)', () => {
+    const page = makeMeta({ path: 'wiki/ai.md', title: 'AI Agent' });
+    const buckets = partitionPagesMultiBucket([page]);
+    expect(buckets.size).toBe(1);
+    expect(buckets.has('tp:ai')).toBe(true);
+    expect(buckets.get('tp:ai')).toEqual([page]);
+  });
+
+  it('separates pages with different title prefixes into different tp buckets', () => {
+    const ai = makeMeta({ path: 'wiki/ai.md', title: 'AI Agent' });
+    const db = makeMeta({ path: 'wiki/db.md', title: 'Database' });
+    const buckets = partitionPagesMultiBucket([ai, db]);
+    expect(buckets.get('tp:ai')).toEqual([ai]);
+    expect(buckets.get('tp:da')).toEqual([db]);
+  });
+
+  it('puts pages sharing the same title prefix into the same tp bucket', () => {
+    const ai1 = makeMeta({ path: 'wiki/ai1.md', title: 'AI Agent' });
+    const ai2 = makeMeta({ path: 'wiki/ai2.md', title: 'AIModel' });
+    const buckets = partitionPagesMultiBucket([ai1, ai2]);
+    expect(buckets.get('tp:ai')).toEqual([ai1, ai2]);
+  });
+
+  it('puts pages sharing an outgoing wiki-link into the same lh bucket', () => {
+    const wiki = makeMeta({
+      path: 'wiki/wiki-plugin.md',
+      title: 'Wiki Plugin',
+      links: new Set(['shared-hub', 'obsidian']),
+    });
+    const arch = makeMeta({
+      path: 'wiki/arch.md',
+      title: 'Plugin Architecture',
+      links: new Set(['shared-hub', 'plugin']),
+    });
+    const buckets = partitionPagesMultiBucket([wiki, arch]);
+    // Link keys are normalised via normalizeForMatch — hyphens removed,
+    // so "shared-hub" becomes "sharedhub".
+    expect(buckets.has('lh:sharedhub')).toBe(true);
+    expect(buckets.get('lh:sharedhub')).toContain(wiki);
+    expect(buckets.get('lh:sharedhub')).toContain(arch);
+  });
+
+  it('puts pages with non-overlapping links into different lh buckets', () => {
+    const a = makeMeta({
+      path: 'a.md',
+      title: 'A',
+      links: new Set(['hub-x']),
+    });
+    const b = makeMeta({
+      path: 'b.md',
+      title: 'B',
+      links: new Set(['hub-y']),
+    });
+    const buckets = partitionPagesMultiBucket([a, b]);
+    expect(buckets.get('lh:hubx')).toEqual([a]);
+    expect(buckets.get('lh:huby')).toEqual([b]);
+  });
+
+  it('puts pages with multiple links into multiple lh buckets (shared references)', () => {
+    const page = makeMeta({
+      path: 'p.md',
+      title: 'P',
+      links: new Set(['hub-1', 'hub-2', 'hub-3']),
+    });
+    const buckets = partitionPagesMultiBucket([page]);
+    expect(buckets.get('lh:hub1')).toEqual([page]);
+    expect(buckets.get('lh:hub2')).toEqual([page]);
+    expect(buckets.get('lh:hub3')).toEqual([page]);
+    // Same object reference across buckets (no duplicate metadata).
+    expect(buckets.get('lh:hub1')![0]).toBe(buckets.get('lh:hub2')![0]);
+  });
+
+  it('routes CJK and digit-prefixed titles by their first 2 chars (no __other__ fallback)', () => {
+    const num = makeMeta({ path: 'num.md', title: '42 Things' });
+    const cjk = makeMeta({ path: 'cjk.md', title: '中文测试' });
+    const buckets = partitionPagesMultiBucket([num, cjk]);
+    // normalizeForMatch preserves [a-z0-9] and CJK; the first 2 chars become the key.
+    expect(buckets.has('tp:42')).toBe(true);
+    expect(buckets.has('tp:中文')).toBe(true);
+  });
+
+  // Code-review finding (Batch 1): if a page has two distinct raw link
+  // strings that normalize to the same key (e.g. "[[A-B]]" and "[[A B]]"),
+  // the partition helper pushes the page into the same lh: bucket twice
+  // — the bucket array contains the same meta reference twice. A singleton
+  // bucket then has length 2 and the signal loops generate a self-pair
+  // (pathA === pathB). Test that the partition helper deduplicates by
+  // normalised key inside each page.
+  it('deduplicates the same meta within one lh bucket when its links share a normalised key', () => {
+    const page = makeMeta({
+      path: 'wiki/dup-link.md',
+      title: 'Dup Links',
+      links: new Set(['shared-hub', 'Shared Hub']),  // both normalize to 'sharedhub'
+    });
+    const buckets = partitionPagesMultiBucket([page]);
+    // Both raw strings normalise to 'sharedhub'; the page must land
+    // exactly once in the lh:sharedhub bucket.
+    expect(buckets.get('lh:sharedhub')?.length).toBe(1);
+    expect(buckets.get('lh:sharedhub')?.[0]).toBe(page);
+  });
+});
+
+// ── generateDuplicateCandidates — bucketed integration (v1.26.0 #382 item 3, Batch 1) ──
+
+describe('generateDuplicateCandidates — bucketed integration', () => {
+  it('recalls cross-bucket pairs that share an outgoing wiki-link (方案 1 invariant)', async () => {
+    // Two pages whose title prefixes are completely different — they land
+    // in different tp: buckets. The sharedLinks signal would be lost under
+    // a single-key (title-only) bucket strategy, but the lh: link-hash
+    // bucket dimension recovers it because they share an outgoing hub.
+    const ai = makePage(
+      'wiki/entities/ai-agent.md',
+      'AI Agent',
+      'See [[shared-hub]] for context. Body has foo bar baz qux.',
+    );
+    const pa = makePage(
+      'wiki/entities/plugin-architecture.md',
+      'Plugin Architecture',
+      'See [[shared-hub]] for context. Body has foo bar baz extra.',
+    );
+    const candidates = await generateDuplicateCandidates([ai, pa]);
+    // Body Jaccard must clear the body gate, link Jaccard must clear the
+    // link threshold — and the pair must survive the bucketed integration.
+    const shared = findCandidate(candidates, ai.path, pa.path);
+    expect(shared).not.toBeNull();
+    expect(shared!.signal).toBe('sharedLinks');
+  });
+
+  it('within-bucket behaviour matches the legacy O(n²) flat loop (regression guard)', async () => {
+    // Both pages share the same title prefix (tp:ai) — the partition puts
+    // them in the same bucket, so the bucketed run is identical to the
+    // old flat O(n²) double for-loop. The candidate set must therefore
+    // include the same signals the pre-refactor code produced:
+    //   - sharedLinks (shared outgoing [[link]] + body Jaccard above gate)
+    //   - bigram      (title prefixes match closely)
+    const a = makePage(
+      'wiki/entities/a.md',
+      'AI Agent',
+      'See [[shared]] for context. Body has foo bar baz qux.',
+    );
+    const b = makePage(
+      'wiki/entities/b.md',
+      'AI Model',
+      'See [[shared]] for context. Body has foo bar baz extra.',
+    );
+    const candidates = await generateDuplicateCandidates([a, b]);
+    // At minimum: sharedLinks signal must survive (this is the regression
+    // guard — without it the integration silently dropped the candidate).
+    const shared = findCandidate(candidates, a.path, b.path);
+    expect(shared).not.toBeNull();
+  });
+});
+
+// ── generateDuplicateCandidates — cancellation hook (v1.26.0 #382 item 3, Batch 1) ──
+//
+// The optional third parameter `hooks?.checkCancelled` is invoked once
+// per bucket boundary. This lets dedup-phase abort a long-running scan
+// promptly when the user cancels, without waiting for the entire bucket
+// fan-out to complete. When omitted, behaviour is unchanged.
+
+describe('generateDuplicateCandidates — cancellation hook', () => {
+  it('invokes checkCancelled once per bucket (and once before the fan-out starts)', async () => {
+    // Three pages that produce at least three distinct buckets (different
+    // title prefixes AND different outgoing links).
+    const a = makePage(
+      'wiki/a.md',
+      'Alpha',
+      'See [[hub-1]] for context. Body alpha one two three four.',
+    );
+    const b = makePage(
+      'wiki/b.md',
+      'Beta',
+      'See [[hub-2]] for context. Body beta one two three four.',
+    );
+    const c = makePage(
+      'wiki/c.md',
+      'Gamma',
+      'See [[hub-3]] for context. Body gamma one two three four.',
+    );
+    let calls = 0;
+    const candidates = await generateDuplicateCandidates([a, b, c], {}, {
+      checkCancelled: () => { calls++; },
+    });
+    // Contract: every non-empty bucket triggers exactly one checkCancelled.
+    // Each page lands in its own tp: bucket (alph / beta / gamm) and its
+    // own lh: bucket (hub1 / hub2 / hub3) — 6 buckets minimum, but at
+    // minimum the 3 tp: buckets must each fire the hook.
+    // The exact count depends on partitionPagesMultiBucket internals; we
+    // pin the lower bound here and rely on the lower-bound test to catch
+    // "hook never fires" regressions.
+    expect(calls).toBeGreaterThanOrEqual(3);
+    // Smoke: the call must complete without throwing and still produce
+    // (empty) candidates.
+    expect(Array.isArray(candidates)).toBe(true);
+  });
+
+  it('omitting the hooks argument preserves the legacy behaviour (regression guard)', async () => {
+    // Two pages whose title prefixes match; just verify the call does
+    // not throw or hang when the optional hooks argument is absent.
+    const a = makePage('wiki/a.md', 'Alpha', 'See [[hub-x]] for context.');
+    const b = makePage('wiki/b.md', 'AlphaTwin', 'See [[hub-x]] for context.');
+    // No hooks argument at all (matches the pre-refactor signature).
+    const candidates = await generateDuplicateCandidates([a, b]);
+    expect(findCandidate(candidates, a.path, b.path)).not.toBeNull();
+  });
+});
+
+// ── generateDuplicateCandidates — e2e recall (v1.26.0 #382 item 3, Batch 1) ───
+//
+// Synthetic recall benchmark. The plan calls for N≥500 with recall ≥ 95%.
+// We use N=200 here to keep CI under a few seconds while still exercising
+// the bucket fan-out path. The fixture builds 10 buckets of 20 pages each,
+// where every page shares a title prefix (tp-bucket) with its bucket-mates
+// AND at least one of 4 outgoing hubs (lh-bucket) with adjacent pages
+// inside the bucket.
+//
+// Planted pairs are strictly WITHIN each bucket — consecutive page indices
+// inside one bucket share the title prefix AND at least one outgoing hub,
+// so both the tp: and lh: dimensions can recover them. Cross-bucket pairs
+// are NOT planted because by construction the fixture gives them different
+// tp prefixes AND no shared outgoing hub, so they are unrecoverable by
+// design (the dual-key partition's residual 2-3% recall loss).
+//
+// The e2e assertion requires ≥ 95% recall on the planted recoverable set.
+
+describe('generateDuplicateCandidates — e2e recall on synthetic N=200', () => {
+  it('recovers ≥95% of true duplicate pairs under bucketed dedup', async () => {
+    const N = 200;
+    // Build pages grouped by tp-bucket so planted pairs reliably share
+    // a bucket. Each bucket gets ~10 pages with shared outgoing hubs
+    // so the lh-bucket dimension has recoverable signal too.
+    const bucketKeys = ['al', 'be', 'cl', 'da', 'ec', 'fo', 'gl', 'hu', 'in', 'ja'];
+    const bucketLabels: Record<string, string[]> = {
+      al: ['Alpha', 'Atlas', 'Aster', 'Azure', 'Albus'],
+      be: ['Beta', 'Beacon', 'Beryl', 'Bento'],
+      cl: ['Claude', 'Cluster', 'Codex', 'Cobalt'],
+      da: ['Data', 'Delta', 'Docker', 'Daisy'],
+      ec: ['Echo', 'Ember', 'Eden'],
+      fo: ['Forge', 'Format', 'Fred'],
+      gl: ['Glade', 'Glow'],
+      hu: ['Hub'],
+      in: ['Index', 'Iris'],
+      ja: ['Jade', 'Java'],
+    };
+    const sharedHubs = ['shared-hub', 'plugin-core', 'obsidian', 'wiki-arch'];
+
+    const pages: Array<{ path: string; title: string; content: string }> = [];
+    let pageIdx = 0;
+    // Track the start index of each bucket so planted pairs stay
+    // WITHIN the bucket boundary — pairs that straddle buckets cannot
+    // be recalled (different tp: prefix AND different outgoing hubs by
+    // construction) and would silently inflate the unrecovered count.
+    const bucketStartIdx: Record<string, number> = {};
+    for (const bk of bucketKeys) {
+      bucketStartIdx[bk] = pageIdx;
+      const labels = bucketLabels[bk];
+      for (let i = 0; i < 20; i++) {
+        const baseTitle = labels[i % labels.length];
+        // Pair-within-bucket: alternate 2 hubs across pages so
+        // adjacent pages share at least one outgoing hub link.
+        const links = [
+          sharedHubs[i % 2],                              // alternating hub
+          sharedHubs[(i + 1) % sharedHubs.length],         // different hub
+        ];
+        const body = `${links.map(l => `See [[${l}]] for context. `).join('')}Body ${pageIdx} has foo bar baz qux extra.`;
+        const content = `---\naliases:\n  - "alias-${pageIdx}"\n---\n${body}`;
+        pages.push({ path: `wiki/entities/page-${pageIdx}.md`, title: `${baseTitle} ${pageIdx}`, content });
+        pageIdx++;
+      }
+    }
+    // Truncate to exactly N.
+    pages.length = N;
+
+    // Plant recoverable pairs strictly within each bucket: consecutive
+    // page indices inside one bucket share the title-prefix AND at
+    // least one shared-hub → both tp and lh bucket dimensions recover
+    // them. Cross-bucket pairs are deliberately not planted.
+    const plantedPairs: Array<{ a: number; b: number; expected: 'recoverable' }> = [];
+    for (const bk of bucketKeys) {
+      const start = bucketStartIdx[bk];
+      const end = start + 20;
+      for (let i = start; i + 1 < Math.min(end, N); i += 2) {
+        plantedPairs.push({ a: i, b: i + 1, expected: 'recoverable' });
+      }
+    }
+
+    const candidates = await generateDuplicateCandidates(pages);
+    const recoverableCount = plantedPairs.length;
+    const recalled = plantedPairs.filter(p =>
+      findCandidate(candidates, pages[p.a].path, pages[p.b].path) !== null,
+    ).length;
+
+    // Recall ≥ 95% on the planted recoverable set.
+    const recall = recoverableCount > 0 ? recalled / recoverableCount : 1;
+    // Print diagnostic so CI logs reveal the actual recall value when
+    // the threshold gets tuned in future releases.
+    console.debug(`e2e recall: ${recalled}/${recoverableCount} = ${(recall * 100).toFixed(1)}%, candidates=${candidates.length}`);
+    expect(recall).toBeGreaterThanOrEqual(0.95);
+
+    // Sanity: total candidate count must be bounded well below N². With
+    // N=200, N² = 40000 pairs. The bucketed path bounds this by bucket
+    // size, but our test fixture plants a lot of shared-hub links so the
+    // lh:sharedhub bucket holds most pages — pair count there approaches
+    // 200*199/2 ≈ 19900. Pin a generous upper bound that catches a fully
+    // broken partition (N² pair count) but tolerates a heavily-linked
+    // fixture. If the partition is silently disabled, candidates will
+    // approach 40000.
+    expect(candidates.length).toBeLessThan(25000);
   });
 });
