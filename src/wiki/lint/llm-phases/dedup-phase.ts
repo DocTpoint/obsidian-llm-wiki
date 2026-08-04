@@ -510,10 +510,51 @@ export async function runDedupPhase(
           // the 2-retry tier, if the response is still empty,
           // parseJsonResponse throws EmptyResponseError and the batch
           // is recorded as a dedupFailure.
+          //
+          // v1.26.0 Batch 7 (DocTpoint #382 comment 1): the null-vs-empty
+          // distinction. parseJsonResponse returns null in two distinct
+          // outcomes:
+          //   1. Legitimate empty: LLM returned `{"duplicates": []}`
+          //      correctly → no duplicates in this batch.
+          //   2. Parse failure / truncated: response was non-empty but
+          //      JSON was malformed OR truncated by max_tokens. The
+          //      retry tier above already exhausted the empty-body case;
+          //      the null here means "got body but couldn't parse it".
+          //
+          // Before Batch 7, both outcomes collapsed to the same `[]`
+          // return. parse-failures inside the success branch NEVER
+          // entered dedupFailures, so the [Duplicate Batch Failures]
+          // log line was blind to mid-response truncation. As traffic
+          // through this call scales up (post-Batch 2 cross-type
+          // expansion), we need a real truncation count before tuning
+          // max_tokens / batch size.
+          //
+          // Approach: keep parseJsonResponse contract stable (silent on
+          // parse-fail, throws on empty — 10+ other call sites depend
+          // on the silent contract). Check `=== null` here and route
+          // into dedupFailures with a distinct reason tag. The
+          // `throwOnEmpty: true` option above handles the empty-body
+          // case; this handles the "got body but parse failed" case.
           const dedupResult = await parseJsonResponse(dedupResponse, undefined, {
             throwOnEmpty: true,
             silentOnEmpty: false,
           }) as { duplicates?: DuplicateResult[] } | null;
+
+          if (dedupResult === null) {
+            // Parse failure / truncated — NOT a legitimate empty.
+            // Route into dedupFailures with a distinct reason tag so
+            // the [Duplicate Batch Failures] warning can distinguish
+            // this from network/429 errors. The fulfilled/rejected
+            // branch downstream treats dedupFailures as a record of
+            // skipped batches; the post-loop summary line
+            // (`[Duplicate Batch Failures] ${count} batches`) will
+            // surface this. dedupFailures is captured by closure on
+            // line 470; the push here is the canonical record path.
+            const reason = 'parse-failure: response present but JSON unparseable or truncated';
+            console.warn(`lintWiki: batch ${batchNum} ${reason}`);
+            dedupFailures.push({ name: `batch-${batchNum}`, reason });
+            return [];
+          }
 
           console.debug(`lintWiki: batch ${batchNum}/${batches.length} → ${dedupResult?.duplicates?.length || 0} duplicates confirmed`);
           // Guard against non-array LLM responses (single object, string, etc.)
