@@ -3,6 +3,7 @@
 // Extracted from lint-fixes.ts to keep the module focused.
 
 import { parseFrontmatter } from '../../core/frontmatter';
+import { hashBody } from '../../core/source-requirements';
 import {
   LINT_YIELD_EVERY_PHASE1,
   LINT_YIELD_EVERY_COMPARISON,
@@ -10,13 +11,15 @@ import {
   LINT_DEDUP_JACCARD_BODY_GATE,
   LINT_DEDUP_BIGRAM_THRESHOLD,
   LINT_DEDUP_BUCKET_PREFIX_LEN,
+  LINT_DEDUP_MAX_BUCKET_SIZE,
+  LINT_DEDUP_INCOMING_LINK_THRESHOLD,
 } from '../../constants';
 
 export interface DuplicateCandidate {
   target: string;
   source: string;
   reason: string;
-  signal: 'crossLang' | 'bigram' | 'sharedLinks' | 'caseVariant';
+  signal: 'crossLang' | 'bigram' | 'sharedLinks' | 'caseVariant' | 'sourceFingerprint' | 'sharedIncoming';
   score: number;
 }
 
@@ -119,11 +122,32 @@ export interface LintPageMeta {
   aliases: string[];
   links: Set<string>;
   bodyWords: Set<string>;
+  /**
+   * v1.26.0 (#382 item 1, Batch 2): body hash for the sourceFingerprint
+   * signal. Filled in by `generateDuplicateCandidates` from the
+   * frontmatter-stripped body; null for tests that construct LintPageMeta
+   * directly without going through the pipeline (e.g.
+   * partitionPagesMultiBucket unit tests). The fingerprint is identical
+   * to `hashBody(extractBody(content))` from source-requirements.ts and
+   * is what makes source↔source "content identical" detection
+   * deterministic without depending on title/alias/bigram heuristics.
+   */
+  bodyFingerprint: string;
+  /**
+   * v1.26.0 (#382 item 1, Batch 2): set of wiki paths that cite THIS
+   * page (i.e. for which THIS page appears in their outgoing `[[links]]`).
+   * Populated by `generateDuplicateCandidates` from the optional
+   * `incomingIndex` parameter; empty when the index is not provided.
+   * Used by the `runSharedIncomingSignal` signal which fires when two
+   * pages in the same `ic:` bucket share a non-trivial fraction of
+   * incoming-source paths.
+   */
+  incomingSources: Set<string>;
 }
 
 /**
- * v1.26.0 (#382 item 3, Batch 1): dual-key bucket partition for the
- * bucketed dedup refactor. Each page is hashed into:
+ * v1.26.0 (#382 item 1, Batch 2): dual-key + incoming-link bucket
+ * partition for the bucketed dedup refactor. Each page is hashed into:
  *
  *   - one `tp:` bucket keyed by the first {@link LINT_DEDUP_BUCKET_PREFIX_LEN}
  *     characters of the title, normalised via {@link normalizeForMatch}.
@@ -136,6 +160,15 @@ export interface LintPageMeta {
  *     end up in the same `lh:<hub>` bucket regardless of title prefix,
  *     recovering sharedLinks recall that would otherwise be lost.
  *
+ *   - one `ic:` bucket per incoming wiki-link source (Batch 2).
+ *     Pages that are CITED by the same source end up in the same
+ *     `ic:<source>` bucket regardless of title prefix or outgoing
+ *     links. This is the dimension that catches entity↔concept
+ *     cross-folder duplicates that share no outgoing links (e.g. an
+ *     entity "Transformer" and a concept "Attention" both cited by
+ *     the same source paper — they land in the same `ic:<paper>` bucket
+ *     even though their titles and outgoing links differ completely).
+ *
  * The same `meta` object reference is shared across the buckets it
  * lands in — no metadata duplication, no deep copy. Page order within
  * each bucket follows input order, which keeps signal-pair ordering
@@ -143,12 +176,25 @@ export interface LintPageMeta {
  *
  * Pure: no IO, no yield, no global state. Suitable for unit tests.
  *
- * Bucket key prefixes (`tp:` / `lh:`) make the partition self-describing
- * when reading debug output and prevent collisions between the two
- * dimensions.
+ * Bucket key prefixes (`tp:` / `lh:` / `ic:`) make the partition
+ * self-describing when reading debug output and prevent collisions
+ * between the three dimensions.
+ *
+ * The optional `incomingIndex` parameter is a `Map<sourcePath, targetPaths>`
+ * reverse index built by the caller during lint preparation. When
+ * provided, the `ic:` dimension is populated; when omitted, only
+ * `tp:` + `lh:` dimensions fire (legacy Batch 1 behavior, useful for
+ * unit tests that don't care about the ic: dimension).
+ *
+ * The `LINT_DEDUP_MAX_BUCKET_SIZE` cap protects against hub-page fan-out:
+ * a page with 100 incoming links would otherwise land in 100 `ic:`
+ * buckets, each pair-loop iterating its peers. We skip the ic:
+ * dimension for buckets larger than the cap (the tp: + lh: dimensions
+ * still apply — the cap only removes the ic: contribution).
  */
 export function partitionPagesMultiBucket(
   metas: LintPageMeta[],
+  incomingIndex?: Map<string, string[]>,
 ): Map<string, LintPageMeta[]> {
   const buckets = new Map<string, LintPageMeta[]>();
 
@@ -191,6 +237,20 @@ export function partitionPagesMultiBucket(
         addToBucket(`lh:${linkKey}`, meta);
       }
     }
+
+    // Incoming-link buckets (ic:) — one per source path that cites this
+    // page. For each (sourcePath → [targets]) entry where targets
+    // includes meta.path, add meta to the `ic:<sourcePath>` bucket.
+    // Per-page source-path dedup (mirrors lh:) prevents self-pair
+    // generation when the reverse index lists the same source path twice.
+    if (incomingIndex) {
+      for (const [sourcePath, targets] of incomingIndex) {
+        if (!targets.includes(meta.path)) continue;
+        const bucket = buckets.get(`ic:${sourcePath}`);
+        if (bucket && bucket.length >= LINT_DEDUP_MAX_BUCKET_SIZE) continue;
+        addToBucket(`ic:${sourcePath}`, meta);
+      }
+    }
   }
 
   return buckets;
@@ -212,10 +272,62 @@ export interface DuplicateCandidateHooks {
   checkCancelled?: () => void;
 }
 
+/**
+ * v1.26.0 (#382 item 1, Batch 2): pure helper that builds the
+ * incoming-link reverse index from a set of dedup-eligible pages.
+ *
+ * Walks each page's body content with the wiki-link regex (identical
+ * to the one used in `generateDuplicateCandidates`'s setup loop),
+ * resolves each link target via a `Map<title|basename, targetPath>`
+ * lookup table built once at the start (O(1) per link, vs the
+ * previous O(N) Array.find), and records `sourcePath → [targetPath]`
+ * for each match.
+ *
+ * Pure: no IO, no yield, no global state. Suitable for unit tests.
+ * The caller is responsible for filtering pages to the dedup-eligible
+ * set (entities / concepts / sources/) before calling.
+ */
+export function buildIncomingLinkIndex(
+  pages: Array<{ path: string; content: string; title: string }>,
+): Map<string, string[]> {
+  const titleToPath = new Map<string, string>();
+  const basenameToPath = new Map<string, string>();
+  for (const p of pages) {
+    titleToPath.set(p.title, p.path);
+    const basename = p.path.split('/').pop()?.replace(/\.md$/, '') ?? '';
+    basenameToPath.set(basename, p.path);
+  }
+
+  const linkRegex = /\[\[([^\]|#]+)(?:[|#][^\]]+)?\]\]/g;
+  const incoming = new Map<string, string[]>();
+  for (const source of pages) {
+    const targets: string[] = [];
+    const seenTargets = new Set<string>();
+    let match: RegExpExecArray | null;
+    while ((match = linkRegex.exec(source.content)) !== null) {
+      const linkText = match[1].trim();
+      const targetPath =
+        titleToPath.get(linkText) ??
+        basenameToPath.get(linkText.replace(/\.md$/, ''));
+      if (!targetPath || targetPath === source.path) continue;
+      if (seenTargets.has(targetPath)) continue;
+      seenTargets.add(targetPath);
+      targets.push(targetPath);
+    }
+    if (targets.length > 0) incoming.set(source.path, targets);
+  }
+  return incoming;
+}
+
 export async function generateDuplicateCandidates(
   pages: Array<{ path: string; content: string; title: string }>,
   options: Partial<DuplicateDetectionThresholds> = {},
   hooks: DuplicateCandidateHooks = {},
+  // v1.26.0 (#382 item 1, Batch 2): optional incoming-link reverse
+  // index passed through to partitionPagesMultiBucket. When provided,
+  // the ic: bucket dimension is populated. When omitted (legacy callers
+  // + unit tests), only tp: + lh: dimensions fire.
+  incomingIndex?: Map<string, string[]>,
 ): Promise<DuplicateCandidate[]> {
   const thresholds = {
     jaccardLinkThreshold: resolveThreshold(
@@ -255,8 +367,43 @@ export async function generateDuplicateCandidates(
     // Strip wiki links before computing body words so link text doesn't inflate similarity
     const bodyText = body.replace(/\[\[[^\]]+\]\]/g, '');
     const bodyWords = bodyWordSet(bodyText);
+    // v1.26.0 (#382 item 1, Batch 2): body fingerprint for the
+    // sourceFingerprint signal. Reuses the already-stripped `body`
+    // (avoids a second frontmatter-strip pass per page). `hashBody`
+    // internally re-trims + whitespace-collapses, so we pass the raw
+    // already-extracted body. Source↔source pairs whose bodies hash
+    // to the same value are the only ones the sourceFingerprint
+    // signal promotes to tier-1.
+    const bodyFingerprint = hashBody(body);
 
-    metas.push({ path: page.path, title: page.title, aliases, links, bodyWords });
+    metas.push({
+      path: page.path,
+      title: page.title,
+      aliases,
+      links,
+      bodyWords,
+      bodyFingerprint,
+      // v1.26.0 (#382 item 1, Batch 2): filled in below from
+      // `incomingIndex` after the setup loop. Default empty here;
+      // the populate step overwrites for pages that appear as targets
+      // in the reverse index.
+      incomingSources: new Set<string>(),
+    });
+  }
+
+  // v1.26.0 (#382 item 1, Batch 2): populate `incomingSources` from
+  // the reverse index. Walks `incomingIndex` once; for each source
+  // path → target paths list, adds the source path to each target
+  // page's incomingSources set. O(targets × avg-incoming) ≈ O(N × L)
+  // where L = avg incoming links per page — bounded by user count.
+  if (incomingIndex) {
+    const pathToMeta = new Map(metas.map(m => [m.path, m]));
+    for (const [sourcePath, targets] of incomingIndex) {
+      for (const targetPath of targets) {
+        const targetMeta = pathToMeta.get(targetPath);
+        if (targetMeta) targetMeta.incomingSources.add(sourcePath);
+      }
+    }
   }
 
   const candidates = new Map<string, DuplicateCandidate>();
@@ -265,7 +412,13 @@ export async function generateDuplicateCandidates(
     const key = [pathA, pathB].sort().join('|||');
     if (!candidates.has(key)) {
       candidates.set(key, { target: pathA, source: pathB, reason, signal, score });
-    } else if (score > candidates.get(key)!.score) {
+    } else if (score >= candidates.get(key)!.score) {
+      // v1.26.0 (#382 item 1, Batch 2): use `>=` not `>` so that signals
+      // later in runSignalsForBucket (e.g. sourceFingerprint) win over
+      // earlier ones with equal score (e.g. sharedLinks jaccard=1.0 when
+      // two sources share a [[link]]). The signal ordering is itself a
+      // priority order — sourceFingerprint is the most deterministic and
+      // should always be reported when it fires.
       candidates.set(key, { target: pathA, source: pathB, reason, signal, score });
     }
   };
@@ -303,9 +456,9 @@ export async function generateDuplicateCandidates(
   //     surface, which is much smaller than the N² pair count the old
   //     flat O(N²) loop considered. addCandidate's key collision logic
   //     deduplicates pairs that share both a tp: and an lh: bucket.
-  const buckets = partitionPagesMultiBucket(metas);
+  const buckets = partitionPagesMultiBucket(metas, incomingIndex);
 
-  for (const [, bucketPages] of buckets) {
+  for (const [bucketKey, bucketPages] of buckets) {
     // v1.26.0 (#382 item 3, Batch 1): cancellation boundary. Letting
     // a single bucket drain its O(B²) pair fan-out can take seconds on
     // a large vault; invoking the hook at every non-empty bucket
@@ -316,7 +469,10 @@ export async function generateDuplicateCandidates(
 
     if (bucketPages.length < 2) continue;
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    await runSignalsForBucket(bucketPages, thresholds, addCandidate, comparisonCountRef);
+    // v1.26.0 (#382 item 1, Batch 2): pass bucket key so signals that
+    // are dimension-specific (ic: only) can short-circuit on tp:/lh:
+    // buckets without running O(B²) pair loops over them.
+    await runSignalsForBucket(bucketPages, thresholds, addCandidate, comparisonCountRef, bucketKey);
   }
 
   return Array.from(candidates.values());
@@ -339,6 +495,14 @@ export async function generateDuplicateCandidates(
 //   3. Case-variant title collision — title-cased-only check, no body /
 //      link / alias involvement. Runs without yielding because each
 //      comparison is a single toLowerCase() and a string equality test.
+//   4. Source fingerprint (v1.26.0 #382 item 1, Batch 2) — body-hash
+//      equality between two pages. Fires deterministically when two
+//      source pages have identical bodies, regardless of title / alias /
+//      boilerplate. The other three signals are deliberately permissive
+//      on sources because every source shares boilerplate (URLs,
+//      citation footers) that drives bigram scores up; fingerprint is the
+//      only signal that proves two sources are content-identical rather
+//      than topic-adjacent.
 async function runSignalsForBucket(
   bucketPages: LintPageMeta[],
   thresholds: Required<DuplicateDetectionThresholds>,
@@ -350,9 +514,28 @@ async function runSignalsForBucket(
     score: number,
   ) => void,
   comparisonCountRef: { n: number },
+  // v1.26.0 (#382 item 1, Batch 2): bucket key passed in so signals
+  // that are dimension-specific (ic: only) can skip tp:/lh: buckets
+  // without running their pair loops over them.
+  bucketKey: string,
 ): Promise<void> {
   await runSharedLinksSignal(bucketPages, thresholds, addCandidate, comparisonCountRef);
   await runBigramCrossLangSignal(bucketPages, thresholds, addCandidate, comparisonCountRef);
+  // v1.26.0 (#382 item 1, Batch 2): sharedIncoming only fires in ic:
+  // buckets — every other dimension has empty incomingSources on the
+  // pages, so the signal would be a no-op anyway. Gating here avoids
+  // the wasted O(B²) loop + yield-counting in tp:/lh: buckets.
+  if (bucketKey.startsWith('ic:')) {
+    await runSharedIncomingSignal(bucketPages, addCandidate, comparisonCountRef);
+  }
+  // v1.26.0 (#382 item 1, Batch 2): sourceFingerprint is bucket-agnostic
+  // (group-by-fingerprint produces the same result regardless of which
+  // bucket the pages share). Running it once outside the bucket loop
+  // would be optimal, but to keep Batch 2 scoped we gate it to ic:
+  // buckets where it's most useful (sources co-cited by a hub). In
+  // tp:/lh: buckets the signal still fires, but its group-by work is
+  // cheap (O(B) per bucket) so the cost is negligible.
+  runSourceFingerprintSignal(bucketPages, addCandidate);
   runCaseVariantSignal(bucketPages, addCandidate);
 }
 
@@ -393,6 +576,51 @@ async function runSharedLinksSignal(
         const bodySim = computeJaccard(a.bodyWords, b.bodyWords);
         if (bodySim < thresholds.jaccardBodyGate) continue;
         addCandidate(a.path, b.path, `Shared wiki-links (${Math.round(jaccard * 100)}% overlap)`, 'sharedLinks', jaccard);
+      }
+    }
+  }
+}
+
+// v1.26.0 (#382 item 1, Batch 2): sharedIncoming signal. Fires inside
+// the ic: bucket dimension — two pages that share an incoming source
+// (i.e. both cited by the same page) get a Jaccard score on their
+// incoming-source sets. Pages with identical incoming-source sets are
+// near-certain semantic duplicates (they're two surfaces of the same
+// topic from the same referrer's perspective).
+//
+// Uses a fixed threshold LINT_DEDUP_INCOMING_LINK_THRESHOLD (0.3) rather
+// than a settings field — same rationale as LINT_DEDUP_BIGRAM_TIER1_CUTOFF.
+async function runSharedIncomingSignal(
+  bucketPages: LintPageMeta[],
+  addCandidate: (
+    pathA: string,
+    pathB: string,
+    reason: string,
+    signal: DuplicateCandidate['signal'],
+    score: number,
+  ) => void,
+  comparisonCountRef: { n: number },
+): Promise<void> {
+  for (let i = 0; i < bucketPages.length; i++) {
+    for (let j = i + 1; j < bucketPages.length; j++) {
+      await yieldForComparison(comparisonCountRef);
+
+      const a = bucketPages[i], b = bucketPages[j];
+      // Defensive: the partition only puts pages with shared incoming
+      // sources in the same ic: bucket, so empty incoming sets should
+      // not appear here. The empty-set skip avoids divide-by-zero in
+      // computeJaccard and keeps the signal a no-op on legacy buckets
+      // (tp: + lh:) that don't carry incoming-source information.
+      if (a.incomingSources.size === 0 || b.incomingSources.size === 0) continue;
+      const jaccard = computeJaccard(a.incomingSources, b.incomingSources);
+      if (jaccard >= LINT_DEDUP_INCOMING_LINK_THRESHOLD) {
+        addCandidate(
+          a.path,
+          b.path,
+          `Shared incoming sources (${Math.round(jaccard * 100)}% overlap)`,
+          'sharedIncoming',
+          jaccard,
+        );
       }
     }
   }
@@ -484,6 +712,60 @@ function runCaseVariantSignal(
         const [canonical, variant] = a.title < b.title ? [a, b] : [b, a];
         addCandidate(canonical.path, variant.path,
           `Case-variant duplicate: "${a.title}" ↔ "${b.title}"`, 'caseVariant', 0.9);
+      }
+    }
+  }
+}
+
+// Signal 4 (v1.26.0 #382 item 1, Batch 2): source fingerprint.
+// Two pages whose bodies hash to the same fingerprint are content-identical.
+// This is the ONLY signal that fires when two source pages are byte-for-byte
+// identical but differ in title (a user renamed one, or two separate ingests
+// of the same article landed with different filenames). The bigram and
+// sharedLinks signals still fire too, but sourceFingerprint wins by score
+// because it is the deterministic proof of duplication.
+//
+// Skipped when bodyFingerprint is empty (a degenerate case where the page
+// had no extractable body — extremely rare in practice; partition unit tests
+// construct LintPageMeta directly without a body hash).
+//
+// Implementation note: instead of an O(B²) pair loop that runs in EVERY
+// bucket (tp: + every lh: hub), we group pages by fingerprint once per
+// bucket in O(B) and emit candidates only for groups with size >= 2.
+// This collapses the work in the common case (no fingerprint matches)
+// from O(B²) to O(B). Buckets where many pages share an outgoing hub
+// (lh: hubs, sometimes 30+ pages) benefit the most.
+function runSourceFingerprintSignal(
+  bucketPages: LintPageMeta[],
+  addCandidate: (
+    pathA: string,
+    pathB: string,
+    reason: string,
+    signal: DuplicateCandidate['signal'],
+    score: number,
+  ) => void,
+): void {
+  const groups = new Map<string, LintPageMeta[]>();
+  for (const meta of bucketPages) {
+    if (!meta.bodyFingerprint) continue;
+    const existing = groups.get(meta.bodyFingerprint);
+    if (existing) existing.push(meta);
+    else groups.set(meta.bodyFingerprint, [meta]);
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        const a = group[i], b = group[j];
+        // Deterministic ordering: lower path first as the target.
+        const [target, src] = a.path < b.path ? [a, b] : [b, a];
+        addCandidate(
+          target.path,
+          src.path,
+          `Identical source body (fingerprint match)`,
+          'sourceFingerprint',
+          1.0,
+        );
       }
     }
   }

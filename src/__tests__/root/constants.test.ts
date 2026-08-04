@@ -46,10 +46,21 @@ describe('Token budget constants (Issue #75)', () => {
     expect(TOKENS_CONVERSATION_PAGE).toBe(8000);
   });
 
-  it('lint and contradiction constants are 4000', () => {
+  it('lint dedup constant is 8000 (v1.26.0 Batch 2 — thinking-mode insurance)', () => {
+    // v1.26.0 (#382 item 1, Batch 2): raised from 4000 to 8000 to
+    // accommodate thinking-mode models (deepseek-v4-flash) that burn
+    // thinking tokens against the same max_tokens budget, producing
+    // 0-byte responses when the budget is too small. 8000 gives the
+    // thinking channel ~4K and the JSON output ~4K.
+    expect(TOKENS_LINT_DEDUP_LLM).toBe(8000);
+  });
+
+  it('contradiction + append-reviewed constants remain 4000 (thinking-mode insurance unrelated)', () => {
+    // These two paths don't have the same thinking-budget issue
+    // because their prompts are short (single pair / single review
+    // item) and the LLM call is already at minimum viable size.
     expect(TOKENS_APPEND_REVIEWED).toBe(4000);
     expect(TOKENS_CONTRADICTION).toBe(4000);
-    expect(TOKENS_LINT_DEDUP_LLM).toBe(4000);
   });
 
   it('query constants are 2000 (Phase 5.5.0 thinking-model insurance)', () => {

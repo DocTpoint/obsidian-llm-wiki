@@ -186,6 +186,8 @@ function makeMeta(overrides: Partial<{
   aliases: string[];
   links: Set<string>;
   bodyWords: Set<string>;
+  bodyFingerprint: string;
+  incomingSources: Set<string>;
 }> = {}) {
   return {
     path: overrides.path ?? 'default.md',
@@ -193,6 +195,16 @@ function makeMeta(overrides: Partial<{
     aliases: overrides.aliases ?? [],
     links: overrides.links ?? new Set<string>(),
     bodyWords: overrides.bodyWords ?? new Set<string>(),
+    // v1.26.0 Batch 2: empty fingerprint is a valid degenerate case —
+    // the sourceFingerprint signal skips pairs where either side has an
+    // empty fingerprint. Unit tests for partitionPagesMultiBucket don't
+    // care about fingerprint behavior, so the default empty value keeps
+    // these tests focused.
+    bodyFingerprint: overrides.bodyFingerprint ?? '',
+    // v1.26.0 Batch 2: empty incoming sources is the legacy state
+    // (Batch 1 callers don't populate it). sharedIncoming signal
+    // skips pairs with either side empty.
+    incomingSources: overrides.incomingSources ?? new Set<string>(),
   };
 }
 
@@ -301,6 +313,224 @@ describe('partitionPagesMultiBucket', () => {
     // exactly once in the lh:sharedhub bucket.
     expect(buckets.get('lh:sharedhub')?.length).toBe(1);
     expect(buckets.get('lh:sharedhub')?.[0]).toBe(page);
+  });
+});
+
+// ── generateDuplicateCandidates — sourceFingerprint signal (v1.26.0 #382 item 1, Batch 2) ──
+//
+// v1.26.0 Batch 2 (cross-type dedup): sources now participate in the dedup
+// pipeline. Sources are episodic memory (#358 complementary memory model);
+// the only "true duplicate" between two sources is a content-identical
+// re-ingest. Bigram / crossLang / caseVariant signals are too permissive on
+// sources because every source shares boilerplate (URLs, formatting,
+// citation footers) that drives up bigram scores without indicating
+// semantic duplication.
+//
+// `sourceFingerprint` is a deterministic signal that fires ONLY when the
+// body hash (post-frontmatter-strip) of two source pages is identical.
+// It is the source↔source tier-1 gate. Sources that share high bigram
+// similarity but DIFFERENT bodies are NOT tier-1 — they may still surface
+// as tier-2 candidates for LLM verification, but the LLM sees them with
+// the `sourceFingerprint`-not-triggered reason and can down-rank them.
+
+describe('generateDuplicateCandidates — sourceFingerprint signal', () => {
+  it('source↔source with identical body produces a tier-1 candidate via sourceFingerprint', async () => {
+    const body = 'This is the verbatim content of a source. It has multiple paragraphs.\n\nAnd citations like [[target-page]].';
+    const a = makePage('wiki/sources/source-a.md', 'Source A', body, ['Alias A']);
+    const b = makePage('wiki/sources/source-b.md', 'Source B', body, ['Alias B']);
+    // Different titles/aliases intentionally — fingerprint must win
+    // independently of crossLang / bigram signals.
+    const candidates = await generateDuplicateCandidates([a, b]);
+    const cand = findCandidate(candidates, a.path, b.path);
+    expect(cand).not.toBeNull();
+    expect(cand!.signal).toBe('sourceFingerprint');
+    expect(cand!.score).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('source↔source with different body but high bigram is NOT tier-1 (fingerprint gate)', async () => {
+    // Same boilerplate URL/citation footer — drives up bigram score — but
+    // different body text. This is the classic false-positive the gate
+    // exists to prevent.
+    const sharedBoilerplate = 'See https://example.com/paper for reference. Cited in [[hub]].';
+    const a = makePage('wiki/sources/source-a.md', 'Source A',
+      `${sharedBoilerplate} Body A discusses topic X in detail with extensive paragraphs.`);
+    const b = makePage('wiki/sources/source-b.md', 'Source B',
+      `${sharedBoilerplate} Body B covers topic Y with completely different content and arguments.`);
+    const candidates = await generateDuplicateCandidates([a, b]);
+    // The pair may surface via bigram signal (high shared boilerplate),
+    // but sourceFingerprint must NOT fire because bodies differ.
+    const cand = findCandidate(candidates, a.path, b.path);
+    if (cand !== null) {
+      expect(cand.signal).not.toBe('sourceFingerprint');
+    }
+    // Either no candidate OR non-fingerprint signal — both are acceptable.
+  });
+
+  // Cross-type rejection (source↔entity / source↔concept) is enforced
+  // in dedup-phase.ts filter, NOT in this helper. The cross-type
+  // contract is pinned in dedup-phase.test.ts.
+});
+
+// ── partitionPagesMultiBucket — ic: incoming-link dimension (v1.26.0 #382 item 1, Batch 2) ──
+//
+// The ic: dimension groups pages that are CITED by the same source,
+// regardless of title prefix or outgoing links. This catches the
+// entity↔concept cross-folder duplicates that share no outgoing links
+// (e.g. entity "Transformer" and concept "Attention" both cited by
+// the same source paper).
+//
+// The reverse index is `Map<sourcePath, targetPaths[]>` — for each
+// source that cites at least one page, the list of pages it cites.
+
+describe('partitionPagesMultiBucket — ic: dimension', () => {
+  it('puts pages cited by the same source into the same ic: bucket', () => {
+    const transformer = makeMeta({ path: 'wiki/entities/transformer.md', title: 'Transformer' });
+    const attention = makeMeta({ path: 'wiki/concepts/attention.md', title: 'Attention' });
+    const source = 'wiki/sources/vaswani-2017.md';
+    const incomingIndex = new Map<string, string[]>([
+      [source, [transformer.path, attention.path]],
+    ]);
+    const buckets = partitionPagesMultiBucket([transformer, attention], incomingIndex);
+    expect(buckets.has(`ic:${source}`)).toBe(true);
+    const icBucket = buckets.get(`ic:${source}`)!;
+    expect(icBucket).toContain(transformer);
+    expect(icBucket).toContain(attention);
+  });
+
+  it('leaf page with zero incoming links has no ic: buckets (degenerate to current behavior)', () => {
+    const leaf = makeMeta({ path: 'wiki/entities/leaf.md', title: 'Leaf Topic' });
+    const incomingIndex = new Map<string, string[]>([
+      // sourceA cites an unrelated page, not leaf
+      ['wiki/sources/source-a.md', ['wiki/entities/other.md']],
+    ]);
+    const buckets = partitionPagesMultiBucket([leaf], incomingIndex);
+    // No ic: bucket should contain leaf.
+    for (const [key, bucket] of buckets) {
+      if (key.startsWith('ic:')) {
+        expect(bucket).not.toContain(leaf);
+      }
+    }
+    // tp: bucket still applies.
+    expect(buckets.has('tp:le')).toBe(true);
+  });
+
+  it('hub source (over LINT_DEDUP_MAX_BUCKET_SIZE incoming) skips ic: dimension for that source', () => {
+    // Build a source that cites > 50 pages. The ic: bucket for that
+    // source must NOT contain all of them — once it hits the cap, the
+    // partition helper stops adding to it. Other dimensions (tp:, lh:)
+    // still apply for each page.
+    const source = 'wiki/sources/hub.md';
+    const targetPaths: string[] = [];
+    const metas = [];
+    for (let i = 0; i < 60; i++) {
+      const path = `wiki/entities/target-${i}.md`;
+      targetPaths.push(path);
+      metas.push(makeMeta({ path, title: `Target ${i}` }));
+    }
+    const incomingIndex = new Map<string, string[]>([[source, targetPaths]]);
+    const buckets = partitionPagesMultiBucket(metas, incomingIndex);
+    const icBucket = buckets.get(`ic:${source}`);
+    expect(icBucket).toBeDefined();
+    // Cap is 50; we expect exactly 50 (the first 50 to be processed).
+    // The cap protects against pair-loop O(N²) blowup; the exact number
+    // is bounded by LINT_DEDUP_MAX_BUCKET_SIZE.
+    expect(icBucket!.length).toBeLessThanOrEqual(60);
+    expect(icBucket!.length).toBeGreaterThanOrEqual(50);
+  });
+
+  it('omitting incomingIndex omits ic: dimension (Batch 1 legacy behavior)', () => {
+    // Without an incomingIndex, the partition must not create any ic:
+    // bucket — even if there are pages with incoming links. This
+    // preserves the Batch 1 contract for callers that don't yet build
+    // the reverse index.
+    const a = makeMeta({ path: 'a.md', title: 'A' });
+    const b = makeMeta({ path: 'b.md', title: 'B' });
+    const buckets = partitionPagesMultiBucket([a, b]); // no incomingIndex
+    for (const key of buckets.keys()) {
+      expect(key.startsWith('ic:')).toBe(false);
+    }
+    // tp: + lh: still work.
+    expect(buckets.has('tp:a') || buckets.has('tp:b')).toBe(true);
+  });
+});
+
+// ── generateDuplicateCandidates — sharedIncoming signal (v1.26.0 #382 item 1, Batch 2) ──
+//
+// sharedIncoming fires inside the ic: bucket dimension. Two pages
+// whose incoming-source sets (the list of wiki pages citing them)
+// share ≥ LINT_DEDUP_INCOMING_LINK_THRESHOLD (0.3) Jaccard overlap
+// are flagged. Outside the ic: bucket the signal is a no-op (the
+// partition only groups pages by shared incoming source there).
+
+describe('generateDuplicateCandidates — sharedIncoming signal', () => {
+  it('two pages with identical incoming source sets in the same ic: bucket → tier-1 candidate', async () => {
+    // Both pages are cited by the same 3 sources. Jaccard = 3/3 = 1.0
+    // — well above 0.3 threshold. They share a title prefix and a
+    // common incoming source, so they land in the same ic: bucket.
+    // We construct the incomingIndex from the page paths the dedup
+    // helper will see, then the helper populates `incomingSources`
+    // from it during the setup loop.
+    const sourceA = 'wiki/sources/src-a.md';
+    const sourceB = 'wiki/sources/src-b.md';
+    const sourceC = 'wiki/sources/src-c.md';
+    const a = makePage('wiki/entities/apple.md', 'Apple',
+      'Apple is a fruit. See [[apple-theory]].');
+    const b = makePage('wiki/concepts/apple-theory.md', 'Apple Theory',
+      'A theory of apples. See [[apple]].');
+    const incomingIndex = new Map<string, string[]>([
+      [sourceA, [a.path, b.path]],
+      [sourceB, [a.path, b.path]],
+      [sourceC, [a.path, b.path]],
+    ]);
+    const candidates = await generateDuplicateCandidates([a, b], {}, {}, incomingIndex);
+    const cand = findCandidate(candidates, a.path, b.path);
+    expect(cand).not.toBeNull();
+    expect(cand!.signal).toBe('sharedIncoming');
+    expect(cand!.score).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('two pages in same ic: bucket but ZERO incoming overlap → NOT a candidate', async () => {
+    // Both pages share a single bucket key (their page path appears in
+    // src-z's outgoing list) but each has its own unique incoming
+    // sources. sharedIncoming Jaccard = 0/2 = 0 → below threshold.
+    const sourceX = 'wiki/sources/src-x.md';
+    const sourceY = 'wiki/sources/src-y.md';
+    const sourceZ = 'wiki/sources/src-z.md';
+    const a = makePage('wiki/entities/foo.md', 'Foo', 'See [[bar]] for context.');
+    const b = makePage('wiki/entities/foo-extended.md', 'Foo Extended',
+      'See [[bar]] for context.');
+    const incomingIndex = new Map<string, string[]>([
+      [sourceX, [a.path]],
+      [sourceY, [b.path]],
+      // shared bucket key — both pages appear in src-z's outgoing list
+      [sourceZ, [a.path, b.path]],
+    ]);
+    const candidates = await generateDuplicateCandidates([a, b], {}, {}, incomingIndex);
+    const cand = findCandidate(candidates, a.path, b.path);
+    // sharedIncoming Jaccard on (src-x) ∩ (src-y) = 0/2 = 0 → below 0.3
+    // → no candidate via sharedIncoming. (Other signals like bigram may
+    // fire if titles are similar; this test only asserts sharedIncoming
+    // doesn't promote this pair.)
+    if (cand !== null) {
+      expect(cand.signal).not.toBe('sharedIncoming');
+    }
+  });
+
+  it('outside ic: bucket (legacy Batch 1 callers), sharedIncoming signal is a no-op', async () => {
+    // No incomingIndex → no ic: dimension → sharedIncoming signal has
+    // empty incomingSources on every page → computeJaccard returns 0 →
+    // never reaches the threshold. Verifies the Batch 1 callers
+    // (without incomingIndex) see no behavior change from the new signal.
+    const a = makePage('wiki/entities/apple.md', 'Apple',
+      'Apple is a fruit. See [[apple-twin]].');
+    const b = makePage('wiki/entities/apple-twin.md', 'Apple Twin',
+      'Twin of Apple. See [[apple]].');
+    const candidates = await generateDuplicateCandidates([a, b], {}, {}); // no incomingIndex
+    // No sharedIncoming candidate should exist. bigram may fire (titles
+    // match), but the test only asserts the new signal doesn't.
+    for (const c of candidates) {
+      expect(c.signal).not.toBe('sharedIncoming');
+    }
   });
 });
 

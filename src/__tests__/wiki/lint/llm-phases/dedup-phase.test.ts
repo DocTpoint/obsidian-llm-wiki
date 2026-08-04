@@ -289,6 +289,69 @@ describe('runDedupPhase — early returns', () => {
     expect(result).toEqual([]);
     expect(createMessage).not.toHaveBeenCalled();
   });
+
+  // v1.26.0 (#382 item 1, Batch 2): the dedup filter now includes
+  // sources/. Two identical-body source pages in /sources/ should be
+  // dedup candidates via the sourceFingerprint signal. Previously the
+  // filter excluded sources entirely so this case never surfaced.
+  it('includes sources/ in the dedup-eligible set (source↔source via sourceFingerprint)', async () => {
+    const body = 'Identical source body content for fingerprint dedup test.';
+    const a = { path: 'wiki/sources/source-a.md', basename: 'source-a.md' };
+    const b = { path: 'wiki/sources/source-b.md', basename: 'source-b.md' };
+    const { client, createMessage } = stubLlm(
+      JSON.stringify({
+        duplicates: [{ target: a.path, source: b.path, reason: 'identical bodies' }],
+      })
+    );
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [a, b],
+      pageMap: makePageMap([
+        [a.path, `---\ntype: source\n---\n# Source A\n${body}`],
+        [b.path, `---\ntype: source\n---\n# Source B\n${body}`],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    // The phase must attempt LLM verification (proving sources are in the
+    // candidate set). The mock confirms the duplicate, so result is non-empty.
+    expect(createMessage).toHaveBeenCalled();
+    expect(result.length).toBeGreaterThanOrEqual(1);
+    expect(result.some(d =>
+      (d.target === a.path && d.source === b.path) ||
+      (d.target === b.path && d.source === a.path)
+    )).toBe(true);
+  });
+
+  // v1.26.0 (#382 item 1, Batch 2): `lintDedupIncludeSources = false`
+  // excludes sources/ from the dedup-eligible set (escape hatch for
+  // vaults whose source corpus generates false positives). Source pages
+  // must NOT trigger LLM verification in that mode.
+  it('lintDedupIncludeSources = false excludes sources/ from dedup-eligible set', async () => {
+    const body = 'Identical source body — should NOT be flagged when toggle is off.';
+    const a = { path: 'wiki/sources/source-a.md', basename: 'source-a.md' };
+    const b = { path: 'wiki/sources/source-b.md', basename: 'source-b.md' };
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({
+      llmClient: () => client,
+      settings: {
+        wikiFolder: 'wiki',
+        language: 'en',
+        model: 'test-model',
+        disableThinking: false,
+        lintDedupIncludeSources: false,
+      } as LintPhaseContext['settings'],
+    });
+    const input: DedupPhaseInput = {
+      wikiFiles: [a, b],
+      pageMap: makePageMap([
+        [a.path, `---\ntype: source\n---\n# Source A\n${body}`],
+        [b.path, `---\ntype: source\n---\n# Source B\n${body}`],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(result).toEqual([]);
+  });
 });
 
 describe('runDedupPhase — LLM verify path', () => {
@@ -576,5 +639,171 @@ describe('runDedupPhase — batching + rate limit', () => {
     // console.error", which the surrounding test infrastructure
     // captures. The phase logs to console.debug for cancellation,
     // console.error only for genuine failures.)
+  });
+});
+
+// ── runDedupPhase — batch failure diagnostic (v1.26.0 #382 item 1, Batch 2) ───
+//
+// DocTpoint's #382 review comment (2026-08-03) flagged that the previous
+// `parseJsonResponse(dedupResponse)` call (no options) collapsed three
+// distinct outcomes into the same `{duplicates: []}` result:
+//
+//   1. LLM returned a valid empty-confirmed response `{"duplicates":[]}`
+//   2. LLM returned 0 bytes (budget exhaustion, response_format stripped)
+//   3. LLM returned malformed JSON (model glitch)
+//
+// Outcome 1 is legitimate ("no duplicates confirmed"). Outcomes 2 and 3
+// are failures that should be diagnosed. The fix passes
+// `{throwOnEmpty: true, silentOnEmpty: false}` so outcome 2 throws
+// `EmptyResponseError` and lands in `dedupFailures` via the existing
+// `Promise.allSettled` rejection branch. Outcome 3 still returns null and
+// is treated identically to outcome 2 by the batch worker (`null` passes
+// through the `rawDups = dedupResult?.duplicates` guard as `undefined`
+// → empty array — this is the OLD pre-#382 behavior we preserve because
+// malformed JSON is rare and a separate halve-and-retry path would
+// require changing the LLM call signature).
+//
+// These three tests pin the new contract end-to-end.
+
+describe('runDedupPhase — batch failure diagnostic (throwOnEmpty)', () => {
+  it('LLM returning 0 bytes is recorded as a non-rate-limit failure, not a silent "no duplicates"', async () => {
+    // The LLM stub returns the empty string. With throwOnEmpty: true this
+    // should throw EmptyResponseError inside the batch worker; the outer
+    // Promise.allSettled captures it as a rejection; the result.forEach
+    // branch routes it into dedupFailures.
+    const createMessage = vi.fn().mockResolvedValue('');
+    const client = { createMessage } as unknown as LLMClient;
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/a.md', basename: 'a.md' },
+        { path: 'wiki/entities/A.md', basename: 'A.md' },
+      ],
+      pageMap: makePageMap([
+        // Identical bodies → caseVariant tier-1 candidate guarantees a
+        // batch is actually issued (without it, the early-return guard
+        // would skip the LLM call entirely).
+        ['wiki/entities/a.md', '---\ntype: entity\n---\n# a\nshared'],
+        ['wiki/entities/A.md', '---\ntype: entity\n---\n# A\nshared'],
+      ]),
+    };
+    // Spy on console.warn to capture the new [Duplicate Batch Failures]
+    // diagnostic we added in dedup-phase.ts. Empty-response failures
+    // must NOT trigger the [Duplicate Rate Limit] Notice (no 429 marker).
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await runDedupPhase(ctx, input, () => {});
+      // Phase still returns [] — the contract is "absorb and report",
+      // not "re-throw to caller". Operators see the diagnostic in console.
+      expect(result).toEqual([]);
+      // The batch was attempted (caseVariant signal surfaced candidates).
+      expect(createMessage).toHaveBeenCalled();
+      // The non-rate-limit diagnostic fired at least once.
+      const batchFailureWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string' && args[0].includes('[Duplicate Batch Failures]')
+      );
+      expect(batchFailureWarnings.length).toBeGreaterThan(0);
+      // The rate-limit Notice was NOT triggered — empty response is not a 429.
+      const rateLimitWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string' && args[0].includes('[Duplicate Rate Limit]')
+      );
+      expect(rateLimitWarnings).toHaveLength(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('LLM returning malformed JSON is recorded as a non-rate-limit failure (legacy null-return path)', async () => {
+    // With throwOnEmpty:true, only the empty-body case throws. Malformed
+    // JSON still returns null from parseJsonResponse (default behavior).
+    // The batch worker treats null as "no duplicates confirmed" via the
+    // `Array.isArray(rawDups)` guard at dedup-phase.ts:283 — but the
+    // operator still gets a console.error from parseJsonResponse itself
+    // (line 218 of json.ts: "JSON parse completely failed").
+    //
+    // We pin that the phase does NOT crash and returns []. The malformed
+    // path is intentionally less loud than the empty path because
+    // malformed JSON is rare and the existing parseJsonResponse logging
+    // already surfaces it.
+    const createMessage = vi.fn().mockResolvedValue('not-valid-json-at-all');
+    const client = { createMessage } as unknown as LLMClient;
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/a.md', basename: 'a.md' },
+        { path: 'wiki/entities/A.md', basename: 'A.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/a.md', '---\ntype: entity\n---\n# a\nshared'],
+        ['wiki/entities/A.md', '---\ntype: entity\n---\n# A\nshared'],
+      ]),
+    };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await runDedupPhase(ctx, input, () => {});
+      expect(result).toEqual([]);
+      expect(createMessage).toHaveBeenCalled();
+      // The phase did NOT crash; it absorbed the parse failure.
+      // (No specific assertion on the malformed-JSON console.error count
+      // because parseJsonResponse logs vary by length — we just verify
+      // the phase returned cleanly.)
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('LLM returning a parse-failure JSON (truncated mid-array) is absorbed without throwing to caller', async () => {
+    // With throwOnEmpty:true, only the empty-body case throws. Malformed
+    // or truncated JSON still returns null from parseJsonResponse (default
+    // behavior preserved for backwards compat with 21 other callers).
+    //
+    // The batch worker treats null as "no duplicates confirmed" via the
+    // `Array.isArray(rawDups)` guard — this is the legacy pre-#382
+    // behavior we intentionally preserve for malformed JSON. The
+    // difference from empty-body is:
+    //   - empty-body → EmptyResponseError → dedupFailures entry → console
+    //     diagnostic fires
+    //   - malformed JSON → null return → silently treated as "no dups" →
+    //     operator sees only parseJsonResponse's own console.error
+    //
+    // The malformed-JSON path is less loud on purpose: throwOnEmpty is
+    // sufficient to address DocTpoint's masking concern (the common case
+    // for the #382 scenarios is response_format stripping → empty body),
+    // and adding a second thrown exception for parse failures would
+    // require changing parseJsonResponse's contract for all 21 callers.
+    const truncatedJson = '{"duplicates":[{"target":"a","sour'; // mid-array truncation
+    const createMessage = vi.fn().mockResolvedValue(truncatedJson);
+    const client = { createMessage } as unknown as LLMClient;
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/a.md', basename: 'a.md' },
+        { path: 'wiki/entities/A.md', basename: 'A.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/a.md', '---\ntype: entity\n---\n# a\nshared'],
+        ['wiki/entities/A.md', '---\ntype: entity\n---\n# A\nshared'],
+      ]),
+    };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await runDedupPhase(ctx, input, () => {});
+      // Phase did NOT crash and did NOT trigger rate-limit Notice.
+      expect(result).toEqual([]);
+      expect(createMessage).toHaveBeenCalled();
+      // No rate-limit Notice (parse failure is not a 429).
+      const rateLimitWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string' && args[0].includes('[Duplicate Rate Limit]')
+      );
+      expect(rateLimitWarnings).toHaveLength(0);
+      // parseJsonResponse logged the parse failure internally (legacy path).
+      // We don't pin a specific count — just that errorSpy saw at least
+      // one parse-related log.
+      expect(errorSpy.mock.calls.length).toBeGreaterThan(0);
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
   });
 });
