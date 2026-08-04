@@ -380,6 +380,68 @@ e2e data.
   commit is already +1,000 LOC across 4 commits; the retry mechanism
   is +150 LOC of which +80 is the inlined implementation).
 
+### ⚠️ Force-disable thinking — 4-layer fallback (v1.26.0 Batch 6)
+
+PR #410 (Batch 2) shipped `enableThinkingOverride = false` for the
+dedup-phase using `thinking.type = 'disabled'` +
+`chat_template_kwargs.enable_thinking = false`. **The PR body claim
+"SDK-level thinking disable is safe across all 4 SDKs" was wrong on
+the openai-compat path** (deepseek-v4-flash, the user's actual
+backend). DocTpoint verified via fetch-interceptor (Issue #382
+comment 2, 2026-08-04) that neither field reaches the wire: the
+AI SDK's zod schema
+(`openaiCompatibleLanguageModelChatOptions`, line 322-344 of
+`@ai-sdk/openai-compatible@2.0.62/dist/index.mjs`) does not declare
+them, so the SDK's `filter()` at line 531-540 deletes them before
+the body is built. **The e2e 979s → 365s improvement came from the
+retry/halving mechanism (commit `e2e75eb`), NOT from thinking being
+disabled.**
+
+Batch 6 corrected this with a **4-layer fallback** (no per-vendor
+matching — fixed list, mirrors `[[token-key-probe.ts]]` design):
+
+| Layer | Mechanism | Where |
+|-------|-----------|-------|
+| 1 (Primary) | `reasoningEffort: 'none'` (camelCase) — passes zod filter, emits as `reasoning_effort: 'none'` on wire | `openai-compat-sdk-client.ts:267`, `openai-sdk-client.ts:221` |
+| 2 (Co-emit) | Same `reasoningEffort` for Anthropic SDK path | `anthropic-sdk-client.ts` (separate code path; `thinking: { type: 'disabled' }` is the working switch there) |
+| 3 (400-retry) | On HTTP 400 mentioning `reasoning_effort` / `thinking` / `chat_template`, retry once with reasoningEffort stripped. Per-baseURL cache prevents infinite loops. | `reasoning-strip-probe.ts` + catch block in both SDK clients |
+| 4 (Prompt-level) | "**Do not reason step by step**" line in dedup prompt | `lint.ts` (Batch 2 already added this) |
+
+**Why no per-vendor matching:** per user guidance (2026-08-04):
+"做好通用、完善的fallback机制即可". The Layer-3 message-match covers
+any backend that 400s on a reasoning-related field name with the same
+substring; specific per-vendor behavior is empirically unknown and the
+cost of a false-positive strip (one extra HTTP call) is bounded.
+
+**Hard rule for future contributors:** if you add a new LLM business
+path that wants force-disable-thinking, use `enableThinking: false`
+on the `createMessage` call — Layer 1 + Layer 3 + Layer 4 cover all
+known backends. **Never write `thinking.type` or `chat_template_kwargs`
+into provider options — those are stripped by the openai-compat SDK
+filter.** See [[project_v1_26_0_batch_6_real_wire_thinking_disable]]
+for the full post-mortem.
+
+**Verification evidence (cited inline in code):**
+- `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:322-344` — zod
+  schema declares only `reasoningEffort`, `textVerbosity`,
+  `strictJsonSchema`, `user` for chat options
+- `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:531-540` — `filter`
+  deletes any key not in the schema shape
+- `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:541` — emit path:
+  `reasoning_effort: compatibleOptions.reasoningEffort`
+- `@ai-sdk/openai@3.0.86/dist/index.mjs:693` — `reasoningEffort` zod
+  enum `['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']`
+- `@ai-sdk/openai@3.0.86/dist/index.mjs:943` — `'none'` on a
+  `supportsNonReasoningParameters` model skips the reasoning path
+  entirely
+- `@ai-sdk/anthropic@3.0.98/dist/index.mjs:928` — Anthropic SDK
+  zod accepts `thinking: { type: 'disabled' }`
+
+**Wire-body regression test:** `openai-compat-request-body.test.ts`
+asserts `reasoning_effort: 'none'` IS on the body (not just on the
+`providerOptions` argument handed to the SDK — that assertion was
+PR #410's blind spot).
+
 ### ⚠️ Obsidian Plugin Submission Rules — `document` is forbidden in production
 
 **`document`** (the bare global) is **strictly forbidden** in production code. Obsidian is a multi-window application — `document` may refer to the wrong window. The only valid document reference is **`activeDocument`** (Obsidian's popout-window-aware wrapper).
