@@ -251,4 +251,168 @@ describe('OpenAICompatSdkClient', () => {
       ).rejects.toThrow(/quota/);
     });
   });
+
+  // v1.26.0 Batch 6: Layer-3 400-retry integration tests. Regression
+  // guard for the force-disable-thinking mechanism — when the backend
+  // rejects reasoning_effort='none' with HTTP 400, the client must
+  // strip the field and retry exactly once, then cache the strip
+  // decision so subsequent calls skip the probe.
+  describe('reasoning-strip 400-retry (v1.26.0 Batch 6 Layer 3)', () => {
+    it('retries without reasoningEffort after 400 mentioning reasoning_effort', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(new APICallError({
+          message: "Invalid value for 'reasoning_effort': 'none' is not supported",
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'https://api.deepseek.com/v1',
+          requestBodyValues: {},
+          responseBody: '{"error":{"message":"Invalid value for reasoning_effort"}}',
+        }))
+        .mockResolvedValueOnce(makeResult('hello'));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const text = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        enableThinking: false,
+      });
+
+      expect(text).toBe('hello');
+      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+
+      // First call: reasoningEffort='none' is present
+      const firstCall = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
+      expect(firstCall.providerOptions).toEqual({
+        openaiCompatible: { reasoningEffort: 'none' },
+      });
+
+      // Second call: reasoningEffort stripped
+      const secondCall = mockGenerateText.mock.calls[1][0] as Record<string, unknown>;
+      expect(secondCall.providerOptions).toEqual({});
+    });
+
+    it('caches the strip decision per baseURL — second call skips the 400', async () => {
+      mockGenerateText.mockReset();
+      // First call to this baseURL: 400 then retry success
+      mockGenerateText
+        .mockRejectedValueOnce(new APICallError({
+          message: 'Invalid value for reasoning_effort',
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'https://api.deepseek.com/v1',
+          requestBodyValues: {},
+          responseBody: '{}',
+        }))
+        .mockResolvedValueOnce(makeResult('hello-1'));
+      // Second call: should NOT 400 again — strip is cached, the call
+      // goes out without reasoningEffort from the start
+      mockGenerateText.mockResolvedValueOnce(makeResult('hello-2'));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+
+      // First invocation: triggers 400 → retry → cache strip
+      const text1 = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        enableThinking: false,
+      });
+      expect(text1).toBe('hello-1');
+      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+
+      // Second invocation: cache hit, only ONE call, no reasoningEffort
+      const text2 = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        enableThinking: false,
+      });
+      expect(text2).toBe('hello-2');
+      expect(mockGenerateText).toHaveBeenCalledTimes(3); // 1st = 400, 2nd = retry-success, 3rd = second-call (single)
+
+      const thirdCall = mockGenerateText.mock.calls[2][0] as Record<string, unknown>;
+      expect(thirdCall.providerOptions).toEqual({});
+    });
+
+    it('does NOT add reasoningEffort when enableThinking is undefined (no override)', async () => {
+      // When the user did NOT explicitly disable thinking, we don't
+      // send reasoningEffort at all, so the 400 can't be on that field
+      // in our config. The token-key retry may still fire (any 400
+      // triggers it) but it does not add reasoningEffort either.
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValue(new APICallError({
+        message: 'Invalid value for reasoning_effort',
+        statusCode: 400,
+        responseHeaders: {},
+        url: 'https://api.deepseek.com/v1',
+        requestBodyValues: {},
+        responseBody: '{}',
+      }));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      await expect(
+        client.createMessage({
+          model: 'deepseek-chat',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'hi' }],
+          // enableThinking intentionally not set
+        }),
+      ).rejects.toThrow(/reasoning_effort/);
+      // The original call AND the token-key retry fire (any 400 →
+      // token-key retry) — but no reasoningEffort is added in either
+      // call because enableThinking !== false.
+      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+      const firstCall = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
+      const secondCall = mockGenerateText.mock.calls[1][0] as Record<string, unknown>;
+      expect(firstCall.providerOptions).toEqual({});
+      expect(secondCall.providerOptions).toEqual({});
+    });
+
+    it('does NOT retry on 400 mentioning max_tokens (handled by TokenKeyProber instead)', async () => {
+      // Sanity check: the reasoning-strip retry should NOT swallow 400s
+      // that belong to the token-key mechanism. The 400 here mentions
+      // max_tokens only — token-key retry handles it.
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(new APICallError({
+          message: 'Invalid value for max_tokens',
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'https://api.deepseek.com/v1',
+          requestBodyValues: {},
+          responseBody: '{}',
+        }))
+        .mockResolvedValueOnce(makeResult('hello'));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const text = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        enableThinking: false,
+      });
+      expect(text).toBe('hello');
+      // Two calls — token-key retry path (different from reasoning-strip).
+      // We don't assert which retry fired, only that the 400 was handled.
+      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+    });
+  });
 });

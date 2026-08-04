@@ -199,37 +199,6 @@ export class OpenAICompatSdkClient implements LLMClient {
         return result.text;
       }
 
-      // v1.23.0 P1.5 follow-up: token-key probe-then-retry fallback.
-      //
-      // On ANY HTTP 400 from the gateway, try the alternate token key
-      // exactly once. No error-body inspection needed: status 400 is
-      // sufficient signal that "something went wrong", and the cost
-      // of a false-positive retry is one extra HTTP call (<1s LAN).
-      //
-      // Guard: skip retry if we already have a cached key for this
-      // baseURL — means the first retry already happened (and failed),
-      // so retrying again would loop.
-      if (APICallError.isInstance(err) && err.statusCode === 400 && !this.tokenKeyProber.getCachedKey(this.baseURL)) {
-        // The default wire format is `max_tokens`. If the gateway
-        // rejected it, try `max_completion_tokens`.
-        this.tokenKeyProber.setCachedKey(this.baseURL, 'max_completion_tokens');
-        const retryLanguageModel = this.getProvider(model, this.fetchImpl);
-        const { generateText } = await import('ai');
-        const result = await generateText({
-          model: retryLanguageModel,
-          ...(system ? { system } : {}),
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
-          maxOutputTokens: max_tokens,
-          providerOptions: this.buildProviderOptions({
-            enableThinking,
-            repetitionPenalty: repetition_penalty,
-          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...buildSamplingArgs({ temperature, top_p, seed }),
-        });
-        reportFinish(onFinish, result.finishReason, result.usage);
-        return result.text;
-      }
-
       // v1.26.0 Batch 6: Layer-3 400-retry for reasoning-related fields.
       //
       // Some openai-compat backends (notably Gemini-via-OpenAI-shim per
@@ -237,6 +206,16 @@ export class OpenAICompatSdkClient implements LLMClient {
       // Match the error message for `reasoning_effort` / `thinking` /
       // `chat_template` (case-insensitive), then retry exactly once
       // with reasoningEffort stripped from the provider options.
+      //
+      // ORDER MATTERS: this branch runs BEFORE the token-key fallback
+      // below. Token-key probe is a coarse "any 400 → swap max_tokens
+      // ↔ max_completion_tokens" — if we let it run first on a
+      // reasoning-related 400, it would mark the baseURL as
+      // max_completion_tokens and skip the reasoning-strip probe
+      // entirely. Then the retry would still send reasoning_effort
+      // and the second 400 would not be retried at all. Reasoning-
+      // strip must run first when the message clearly identifies the
+      // reasoning field as the cause.
       //
       // Guard: skip retry if we've already cached "strip" for this
       // baseURL — means the first retry already happened (and the
@@ -278,6 +257,42 @@ export class OpenAICompatSdkClient implements LLMClient {
         return result.text;
       }
 
+      // v1.23.0 P1.5 follow-up: token-key probe-then-retry fallback.
+      //
+      // On ANY HTTP 400 from the gateway, try the alternate token key
+      // exactly once. No error-body inspection needed: status 400 is
+      // sufficient signal that "something went wrong", and the cost
+      // of a false-positive retry is one extra HTTP call (<1s LAN).
+      //
+      // Guard: skip retry if we already have a cached key for this
+      // baseURL — means the first retry already happened (and failed),
+      // so retrying again would loop.
+      //
+      // Runs AFTER the reasoning-strip branch above: the reasoning
+      // branch handles a more specific 400 case (the message clearly
+      // names a reasoning-related field). Token-key is the broader
+      // catch-all for any other 400.
+      if (APICallError.isInstance(err) && err.statusCode === 400 && !this.tokenKeyProber.getCachedKey(this.baseURL)) {
+        // The default wire format is `max_tokens`. If the gateway
+        // rejected it, try `max_completion_tokens`.
+        this.tokenKeyProber.setCachedKey(this.baseURL, 'max_completion_tokens');
+        const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+        const { generateText } = await import('ai');
+        const result = await generateText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          providerOptions: this.buildProviderOptions({
+            enableThinking,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        reportFinish(onFinish, result.finishReason, result.usage);
+        return result.text;
+      }
+
       throw mapAiSdkError(err);
     }
   }
@@ -307,7 +322,7 @@ export class OpenAICompatSdkClient implements LLMClient {
   }): Record<string, Record<string, unknown>> {
     const openaiOpts: Record<string, unknown> = {};
 
-    if (opts.enableThinking === false) {
+    if (opts.enableThinking === false && !this.reasoningStripProber.shouldStrip(this.baseURL)) {
       // v1.26.0 Batch 6: force-disable thinking via reasoningEffort.
       //
       // Prior mechanism (PR #410 / Batch 2) used `thinking.type: 'disabled'`
@@ -334,6 +349,12 @@ export class OpenAICompatSdkClient implements LLMClient {
       //     dialect, silently ignored on openai-compat path; not a 400)
       //   - Gemini via OpenAI shim — likely 400; handled by Layer 3
       //     (400-retry in commit B6-3) which strips the field and retries
+      //
+      // The `!shouldStrip(this.baseURL)` guard: once the Layer-3 retry
+      // learned this backend rejects reasoning_effort, future calls on
+      // this baseURL should NOT re-add the field (otherwise the retry
+      // path would just re-400 forever). The strip decision is a
+      // per-baseURL "this backend doesn't accept this field" signal.
       openaiOpts.reasoningEffort = 'none';
     }
 
