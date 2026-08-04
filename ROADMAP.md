@@ -92,6 +92,19 @@ Per `[[feedback_pr_merge_workflow]]` and `[[feedback_pr_merge_credit_preservatio
 6. Step 6 (release notes + publish)
 7. Step 7 (post-release — close Issues #317, #326, #382 partial, #358 partial, etc.)
 
+## v1.26.x PATCH follow-up track (committed, post-v1.26.0 MINOR)
+
+Items NOT in v1.26.0 MINOR but should ship as a PATCH (v1.26.x) before
+the v1.27.0 MINOR feature work. User decision 2026-08-04: tech debt
+discovered during Batch 2 dedup retry/halving work shifts from v1.27.0
+to a dedicated v1.26.x PATCH window (rather than mixing feature work
+with perf tech debt in the MINOR).
+
+| Item | Source | Note |
+|---|---|---|
+| LLM empty-response retry extraction (`core/llm-retry.ts`) | v1.26.0 Batch 2 follow-up (dedup-phase.ts inline retry) | Reusable helper for analysis-phase / fix-runners / merge / ingest / headless CLI; the 5+ LLM business paths each need this. The `llmRetryRecoveredToast` i18n key (added in Batch 2) is the reusable Toast — pass `{count}` from the helper. |
+| Force-disable thinking evaluation for 5 JSON-decision call sites | v1.26.0 Batch 2 follow-up | `runAnalysisPhase` / `fix-dead-link` / `link-orphan` / `query-keywords` / `path-resolution` — all structured JSON decisions where thinking mode adds latency without measurable recall/precision improvement (verified in Batch 2 e2e on dedup-phase: 979s → 365s). Each requires its own e2e + risk evaluation; out of scope for Batch 2 to scope-creep. |
+
 ## After v1.26.0: v1.27.0 MINOR design track
 
 Items NOT in v1.26.0 P0+P1 scope but in #358 design orbit (target v1.27.0 MINOR):

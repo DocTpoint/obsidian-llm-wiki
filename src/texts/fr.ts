@@ -660,6 +660,14 @@ export const FR_TEXTS = {
     reingestConfirmBody: 'Le contenu de « {filename} » est déjà dans le wiki. Le ré-ingérer quand même ?',
     reingestConfirmYes: 'Ré-ingérer',
     reingestConfirmNo: 'Ignorer',
+    lintDedupIncludeSourcesName: 'Inclure les sources dans la déduplication',
+    lintDedupIncludeSourcesDesc: 'Activé par défaut. Quand activé, les sources avec un corps identique sont signalées comme doublons pendant le lint. Désactivez si votre corpus de sources génère des faux positifs.',
+    lintDedupSectionHeading: 'Déduplication',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): formulation générique,
+    // réutilisable pour tous les chemins métier LLM. {count} est le
+    // nombre de lots qui ont nécessité une nouvelle tentative. On ne
+    // dit pas « Lint terminé » — la relance ne concerne que ce lot.
+    llmRetryRecoveredToast: 'Tâche LLM : {count} lot(s) ont nécessité une nouvelle tentative en raison d\'une réponse transitoire du fournisseur. Voir la console pour plus de détails. Si cela se reproduit, réduisez Page Generation Concurrency dans les paramètres du fournisseur.',
     longSourceNotice: '📄 "{filename}" contient {lines} lignes ({size}). Les textes longs nécessitent une extraction itérative par lots — le LLM lit le document complet en plusieurs passes. Cela peut prendre plusieurs minutes. Veuillez patienter.',
     longSourceNoticeShort: '📄 Fichier volumineux détecté ({lines} lignes). Ingestion peut prendre du temps.',
 

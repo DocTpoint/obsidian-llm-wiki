@@ -656,6 +656,14 @@ export const ZH_HANT_TEXTS = {
     reingestConfirmBody: '"{filename}" 的內容已存在於 Wiki 中。仍要重新提取嗎？',
     reingestConfirmYes: '重新提取',
     reingestConfirmNo: '跳過',
+    lintDedupIncludeSourcesName: '在去重中包含來源',
+    lintDedupIncludeSourcesDesc: '預設開啟。開啟後，內文相同的來源在 lint 階段會被標記為重複。若你的來源語料產生過多誤報，可關閉此選項。',
+    lintDedupSectionHeading: '去重偵測',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): 通用 Toast 文案，
+    // 復用於所有 LLM 業務路徑。{count} 是觸發重試的批次數量。注意：
+    // 不要在此承諾「任務已完成」——本次重試僅恢復本批次，同一掃描
+    // 的其他批次可能仍在進行中。
+    llmRetryRecoveredToast: 'LLM 任務：{count} 個批次因 provider 臨時回應問題觸發重試（已自動恢復）。詳見主控台。若頻繁出現，請考慮在 Provider 設定中降低 Page Generation Concurrency。',
     longSourceNotice: '📄 "{filename}" 包含 {lines} 行（{size}）。長文字需要多輪迭代提取，LLM 將完整讀取文件進行多次分析，耗時可能較長，請耐心等待。',
     longSourceNoticeShort: '📄 檢測到大檔案（{lines} 行），攝入可能需要較長時間。',
 

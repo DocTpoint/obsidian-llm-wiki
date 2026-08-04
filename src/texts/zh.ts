@@ -664,6 +664,15 @@ export const ZH_TEXTS = {
     reingestConfirmBody: '"{filename}" 的内容已存在于 Wiki 中。仍要重新提取吗？',
     reingestConfirmYes: '重新提取',
     reingestConfirmNo: '跳过',
+    lintDedupIncludeSourcesName: '在去重中包含来源',
+    lintDedupIncludeSourcesDesc: '默认开启。开启后，正文相同的来源在 lint 阶段会被标记为重复。若你的来源语料产生过多误报，可关闭此选项。',
+    lintDedupSectionHeading: '去重检测',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): 通用 Toast 文案，
+    // 复用于所有 LLM 业务路径（dedup / analysis / fix-runners /
+    // conversation-ingest / merge / headless CLI）。{count} 是触发
+    // 重试的批次数量。注意：不要在此承诺"任务已完成"——本次重试仅
+    // 恢复本批次，同一扫描的其他批次可能仍在进行中。
+    llmRetryRecoveredToast: 'LLM 任务：{count} 个批次因 provider 临时响应问题触发重试（已自动恢复）。详见控制台。若频繁出现，请考虑在 Provider 设置中降低 Page Generation Concurrency。',
     longSourceNotice: '📄 "{filename}" 包含 {lines} 行（{size}）。长文本需要多轮迭代提取，LLM 将完整读取文档进行多次分析，耗时可能较长，请耐心等待。',
     longSourceNoticeShort: '📄 检测到大文件（{lines} 行），摄入可能需要较长时间。',
 

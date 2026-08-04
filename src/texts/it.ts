@@ -492,6 +492,14 @@ export const IT_TEXTS = {
     reingestConfirmBody: 'Il contenuto di "{filename}" è già nel wiki. Riacquisirlo comunque?',
     reingestConfirmYes: 'Riacquisisci',
     reingestConfirmNo: 'Salta',
+    lintDedupIncludeSourcesName: 'Includi fonti nella deduplicazione',
+    lintDedupIncludeSourcesDesc: 'Attivo per impostazione predefinita. Quando attivo, le fonti con corpo identico vengono segnalate come duplicati durante il lint. Disattiva se il tuo corpus di fonti genera falsi positivi.',
+    lintDedupSectionHeading: 'Deduplicazione',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): testo generico,
+    // riutilizzabile per tutti i percorsi LLM. {count} è il numero di
+    // batch che hanno richiesto un nuovo tentativo. Non diciamo "Lint
+    // completato" — il retry recupera solo questo batch.
+    llmRetryRecoveredToast: 'Attività LLM: {count} batch hanno richiesto un nuovo tentativo a causa di una risposta transitoria del provider. Vedi la console per i dettagli. Se questo si ripete, riduci Page Generation Concurrency nelle impostazioni del provider.',
     ingestReportFailedGuidance: 'Questi elementi non sono stati creati automaticamente. Puoi creare manualmente le pagine corrispondenti, oppure abbassare la granularità di estrazione e ri-acquisire il file sorgente.',
     ingestReportCollisions: 'Collisioni inter-tipo (unite come alias)',
 

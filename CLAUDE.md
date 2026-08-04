@@ -261,6 +261,125 @@ If any dimension regresses between commit and release time, Gate 6
 - "The PR review will catch it" → The reviewer has less context than you
 - "ESLint passes, TypeScript errors are fine" → ESLint does NOT check type safety
 
+### 🚫 Dead-code-as-docs policy (v1.26.0 Batch 4, 2026-08-03)
+
+**Rule.** Dead code (exported symbols with zero production importers) has a **half-life of one release cycle**. Either wire it into the production path before the next MINOR ships, or delete it before the next MINOR ships. Do not ship dead code across two releases.
+
+**Why this rule exists:** two instances already on the record — v1.25.10 PATCH #367 P1-1 (`lint-analysis-cache.ts`) + P1-2 (`lint-smart-skip.ts`) shipped as dead code and survived until v1.26.0 Batch 3 PR #406 deletion; v1.25.0 PDF cache-only architecture shipped some helpers without callers post-pivot. Two is a pattern. Three would be a culture.
+
+**What "dead code" means:** exported function / class / type with **zero non-test importers in `src/`**. Test-only importers don't count as "wired". Excluded: types declared inline (vanish with sole consumer), stale tests shadowing canonical tests (separate "test hygiene" concern).
+
+**Enforcement:**
+- Per-PR review: simplify's Reuse angle + code-review max-effort flag dead code. Either fix in-scope or split into follow-up PR.
+- Per-release audit: `pre-release-gate` skill Phase 2g (added 2026-08-03, Batch 4) lists files introduced since last tag with zero production importers. Findings FAIL the gate; remediation = wire or delete.
+- **Hard rule for future contributors:** if you find yourself saying "let's ship it dead and wire it next release", you've already lost — file the wire-up as part of the same PR or wait.
+
+**Related:** [[feedback-dead-code-as-docs]] (memory), `pre-release-gate` Phase 2g.
+
+### ⚠️ Tech debt: "LLM Advanced" vs "Advanced settings" panel name collision
+
+The plugin has TWO separate settings panels that both contain "Advanced" in
+their labels and easily confuse contributors:
+
+1. **LLM Advanced section** — `src/ui/settings-sections/advanced-section.ts`
+   — rendered inside LLM Configuration. Gated by `advancedSettingsMode`
+   ('default' | 'custom'). Internal field was `advancedSettingsMode`; v1.26.0
+   renamed the i18n key to `advancedLlmModeName` for clarity but kept the
+   internal field name. Contains: temperature, repetitionPenalty,
+   forcePdfSupport.
+
+2. **Bottom "Advanced settings" panel** — `src/ui/settings-sections/advanced-settings-section.ts`
+   — gated by `showAdvancedSettings` boolean. Contains: lint dedup
+   thresholds, maxConversationHistory, writePdfMarkdownToVault, slugCase,
+   createWelcomeNote, lintDedupIncludeSources (Batch 2).
+
+**Why this is a real problem (v1.26.0 Batch 2 evidence):** During Batch 2
+implementation the lintDedupIncludeSources toggle was initially rendered
+in the LLM Advanced section (mistake: dedup scope is a per-source-file
+filter, NOT an LLM sampling parameter). Correct location is the bottom
+panel, where the toggle is now rendered. The structural naming collision
+was the root cause of the slip.
+
+**Mitigations in scope of v1.27.0+ (do NOT attempt in Batch 2):**
+- Rename `advancedSettingsMode` → `advancedLlmMode` (breaking schema change;
+  needs migration; revisit when the Settings tab is reorganised).
+- Restructure the Settings tab layout so LLM-sampling and per-source-file
+  toggles live in distinct top-level sections (visual separation beats
+  naming discipline).
+- Add a `Settings tab section header` convention so the two "Advanced"
+  blocks are visually distinguished in code.
+
+**Hard rule for contributors:** when adding a setting toggle, decide FIRST
+which scope it belongs to (LLM sampling vs per-source-file/UI/storage
+behaviour). The LLM Advanced section is for `temperature`,
+`repetitionPenalty`, and provider-specific overrides ONLY. Everything else
+goes in the bottom "Advanced settings" panel.
+
+### ⚠️ Tech debt: LLM empty-response retry is inline in dedup-phase — must be extracted
+
+v1.26.0 (#382 item 1, Batch 2) added empty-response retry + transient
+concurrency halving directly inside `runDedupPhase` (see
+`src/wiki/lint/llm-phases/dedup-phase.ts`). The mechanism is
+provider-agnostic (works for any LLM that returns 200 + 0-byte body under
+burst load — e.g., deepseek-v4-flash thinking mode) and the user-facing
+Notice Toast is built around a reusable i18n key (`llmRetryRecoveredToast`
+in 10 locales) so the message wording can be reused by other LLM
+business paths.
+
+**Why this is debt (not a feature):** The same retry pattern is needed by
+every LLM call site in the plugin — at minimum:
+- `runAnalysisPhase` (already returning empty on the same vault)
+- `fix-runners` (alias / dead-link / orphan / empty-page fixes)
+- `merge-duplicates`
+- `conversation-ingest`
+- `analyzeSource` (in ingest path)
+- the new headless CLI `tools/llm-wiki-cli/`
+
+Without extraction, every future LLM business path has to re-implement
+retry + backoff + concurrency halving + log + Notice. That is the
+"copy-paste of similar logic across 5+ files" anti-pattern that the
+Six-Gate framework flags in Gate 2 (side effects).
+
+**Mitigation in scope of v1.26.x PATCH (do NOT attempt in Batch 2):**
+- Extract `src/core/llm-retry.ts` exposing:
+  ```ts
+  export interface LlmRetryOptions {
+    maxAttempts: 1 | 2 | 3;       // 1 = no retry, 3 = immediate + 2s delayed
+    delayMs: number;              // backoff between attempts 1 → 2
+    inScanConcurrencyFloor: 1;    // if concurrency > 1 and retries fire,
+                                   // halve for the rest of the scan
+    onRetry?: (event: RetryEvent) => void;  // log hook
+    onRecovered?: (count: number) => void; // Notice hook
+  }
+  export async function callLlmWithRetry<T>(
+    client: LLMClient, args: LlmCreateMessageArgs, opts: LlmRetryOptions,
+  ): Promise<{ response: T; retryEvents: RetryEvent[] }>;
+  ```
+- Refactor `runDedupPhase` to call `callLlmWithRetry(...)` instead of
+  inlining the loop + backoff + concurrency halving.
+- Adopt the helper in `runAnalysisPhase` (highest priority — confirmed
+  affected on the 2141-page vault), then `fix-runners`, then ingest.
+- The existing `llmRetryRecoveredToast` i18n key is reused unchanged
+  across all callers (the helper passes a `count` argument).
+
+**User decision 2026-08-04** (post e2e #8, 365s wall-time on 2141-page
+vault, down from 979s baseline): tech debt moves from v1.27.0 (MINOR
+feature window) to **v1.26.x PATCH** so the perf infrastructure
+ships BEFORE the next feature batch lands in v1.27.0. Avoids
+"feature work interleaved with perf infrastructure" in the MINOR
+window. See [[project_v1_26_0_batch_2_dedup_streaming]] for the
+e2e data.
+
+**Why the inlining was OK for Batch 2:**
+- Only dedup-phase was empirically affected (verified on the 2141-page
+  vault e2e in Aug 2026).
+- The inline implementation is small enough (~80 lines) to live in one
+  file until the second caller needs it — extract on the second use,
+  not the first.
+- Cross-cutting refactor would have inflated Batch 2 scope (this
+  commit is already +1,000 LOC across 4 commits; the retry mechanism
+  is +150 LOC of which +80 is the inlined implementation).
+
 ### ⚠️ Obsidian Plugin Submission Rules — `document` is forbidden in production
 
 **`document`** (the bare global) is **strictly forbidden** in production code. Obsidian is a multi-window application — `document` may refer to the wrong window. The only valid document reference is **`activeDocument`** (Obsidian's popout-window-aware wrapper).

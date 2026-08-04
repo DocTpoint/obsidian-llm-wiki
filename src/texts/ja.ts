@@ -656,6 +656,14 @@ export const JA_TEXTS = {
     reingestConfirmBody: '「{filename}」の内容はすでにWikiに存在します。それでも再取り込みしますか？',
     reingestConfirmYes: '再取り込み',
     reingestConfirmNo: 'スキップ',
+    lintDedupIncludeSourcesName: '重複検出にソースを含める',
+    lintDedupIncludeSourcesDesc: 'デフォルトで有効です。有効にすると、本文が同一のソースが lint で重複としてフラグ付けされます。誤検出が多い場合は無効にしてください。',
+    lintDedupSectionHeading: '重複検出',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): 汎用的な文言、
+    // すべての LLM 業務パスで再利用。{count} は再試行が必要だった
+    // バッチ数。「Lint は完了しました」とは書かない — 再試行は
+    // このバッチのみを回復する。
+    llmRetryRecoveredToast: 'LLM タスク：{count} 件のバッチがプロバイダの一時的な応答問題により再試行を必要としました（自動回復済み）。詳細はコンソールを参照してください。頻繁に発生する場合は、Provider 設定の Page Generation Concurrency を下げてください。',
     longSourceNotice: '"📄 「{filename}」は{lines}行（{size}）です。長文は複数パスの反復抽出が必要で、LLMが全文書を分析するため数分かかる場合があります。しばらくお待ちください。"',
     longSourceNoticeShort: '"📄 大きなファイル（{lines}行）を検出しました。取り込みに時間がかかることがあります。"',
 

@@ -483,6 +483,14 @@ export const ES_TEXTS = {
     reingestConfirmBody: 'El contenido de "{filename}" ya está en el wiki. ¿Volver a ingerirlo de todos modos?',
     reingestConfirmYes: 'Volver a ingerir',
     reingestConfirmNo: 'Omitir',
+    lintDedupIncludeSourcesName: 'Incluir fuentes en deduplicación',
+    lintDedupIncludeSourcesDesc: 'Activado por defecto. Cuando está activo, las fuentes con cuerpos idénticos se marcan como duplicados durante el lint. Desactívalo si tu corpus de fuentes genera falsos positivos.',
+    lintDedupSectionHeading: 'Deduplicación',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): texto genérico,
+    // reutilizable para todas las rutas LLM. {count} es el número de
+    // lotes que necesitaron reintento. No decimos "Lint completado" —
+    // el reintento solo recupera este lote.
+    llmRetryRecoveredToast: 'Tarea LLM: {count} lote(s) requirieron reintento por una respuesta transitoria del proveedor. Consulta la consola para más detalles. Si esto se repite, reduce Page Generation Concurrency en la configuración del proveedor.',
     ingestReportFailedGuidance: 'Estos elementos no pudieron crearse automáticamente. Puedes crear manualmente las páginas correspondientes, o reducir la granularidad de extracción y volver a ingerir el archivo fuente.',
     ingestReportCollisions: 'Colisiones cross-type (fusionadas como alias)',
 
