@@ -24,7 +24,18 @@ export const LINT_PROMPTS = {
 
 If no candidates found: {"candidates": []}`,
 
-  // Verify duplicate candidates with content analysis
+  // Verify duplicate candidates with content analysis.
+  //
+  // v1.26.0 (#382 item 1, Batch 2 follow-up): added the "**Do not reason
+  // step by step**" line as a thinking-mode safety net. The dedup task is
+  // a binary classification against explicit criteria ("same concept",
+  // "different concept") — chain-of-thought reasoning adds latency, can
+  // exhaust the token budget before the JSON output fits (DeepSeek V3/V4
+  // + GPT-5 reasoning class), and does not improve recall or precision
+  // on this task class. The user-level `disableThinking` toggle is the
+  // primary control; this prompt line is the second-line defense for any
+  // provider that ignores the toggle or where thinking is forced on
+  // (e.g. GPT-5 reasoning models).
   lintDuplicateDetection: `You are a Wiki duplicate detection verifier. Review the candidate pairs below and confirm which are TRUE semantic duplicates.
 
 **Candidate pairs (from programmatic signals and title scan):**
@@ -38,6 +49,10 @@ If no candidates found: {"candidates": []}`,
 - NOT duplicates: related concepts, parent-child relationships, overlapping topics
 - Only confirm pairs you are HIGHLY CONFIDENT about (95%+ certainty)
 - Keep the candidate's target/source assignment (target = keep, source = merge into target)
+
+**Output efficiency:** This is a quick classification task. Respond directly with the JSON — do not add explanations, preamble, or analysis outside the JSON object. The JSON object is the entire response.
+
+**Do not reason step by step.** The decision criteria above are explicit and binary (same underlying concept vs different concepts). Chain-of-thought reasoning is unnecessary, will exhaust the token budget, and is not rewarded here. Decide per pair from the rules alone.
 
 **You MUST output ONLY a valid JSON object, no other text:**
 {"duplicates": [{"target": "{{wikiFolder}}/entities/page1.md", "source": "{{wikiFolder}}/entities/page2.md", "reason": "Same concept: both refer to X because..."}]}
