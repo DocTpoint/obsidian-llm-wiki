@@ -2,16 +2,20 @@ import { describe, it, expect, vi } from 'vitest';
 import { OpenAICompatSdkClient } from '../../llm-sdk/openai-compat-sdk-client';
 
 // Everything this client adds beyond the standard fields travels as
-// `providerOptions`, and the AI SDK forwards those to the request body only
-// under a key matching the provider's own name. The client was emitting them
-// under a fixed `openaiCompatible` key instead, so for every openai-compatible
-// provider — custom, Ollama, LM Studio — they were dropped silently.
+// `providerOptions`. The AI SDK forwards those to the request body only
+// under a key matching the provider's own name, OR through fields declared
+// in the SDK's zod schema (`openaiCompatibleLanguageModelChatOptions`,
+// @ai-sdk/openai-compatible@2.0.62/dist/index.mjs:322-344).
 //
-// The existing test for this asserted the argument handed to `generateText`,
-// which is exactly the value the SDK then discarded: it recorded the intent and
-// was blind to the outcome. This one reads the request body.
+// v1.26.0 Batch 6: `reasoningEffort` IS in the zod schema (line 331:
+// `z.string().optional()`) and IS emitted to the wire as `reasoning_effort`
+// (line 541). This is the force-disable-thinking mechanism that replaced
+// the stripped `thinking` + `chat_template_kwargs` from PR #410 (Batch 2),
+// which the SDK's `filter()` at line 531-540 deleted before the body was
+// built. DocTpoint verified wire-reaches via fetch-interceptor on LM
+// Studio / gemma-4-12b (Issue #382 comment 2, 2026-08-04).
 describe('OpenAICompatSdkClient — what reaches the request body', () => {
-  it('carries the thinking toggle, the seed and the sampling knobs', async () => {
+  it('carries reasoning_effort="none" + the seed and the sampling knobs', async () => {
     let body: Record<string, unknown> = {};
     const stub = vi.fn(async (_url: string, init?: { body?: unknown }) => {
       body = JSON.parse(String(init?.body));
@@ -41,15 +45,18 @@ describe('OpenAICompatSdkClient — what reaches the request body', () => {
     expect(body).toHaveProperty('seed', 42);
     expect(body).toHaveProperty('top_p', 0.8);
 
-    // What does not, and this is the defect rather than the intent. Everything
-    // `buildProviderOptions` adds sits under `openaiCompatible`, and the SDK
-    // copies raw fields into the body only from a key named after the provider
-    // — so all three are built and dropped, silently, as they have been since
-    // v1.23.0. Correcting the key is deliberately outside this change: it would
-    // deliver two thinking dialects to ten providers on the strength of one
-    // local server, and #137 has Gemini answering 400 to one of them. Pinned
-    // here so that whoever corrects it has to come back and rewrite this test
-    // rather than discover the delivery by accident.
+    // v1.26.0 Batch 6: the force-disable-thinking field IS on the wire.
+    // `reasoningEffort` (camelCase) is in the zod schema and the SDK
+    // emits it as `reasoning_effort` (snake_case). Backends that honor
+    // the field (DeepSeek V3/V3.1/V4, Kimi k2.5/2.6, GLM-4.6, LM Studio
+    // per DocTpoint's measurement) will turn reasoning off.
+    expect(body).toHaveProperty('reasoning_effort', 'none');
+
+    // What still does NOT travel, and this is the bug being preserved not
+    // repeated. The prior PR #410 mechanism (`thinking.type` +
+    // `chat_template_kwargs`) was stripped by the SDK's filter because
+    // neither field is in the zod schema. The replacement
+    // (`reasoningEffort`) IS in the schema, so it survives.
     for (const field of ['thinking', 'chat_template_kwargs', 'repetition_penalty']) {
       expect(Object.keys(body)).not.toContain(field);
     }

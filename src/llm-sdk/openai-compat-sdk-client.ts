@@ -228,8 +228,19 @@ export class OpenAICompatSdkClient implements LLMClient {
    *
    * Same shape as OpenAISdkClient (these providers all speak the
    * OpenAI Chat Completions format). `enableThinking=false` maps to
-   * `reasoningEffort='low'` for reasoning-capable providers (DeepSeek
-   * V3, o1-style on OpenRouter, GLM-Z1).
+   * `reasoningEffort='none'` (v1.26.0 Batch 6) — verified wire-reaches
+   * the openai-compat SDK's zod schema (@ai-sdk/openai-compatible@2.0.62
+   * line 331) and is emitted as `reasoning_effort: 'none'` on the wire
+   * (line 541). DocTpoint's LM Studio / gemma-4-12b fetch-interceptor
+   * measurement (Issue #382 comment 2, 2026-08-04) confirmed the field
+   * reaches the backend; reasoning_tokens=0 in the response.
+   *
+   * Earlier this mapped to `thinking.type: 'disabled'` — the SDK's zod
+   * schema did not declare that key, so the filter at line 531-540
+   * deleted it before the body was built. The field never left the
+   * process; Batch 2's e2e 979s→365s gain came from retry/halving alone.
+   * See [[project_v1_26_0_batch_6_real_wire_thinking_disable]] for the
+   * post-mortem.
    */
   private buildProviderOptions(opts: {
     enableThinking?: boolean;
@@ -238,36 +249,33 @@ export class OpenAICompatSdkClient implements LLMClient {
     const openaiOpts: Record<string, unknown> = {};
 
     if (opts.enableThinking === false) {
-      // DeepSeek / Moonshot Kimi / GLM-4.6+ all use
-      // `thinking.type: 'disabled'` per their official docs:
-      //   - DeepSeek: https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
-      //   - Kimi k2.5/2.6: https://platform.kimi.com/docs/guide/use-kimi-k2-thinking-model
-      //   - GLM-4.6:智谱 BigModel thinking 模型文档
+      // v1.26.0 Batch 6: force-disable thinking via reasoningEffort.
       //
-      // Earlier we used `reasoningEffort: 'low'` (OpenAI gpt-5.x
-      // style) but DeepSeek's reasoning_effort only accepts
-      // 'high'/'max' — 'low' is silently mapped to 'high', so the
-      // disable-thinking intent was lost. Switched to
-      // `thinking.type: 'disabled'` which all 3 providers accept.
+      // Prior mechanism (PR #410 / Batch 2) used `thinking.type: 'disabled'`
+      // + `chat_template_kwargs.enable_thinking: false` — both are NOT in
+      // @ai-sdk/openai-compatible's zod schema
+      // (openaiCompatibleLanguageModelChatOptions, line 322-344 of dist/index.mjs),
+      // so the SDK's `filter()` at line 531-540 deletes them before the
+      // request body is built. They NEVER left the process on the
+      // openai-compat path. Verified by DocTpoint via fetch-interceptor
+      // (Issue #382 comment 2, 2026-08-04).
       //
-      // OpenRouter is an exception — it routes reasoning models via
-      // `reasoning: { enabled: false }`. Users on OpenRouter with
-      // reasoning models should disable enableThinking via the
-      // plugin's Custom Advanced Settings (which can pass through
-      // a different providerOptions shape in v1.24.0).
-      openaiOpts.thinking = { type: 'disabled' };
-      // llama.cpp's llama-server (and most local OpenAI-compatible servers
-      // serving Qwen3-family models) ignores `thinking.type` entirely — it
-      // expects chat_template_kwargs instead, so both dialects are sent.
+      // The new mechanism is `reasoningEffort: 'none'` (camelCase) which
+      // the zod schema DOES accept (line 331: `z.string().optional()`) and
+      // which the SDK emits as `reasoning_effort: 'none'` (snake_case) on
+      // the wire (line 541). DocTpoint's LM Studio / gemma-4-12b
+      // measurement confirmed wire-reaches + reasoning_tokens=0.
       //
-      // Sending both assumes each side ignores the dialect it does not know.
-      // Half of that is now measured and the news is mixed: on LM Studio 0.4.20
-      // `chat_template_kwargs` is accepted with a 200 and the model reasons
-      // anyway (#372), so on that backend delivery would not make the toggle
-      // work. Neither field currently leaves the process, so the assumption
-      // costs nothing today; it becomes load-bearing the moment the key is
-      // corrected, and what it buys is unproven on every backend measured.
-      openaiOpts.chat_template_kwargs = { enable_thinking: false };
+      // Backend compatibility (no per-vendor matching):
+      //   - DeepSeek V3/V3.1/V4 — accepts (official reasoning_effort field)
+      //   - Kimi k2.5/2.6 — accepts
+      //   - GLM-4.6 (智谱 BigModel) — accepts
+      //   - LM Studio / llama.cpp — DocTpoint measured
+      //   - OpenRouter — uses `reasoning: { enabled: false }` (different
+      //     dialect, silently ignored on openai-compat path; not a 400)
+      //   - Gemini via OpenAI shim — likely 400; handled by Layer 3
+      //     (400-retry in commit B6-3) which strips the field and retries
+      openaiOpts.reasoningEffort = 'none';
     }
 
     if (opts.repetitionPenalty !== undefined) {
@@ -300,23 +308,25 @@ export class OpenAICompatSdkClient implements LLMClient {
       openaiOpts.repetition_penalty = opts.repetitionPenalty;
     }
 
-    // Left under the key the SDK does not read raw fields from, which means
-    // none of the three above reach the request body — as has been the case
-    // since v1.23.0. Correcting it is deliberately not part of this change: it
-    // would deliver all three to all ten providers on this path at once, and
-    // no backend is known to read them. What the repository does record is the
-    // opposite: #137 has Gemini rejecting `thinking` on the same
-    // `/v1beta/openai` shim it still uses, and the strip-and-retry that used to
-    // absorb such rejections went with the AI-SDK migration. That record is a
-    // 2026-06 comment and a hand-written fixture, not a live response — enough
-    // to decline sending, not enough to claim what would happen.
+    // repetition_penalty is NOT in
+    // openaiCompatibleLanguageModelChatOptions (zod schema, line 322-344 of
+    // dist/index.mjs), so the SDK's `filter()` at line 531-540 deletes it
+    // before the request body is built. The field never leaves the process
+    // on the openai-compat path, as has been the case since v1.23.0.
+    //
+    // v1.26.0 Batch 6: reasoningEffort (line 267) IS in the zod schema and
+    // does reach the wire as `reasoning_effort` (line 541). repetition_penalty
+    // is kept in the object for completeness — the user's Custom Advanced
+    // Setting can opt in, but the field is a no-op today. Correcting it is
+    // deliberately not part of this change: it would deliver
+    // repetition_penalty to all ten providers on this path at once, and no
+    // backend is known to read it.
     //
     // The follow-up does not need this key at all for most of it: the SDK
     // parses `openaiCompatible.reasoningEffort` through its own schema and
     // emits `reasoning_effort` regardless, which is Gemini's documented way to
     // decline reasoning, and structured output travels as the standard
-    // `responseFormat` argument. Only the three raw fields here need a
-    // provider-keyed channel, and each needs a backend that reads it.
+    // `responseFormat` argument.
     return Object.keys(openaiOpts).length > 0 ? { openaiCompatible: openaiOpts } : {};
   }
 

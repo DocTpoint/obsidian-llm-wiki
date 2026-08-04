@@ -114,24 +114,34 @@ describe('OpenAICompatSdkClient', () => {
     });
   });
 
-  // v1.23.0: For OpenAI-compatible providers that support thinking
-  // models (DeepSeek, Moonshot Kimi k2.5/2.6, GLM-4.6+), the
-  // disable-thinking signal uses `thinking.type: 'disabled'` per
-  // their official documentation:
-  //   - DeepSeek: https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
-  //   - Kimi: https://platform.kimi.com/docs/guide/use-kimi-k2-thinking-model
-  //   - GLM: 智谱 BigModel thinking 模型文档
+  // v1.26.0 Batch 6: force-disable thinking via `reasoningEffort: 'none'`.
   //
-  // Earlier we sent `reasoningEffort: 'low'` (OpenAI gpt-5.x style)
-  // but DeepSeek's reasoning_effort only accepts 'high'/'max' —
-  // 'low' is silently mapped to 'high', so the disable intent was
-  // lost. Switched to `thinking.type: 'disabled'` which all three
-  // providers accept.
+  // History (per [[project_v1_26_0_batch_6_real_wire_thinking_disable]]):
+  //   - v1.23.0:  `reasoningEffort: 'low'` (OpenAI gpt-5.x style) — DeepSeek
+  //               silently mapped `'low'` → `'high'`, intent lost
+  //   - PR #410:  `thinking: { type: 'disabled' }` +
+  //               `chat_template_kwargs: { enable_thinking: false }` — both
+  //               are NOT in @ai-sdk/openai-compatible's zod schema
+  //               (line 322-344 of dist/index.mjs), so the SDK's `filter()`
+  //               at line 531-540 deletes them before the body is built.
+  //               Verified by DocTpoint via fetch-interceptor (Issue #382
+  //               comment 2, 2026-08-04): neither field left the process.
+  //   - Batch 6:  `reasoningEffort: 'none'` (camelCase) — the zod schema
+  //               accepts it (line 331: `z.string().optional()`) and emits
+  //               as `reasoning_effort: 'none'` on the wire (line 541).
+  //               DocTpoint's LM Studio / gemma-4-12b measurement confirmed
+  //               wire-reaches + reasoning_tokens=0.
   //
-  // Note: OpenRouter is an exception (uses `reasoning: { enabled:
-  // false }`); v1.24.0 can add per-provider overrides.
-  describe('enableThinking handling (thinking.type=disabled for OpenAI-compatible)', () => {
-    it('sends thinking.type="disabled" when enableThinking is false', async () => {
+  // Backend compatibility (no per-vendor matching — 400-retry in B6-3
+  // handles the Gemini-via-OpenAI-shim case):
+  //   - DeepSeek V3/V3.1/V4: ✅ accepts reasoning_effort
+  //   - Kimi k2.5/2.6:       ✅ accepts
+  //   - GLM-4.6:             ✅ accepts
+  //   - LM Studio / llama.cpp: ✅ DocTpoint measured
+  //   - OpenRouter:          ⚠️ uses `reasoning: { enabled: false }`
+  //                          (different dialect, silently ignored)
+  describe('enableThinking handling (reasoningEffort="none" for OpenAI-compatible)', () => {
+    it('sends reasoningEffort="none" when enableThinking is false', async () => {
       const client = new OpenAICompatSdkClient({
         apiKey: 'sk-test',
         baseURL: 'https://api.deepseek.com/v1',
@@ -145,19 +155,15 @@ describe('OpenAICompatSdkClient', () => {
       });
 
       const call = mockGenerateText.mock.calls[0][0] as unknown as Record<string, unknown>;
-      // Both dialects are sent: `thinking.type` for DeepSeek/Kimi/GLM, and
-      // `chat_template_kwargs` for llama.cpp-style local servers, which ignore
-      // the former entirely. Each side ignores the field it does not know.
-      //
-      // Keyed `openaiCompatible`, which is not a key the SDK copies raw fields
-      // from — so both are built here and dropped before the request. This
-      // assertion records what the client hands over, and by construction it
-      // cannot tell that apart from delivery; the sibling
-      // openai-compat-request-body.test.ts reads the body and shows the drop.
+      // v1.26.0 Batch 6: the field that the SDK's zod schema accepts
+      // (line 331 of @ai-sdk/openai-compatible@2.0.62/dist/index.mjs) and
+      // that the SDK emits as `reasoning_effort: 'none'` on the wire
+      // (line 541). Prior Batch 2 PR #410 used `thinking.type` +
+      // `chat_template_kwargs` which are stripped by the filter and
+      // never leave the process.
       expect(call.providerOptions).toEqual({
         openaiCompatible: {
-          thinking: { type: 'disabled' },
-          chat_template_kwargs: { enable_thinking: false },
+          reasoningEffort: 'none',
         },
       });
     });
