@@ -211,10 +211,14 @@ describe('OpenAISdkClient', () => {
       expect(call.providerOptions).toEqual({});
     });
 
-    it('sends reasoningEffort="low" when enableThinking is false (Issue #143/#207 fix)', async () => {
-      // v1.20.0: when user explicitly disables thinking, we send
-      // reasoningEffort='low' to OpenAI reasoning models. AI-SDK
-      // routes this to Responses API for gpt-5.1+ automatically.
+    it('sends reasoningEffort="none" when enableThinking is false (v1.26.0 Batch 6)', async () => {
+      // v1.26.0 Batch 6: switched from 'low' to 'none' for the official
+      // OpenAI Responses path. On GPT-5.1+ models (supportsNonReasoning
+      // Parameters=true) the AI SDK skips the reasoning path entirely
+      // when effort is 'none' (line 943 of @ai-sdk/openai@3.0.86/
+      // dist/index.mjs) — no reasoning tokens billed, no sampling-param
+      // validation overhead. For dedup-phase / fix-runners / merge /
+      // ingest JSON-decision calls this is the right tradeoff.
       const client = new OpenAISdkClient({ apiKey: 'sk-test', baseURL: 'https://api.openai.com/v1' });
       await client.createMessage({
         model: 'gpt-5.5',
@@ -225,7 +229,7 @@ describe('OpenAISdkClient', () => {
 
       const call = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
       expect(call.providerOptions).toEqual({
-        openai: { reasoningEffort: 'low' },
+        openai: { reasoningEffort: 'none' },
       });
     });
   });
@@ -512,14 +516,14 @@ describe('OpenAISdkClient', () => {
       expect(chunks.join('')).not.toContain('reasoning-content');
     });
 
-    it('sends reasoningEffort="low" when enableThinking is false', async () => {
+    it('sends reasoningEffort="none" when enableThinking is false (v1.26.0 Batch 6)', async () => {
       mockStreamText.mockReturnValue(makeStreamTextResult(['hi']));
 
       const client = new OpenAISdkClient({ apiKey: 'sk-test', baseURL: 'https://api.openai.com/v1' });
       // LLMClient declares createMessageStream as optional (?). The
       // non-null assertion is the canonical pattern when the
       // implementation is known to provide it.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       await client.createMessageStream!({
         model: 'gpt-5.5',
         max_tokens: 100,
@@ -529,8 +533,10 @@ describe('OpenAISdkClient', () => {
       });
 
       const call = mockStreamText.mock.calls[0][0] as Record<string, unknown>;
+      // v1.26.0 Batch 6: stream path uses the same buildProviderOptions
+      // as non-stream, so reasoningEffort='none' applies here too.
       expect(call.providerOptions).toEqual({
-        openai: { reasoningEffort: 'low' },
+        openai: { reasoningEffort: 'none' },
       });
     });
 

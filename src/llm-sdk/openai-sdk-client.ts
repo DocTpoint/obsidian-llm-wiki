@@ -8,7 +8,8 @@
 //
 //   - Auto-routing gpt-5.1+ / gpt-5.5 / o1-o4 → Responses API
 //   - Auto-selecting max_tokens ↔ max_completion_tokens per model
-//   - Reasoning effort: 'low' | 'medium' | 'high' | 'xhigh'
+//   - Reasoning effort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+//     (v1.26.0 Batch 6: enableThinking=false maps to 'none' for full skip)
 //   - Unified error type (APICallError) with provider body attached
 //   - Native streaming (textStream, fullStream)
 //
@@ -197,9 +198,16 @@ export class OpenAISdkClient implements LLMClient {
   /**
    * Map AI-SDK options → OpenAI provider options.
    *
-   * OpenAI reasoning effort: maps `enableThinking=false` → `reasoningEffort: 'low'`
-   * (per OpenAI's GPT-5.5 migration guide, "low" is the safe default for
-   * compatibility — users can override via custom advanced settings).
+   * OpenAI reasoning effort: maps `enableThinking=false` → `reasoningEffort: 'none'`
+   * (v1.26.0 Batch 6). On GPT-5.1+ models the AI SDK
+   * (@ai-sdk/openai@3.0.86/dist/index.mjs:943) skips the reasoning path
+   * entirely when effort is 'none' and supportsNonReasoningParameters is
+   * true — no reasoning tokens billed, no sampling-param validation
+   * overhead. For dedup-phase / fix-runners / merge / ingest JSON-decision
+   * calls this is the right tradeoff.
+   *
+   * Chat Completions path accepts string() (line 4856) so 'none' is also
+   * harmless on the older endpoint.
    *
    * Note: we do NOT support `enableThinking=true` explicitly — leaving it
    * undefined lets OpenAI decide the model's reasoning behavior. This
@@ -217,7 +225,32 @@ export class OpenAISdkClient implements LLMClient {
     const openaiOpts: Record<string, unknown> = {};
 
     if (opts.enableThinking === false) {
-      openaiOpts.reasoningEffort = 'low';
+      // v1.26.0 Batch 6: switch from 'low' to 'none' for the official
+      // OpenAI Responses path.
+      //
+      // History:
+      //   - v1.23.0: 'low' was the OpenAI-recommended safe default for
+      //     latency-sensitive cases per the GPT-5.x migration guide.
+      //   - Batch 6: 'none' is the more aggressive switch that fully
+      //     disables reasoning. Per the AI SDK source
+      //     (@ai-sdk/openai@3.0.86/dist/index.mjs:943):
+      //       if (openaiOptions.reasoningEffort !== 'none' ||
+      //           !modelCapabilities.supportsNonReasoningParameters) {
+      //         // …emit reasoning_effort…
+      //       }
+      //     On GPT-5.1+ models (supportsNonReasoningParameters=true),
+      //     'none' skips the reasoning path entirely — no reasoning
+      //     tokens billed, no temperature/top_p/logprobs validation
+      //     overhead. For dedup-phase this is exactly what we want.
+      //
+      //     Chat Completions path (@ai-sdk/openai@3.0.86:4856) accepts
+      //     string() (any value), so 'none' is also harmless there.
+      //
+      //   - Backend compat (no per-vendor matching): OpenAI SDK is
+      //     official OpenAI only — no Gemini-via-shim, no DeepSeek.
+      //     The 400-retry in B6-3 still applies if the user's baseURL
+      //     routes to a non-OpenAI backend that rejects 'none'.
+      openaiOpts.reasoningEffort = 'none';
     }
 
     if (opts.repetitionPenalty !== undefined) {
