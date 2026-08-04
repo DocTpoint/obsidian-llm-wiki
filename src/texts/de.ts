@@ -483,6 +483,15 @@ export const DE_TEXTS = {
     reingestConfirmBody: 'Der Inhalt von „{filename}" ist bereits im Wiki. Trotzdem erneut einlesen?',
     reingestConfirmYes: 'Erneut einlesen',
     reingestConfirmNo: 'Überspringen',
+    lintDedupIncludeSourcesName: 'Quellen in Deduplizierung einbeziehen',
+    lintDedupIncludeSourcesDesc: 'Standardmäßig aktiviert. Wenn aktiv, werden Quellen mit identischem Body während lint als Duplikate markiert. Deaktivieren, wenn dein Quellkorpus Falsch-Positiv-Meldungen erzeugt.',
+    lintDedupSectionHeading: 'Deduplizierung',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): generischer Wortlaut,
+    // wiederverwendbar für alle LLM-Geschäftspfade. {count} ist die
+    // Anzahl der wiederholten Batches. Kein "Lint abgeschlossen" — der
+    // Wiederholungsversuch betrifft nur diesen Batch, andere laufen
+    // möglicherweise noch.
+    llmRetryRecoveredToast: 'LLM-Aufgabe: {count} Batch(es) wurden wegen einer vorübergehenden Provider-Antwort wiederholt. Details in der Konsole. Falls dies häufiger auftritt, reduziere die Page Generation Concurrency in den Provider-Einstellungen.',
     ingestReportFailedGuidance: 'Diese Elemente konnten nicht automatisch erstellt werden. Du kannst die entsprechenden Seiten manuell erstellen oder die Extraktions-Granularität senken und die Quelldatei erneut aufnehmen.',
     ingestReportCollisions: 'Cross-Type-Kollisionen (als Aliase zusammengeführt)',
 

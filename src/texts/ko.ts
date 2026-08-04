@@ -483,6 +483,14 @@ export const KO_TEXTS = {
     reingestConfirmBody: '「{filename}」의 내용이 이미 위키에 있습니다. 그래도 다시 가져올까요?',
     reingestConfirmYes: '다시 가져오기',
     reingestConfirmNo: '건너뛰기',
+    lintDedupIncludeSourcesName: '중복 검사에 소스 포함',
+    lintDedupIncludeSourcesDesc: '기본값은 켜짐. 켜져 있으면 본문이 동일한 소스가 lint에서 중복으로 표시됩니다. 소스 모음집에서 오탐이 많으면 끄세요.',
+    lintDedupSectionHeading: '중복 검사',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): 범용 문구, 모든 LLM
+    // 비즈니스 경로에서 재사용 가능. {count}는 재시도가 필요했던 배치
+    // 수입니다. "Lint 완료" 라고 말하지 않음 — 재시도는 이 배치만
+    // 복구합니다.
+    llmRetryRecoveredToast: 'LLM 작업: {count}개 배치가 provider의 일시적 응답 문제로 재시도가 필요했습니다 (자동 복구됨). 자세한 내용은 콘솔을 참조하세요. 반복되면 Provider 설정에서 Page Generation Concurrency를 낮추세요.',
     ingestReportFailedGuidance: '이 항목은 자동으로 생성되지 않았습니다. 해당하는 페이지를 수동으로 생성하거나 추출 세분화를 낮추고 소스 파일을 다시 수집할 수 있습니다.',
     ingestReportCollisions: '크로스타입 충돌 (별칭으로 병합됨)',
 
