@@ -29,6 +29,7 @@ import {
   isUrlError,
 } from '../core/url-fallback';
 import { TokenKeyProber } from './token-key-probe';
+import { ReasoningStripProber } from './reasoning-strip-probe';
 import { reportFinish } from './finish-reason';
 import { buildSamplingArgs } from './sampling-args';
 
@@ -57,6 +58,16 @@ export class OpenAICompatSdkClient implements LLMClient {
    * starts fresh.
    */
   private readonly tokenKeyProber = new TokenKeyProber();
+
+  /**
+   * v1.26.0 Batch 6: Layer-3 fallback cache. Some openai-compat
+   * backends (Gemini-via-shim per #137) reject `reasoning_effort: 'none'`
+   * with HTTP 400. On 400 with a reasoning-related field name in the
+   * error message, we strip the field and retry exactly once; the
+   * strip decision is cached per baseURL so subsequent calls skip
+   * the probe. Mirrors the [[TokenKeyProber]] design.
+   */
+  private readonly reasoningStripProber = new ReasoningStripProber();
 
   constructor(opts: OpenAICompatSdkClientOptions) {
     this.apiKey = opts.apiKey;
@@ -211,6 +222,54 @@ export class OpenAICompatSdkClient implements LLMClient {
           maxOutputTokens: max_tokens,
           providerOptions: this.buildProviderOptions({
             enableThinking,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        reportFinish(onFinish, result.finishReason, result.usage);
+        return result.text;
+      }
+
+      // v1.26.0 Batch 6: Layer-3 400-retry for reasoning-related fields.
+      //
+      // Some openai-compat backends (notably Gemini-via-OpenAI-shim per
+      // Issue #137) reject `reasoning_effort: 'none'` with HTTP 400.
+      // Match the error message for `reasoning_effort` / `thinking` /
+      // `chat_template` (case-insensitive), then retry exactly once
+      // with reasoningEffort stripped from the provider options.
+      //
+      // Guard: skip retry if we've already cached "strip" for this
+      // baseURL — means the first retry already happened (and the
+      // retry would either succeed or fail the same way).
+      //
+      // No per-vendor matching: we don't know which backends reject
+      // which dialect, and the user already opted into
+      // enableThinking=false explicitly (per the dedup-phase
+      // `enableThinkingOverride = false`). Per user guidance
+      // (2026-08-04): "做好通用、完善的fallback机制即可".
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        enableThinking === false &&
+        !this.reasoningStripProber.shouldStrip(this.baseURL) &&
+        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+      ) {
+        this.reasoningStripProber.markStrip(this.baseURL);
+        const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+        const { generateText } = await import('ai');
+        // Retry without reasoningEffort — pass enableThinking=true so
+        // buildProviderOptions does not re-add the field. The user's
+        // intent ("force-disable thinking") was honored by the first
+        // attempt; on the retry we accept whatever the backend's
+        // default reasoning behavior is, since the field itself is
+        // rejected.
+        const result = await generateText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          providerOptions: this.buildProviderOptions({
+            enableThinking: true,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
           ...buildSamplingArgs({ temperature, top_p, seed }),
@@ -488,6 +547,49 @@ export class OpenAICompatSdkClient implements LLMClient {
           maxOutputTokens: max_tokens,
           providerOptions: this.buildProviderOptions({
             enableThinking,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        let fullText = '';
+        for await (const chunk of result.textStream) {
+          fullText += chunk;
+          onChunk(chunk);
+        }
+        let reasoningContent = '';
+        try {
+          const reasoning = await result.reasoning;
+          if (typeof reasoning === 'string' && reasoning) {
+            reasoningContent = reasoning;
+          } else if (Array.isArray(reasoning)) {
+            reasoningContent = reasoning.map((r) => (r as { text?: string }).text || '').join('');
+          }
+        } catch { /* no reasoning */ }
+        if (reasoningContent) {
+          fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+        }
+        return fullText;
+      }
+
+      // v1.26.0 Batch 6: Layer-3 400-retry for reasoning-related fields
+      // (streaming variant — same logic as createMessage above).
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        enableThinking === false &&
+        !this.reasoningStripProber.shouldStrip(this.baseURL) &&
+        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+      ) {
+        this.reasoningStripProber.markStrip(this.baseURL);
+        const retryLanguageModel = this.getProvider(model, this.streamFetchImpl);
+        const { streamText } = await import('ai');
+        const result = streamText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          providerOptions: this.buildProviderOptions({
+            enableThinking: true,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
           ...buildSamplingArgs({ temperature, top_p, seed }),

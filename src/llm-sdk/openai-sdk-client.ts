@@ -40,6 +40,7 @@ import {
 } from '../core/url-fallback';
 import { reportFinish } from './finish-reason';
 import { buildSamplingArgs } from './sampling-args';
+import { ReasoningStripProber } from './reasoning-strip-probe';
 
 export interface OpenAISdkClientOptions {
   apiKey: string;
@@ -71,6 +72,16 @@ export class OpenAISdkClient implements LLMClient {
   private readonly baseURL: string | undefined;
   private readonly fetchImpl: typeof obsidianFetchBridge;
   private readonly streamFetchImpl: typeof streamWithFallback;
+
+  /**
+   * v1.26.0 Batch 6: Layer-3 fallback cache. Custom OpenAI-compatible
+   * baseURLs (e.g. user-provided self-hosted) may reject
+   * `reasoning_effort: 'none'` with HTTP 400. On 400 with a
+   * reasoning-related field name in the error message, strip the field
+   * and retry exactly once. Per-baseURL cache prevents infinite loops.
+   * Mirrors the [[ReasoningStripProber]] use in OpenAICompatSdkClient.
+   */
+  private readonly reasoningStripProber = new ReasoningStripProber();
 
   constructor(opts: OpenAISdkClientOptions) {
     this.apiKey = opts.apiKey;
@@ -183,6 +194,38 @@ export class OpenAISdkClient implements LLMClient {
           maxOutputTokens: max_tokens,
           providerOptions: this.buildProviderOptions({
             enableThinking,
+            repetitionPenalty: repetition_penalty,
+            responseFormat: response_format,
+          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        reportFinish(onFinish, result.finishReason, result.usage);
+        return result.text;
+      }
+
+      // v1.26.0 Batch 6: Layer-3 400-retry for reasoning-related fields.
+      // Custom OpenAI-compatible baseURLs (Kimi / z.ai / GLM routed via
+      // OpenAI SDK path) may reject `reasoning_effort: 'none'` with
+      // HTTP 400. Same logic as the openai-compat sibling — match the
+      // error message, strip the field, retry once, cache the decision.
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        enableThinking === false &&
+        this.baseURL !== undefined &&
+        !this.reasoningStripProber.shouldStrip(this.baseURL) &&
+        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+      ) {
+        this.reasoningStripProber.markStrip(this.baseURL);
+        const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+        const { generateText } = await import('ai');
+        const result = await generateText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          providerOptions: this.buildProviderOptions({
+            enableThinking: true,
             repetitionPenalty: repetition_penalty,
             responseFormat: response_format,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
