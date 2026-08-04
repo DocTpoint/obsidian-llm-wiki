@@ -58,19 +58,31 @@ export function renderAdvancedSettingsSection(tab: LLMWikiSettingTab, containerE
           tempSettings.lintBigramThreshold = undefined;
           tempSettings.writePdfMarkdownToVault = undefined;
           tempSettings.slugCase = 'lower';
+          // v1.26.0 (#382 item 1, Batch 2): sources participate in dedup
+          // by default; reset to default-on when this panel closes so a
+          // hidden setting never keeps a no-UI-affordance value.
+          tempSettings.lintDedupIncludeSources = undefined;
         }
         tab.display();
       }));
 
   if (!tempSettings.showAdvancedSettings) return;
 
-  // Lint duplicate-detection thresholds (no sub-heading — the parent
-  // "Advanced settings" H2 already groups these power-user knobs; adding
-  // a sub-heading would create a redundant level-3 layer that adds noise
-  // without adding structure).
-  renderNumberInput(tab, containerEl, 'lintDedupJaccardLinkThresholdName', 'lintDedupJaccardLinkThresholdDesc', 'lintJaccardLinkThreshold', '1');
-  renderNumberInput(tab, containerEl, 'lintDedupJaccardBodyGateName', 'lintDedupJaccardBodyGateDesc', 'lintJaccardBodyGate', '1');
-  renderNumberInput(tab, containerEl, 'lintDedupBigramThresholdName', 'lintDedupBigramThresholdDesc', 'lintBigramThreshold', '1');
+  // v1.26.0 (#382 item 1, Batch 2): ordering of items in this panel
+  // is semantic, not chronological. Layout (top to bottom):
+  //   1. Max Conversation History (Query Wiki daily-driver tweak)
+  //   2. Write PDF Markdown to Vault (storage policy)
+  //   3. Slug Case (filename naming policy)
+  //   4. First-run Welcome note (one-time UX)
+  //   5. ─── Duplicate detection (Batch 2 group, sub-heading) ───
+  //      3 dedup threshold inputs + 1 dedup scope toggle
+  //
+  // The 3 lint dedup threshold inputs and the lintDedupIncludeSources
+  // toggle were moved to the END of this panel so all dedup-related
+  // controls are visually grouped (and the Batch 2 sub-heading makes
+  // the group explicit). The 3 thresholds are no longer the first
+  // items in the panel because their semantic home is "dedup
+  // configuration", not "general advanced settings".
 
   // Max Conversation History (moved from Wiki Configuration in v1.26.0 —
   // the presets dropdown is a one-time tuning choice most users don't
@@ -124,4 +136,30 @@ export function renderAdvancedSettingsSection(tab: LLMWikiSettingTab, containerE
     .addToggle(toggle => toggle
       .setValue(tempSettings.createWelcomeNote)
       .onChange((value) => { tempSettings.createWelcomeNote = value; }));
+
+  // ─── v1.26.0 (#382 item 1, Batch 2): Duplicate detection sub-group ───
+  // Sub-heading separates the 3 dedup threshold inputs + 1 dedup scope
+  // toggle from the storage / naming / UX items above. Visual grouping
+  // makes the semantic scope of the controls (all affect lint dedup
+  // behavior) explicit to the user.
+  new Setting(containerEl)
+    .setName(tab.getText('lintDedupSectionHeading'))
+    .setHeading();
+
+  // Lint duplicate-detection thresholds — 0..1 numeric inputs.
+  renderNumberInput(tab, containerEl, 'lintDedupJaccardLinkThresholdName', 'lintDedupJaccardLinkThresholdDesc', 'lintJaccardLinkThreshold', '1');
+  renderNumberInput(tab, containerEl, 'lintDedupJaccardBodyGateName', 'lintDedupJaccardBodyGateDesc', 'lintJaccardBodyGate', '1');
+  renderNumberInput(tab, containerEl, 'lintDedupBigramThresholdName', 'lintDedupBigramThresholdDesc', 'lintBigramThreshold', '1');
+
+  // v1.26.0 (#382 item 1, Batch 2): include sources/ pages in lint
+  // duplicate-detection. Default on; toggle off to opt out. Rendered
+  // in the dedup sub-group (not in the LLM-Advanced section) because
+  // dedup scope is a per-source-file filter, not an LLM sampling
+  // parameter.
+  new Setting(containerEl)
+    .setName(tab.getText('lintDedupIncludeSourcesName'))
+    .setDesc(tab.getText('lintDedupIncludeSourcesDesc'))
+    .addToggle(toggle => toggle
+      .setValue(tempSettings.lintDedupIncludeSources !== false)
+      .onChange((value) => { tempSettings.lintDedupIncludeSources = value; }));
 }

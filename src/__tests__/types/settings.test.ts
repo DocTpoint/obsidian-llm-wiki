@@ -56,6 +56,21 @@ describe('v1.26.0 dedup threshold settings — defaults', () => {
   });
 });
 
+// v1.26.0 (#382 item 1, Batch 2): sources participate in dedup by
+// default. The field is `?: boolean` with `undefined` as the default —
+// dedup-phase reads `settings.lintDedupIncludeSources !== false` so a
+// missing key is treated as on. Verifying the field exists on
+// DEFAULT_SETTINGS (and is undefined, not false) pins the contract.
+describe('v1.26.0 sources-in-dedup setting — defaults', () => {
+  it('lintDedupIncludeSources defaults to undefined (treated as on at use site)', () => {
+    expect(DEFAULT_SETTINGS.lintDedupIncludeSources).toBeUndefined();
+  });
+
+  it('lintDedupIncludeSources is present on DEFAULT_SETTINGS (not dropped)', () => {
+    expect(DEFAULT_SETTINGS).toHaveProperty('lintDedupIncludeSources');
+  });
+});
+
 // v1.26.0 (#382 item 2): Advanced Settings panel toggle (bottom of the
 // Settings tab). Defaults to false so the lint dedup threshold inputs and
 // other advanced-user settings stay hidden unless the user opts in.

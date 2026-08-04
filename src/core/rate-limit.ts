@@ -8,14 +8,30 @@ export interface RateLimitInfo {
   suggestedDelay: number;
 }
 
+/**
+ * v1.26.0 (#382 item 1, Batch 2): single source of truth for the
+ * "is this failure reason a 429-style rate limit?" predicate. Previously
+ * the regex literal lived only inside `detectRateLimitFailures`; the
+ * dedup-phase non-rate-limit diagnostic (added in the same commit)
+ * needed the same predicate with inverted semantics. Exported here so
+ * the regex cannot drift between callers.
+ *
+ * Adding/removing markers (e.g. 'quota exceeded') is a one-line edit
+ * here; both consumers pick up the change automatically.
+ */
+export const RATE_LIMIT_MARKER_RE = /429|rate.?limit|too many requests|throttl/i;
+
+/** Predicate form of the rate-limit marker regex. */
+export function isRateLimitFailure(reason: string | undefined): boolean {
+  return RATE_LIMIT_MARKER_RE.test(reason || '');
+}
+
 export function detectRateLimitFailures(
   failedItems: Array<{ reason?: string; name?: string; type?: string }>,
   currentConcurrency: number,
   currentBatchDelay: number,
 ): RateLimitInfo | null {
-  const rateLimitFailures = failedItems.filter(f =>
-    /429|rate.?limit|too many requests|throttl/i.test(f.reason || '')
-  );
+  const rateLimitFailures = failedItems.filter(f => isRateLimitFailure(f.reason));
 
   if (rateLimitFailures.length === 0) return null;
 
