@@ -44,16 +44,23 @@ describe('ReasoningStripProber', () => {
   });
 });
 
-describe('ReasoningStripProber.isReasoningFieldError', () => {
-  it('matches "reasoning_effort" in body', () => {
+describe('ReasoningStripProber.isReasoningFieldError — two-marker (verb + field) classifier', () => {
+  // v1.26.0 Batch 6 CR-2: the previous classifier matched any substring
+  // of `reasoning_effort` / `thinking` / `chat_template` etc. The bare
+  // word `thinking` collided with model names (`kimi-k2-thinking`,
+  // `qwen3-235b-a22b-thinking-2507`, `glm-4.6-thinking`), causing
+  // false-positive strip decisions on `*-thinking` model users. New
+  // classifier requires BOTH a rejection verb AND a field marker.
+
+  it('matches Gemini-style: rejection verb + reasoning_effort field', () => {
     expect(
       ReasoningStripProber.isReasoningFieldError(
-        "Invalid value for 'reasoning_effort': 'none'",
+        "Invalid value for 'reasoning_effort': 'none' is not supported",
       ),
     ).toBe(true);
   });
 
-  it('matches "thinking" in body', () => {
+  it('matches Anthropic-style: unsupported + thinking.type field', () => {
     expect(
       ReasoningStripProber.isReasoningFieldError(
         "Field 'thinking.type' is not supported by this endpoint",
@@ -61,7 +68,7 @@ describe('ReasoningStripProber.isReasoningFieldError', () => {
     ).toBe(true);
   });
 
-  it('matches "chat_template" in body', () => {
+  it('matches llama.cpp-style: unknown + chat_template_kwargs field', () => {
     expect(
       ReasoningStripProber.isReasoningFieldError(
         'Unknown parameter: chat_template_kwargs',
@@ -69,31 +76,53 @@ describe('ReasoningStripProber.isReasoningFieldError', () => {
     ).toBe(true);
   });
 
-  it('is case-insensitive', () => {
-    expect(ReasoningStripProber.isReasoningFieldError('REASONING_EFFORT not supported')).toBe(true);
-    expect(ReasoningStripProber.isReasoningFieldError('Thinking Disabled')).toBe(true);
-    expect(ReasoningStripProber.isReasoningFieldError('CHAT_TEMPLATE missing')).toBe(true);
+  it('is case-insensitive on both verb and field', () => {
+    expect(ReasoningStripProber.isReasoningFieldError('REASONING_EFFORT NOT SUPPORTED')).toBe(true);
+    expect(ReasoningStripProber.isReasoningFieldError('unknown field ENABLE_THINKING')).toBe(true);
+    expect(ReasoningStripProber.isReasoningFieldError('UNRECOGNIZED CHAT_TEMPLATE_KWARGS')).toBe(true);
   });
 
   it('matches kebab-case variants', () => {
-    expect(ReasoningStripProber.isReasoningFieldError('reasoning-effort not supported')).toBe(true);
-    expect(ReasoningStripProber.isReasoningFieldError('chat-template error')).toBe(true);
+    expect(ReasoningStripProber.isReasoningFieldError('unsupported reasoning-effort value')).toBe(true);
+    expect(ReasoningStripProber.isReasoningFieldError('unknown chat-template-kwargs')).toBe(true);
   });
 
-  it('does NOT match unrelated 400s', () => {
-    // max_tokens vs max_completion_tokens is handled by TokenKeyProber
+  // CR-2 regression: bare model names with 'thinking' substring must NOT
+  // match. Without this guard, *-thinking model users would get their
+  // baseURL permanently mis-stripped on the first 400 (bad model name,
+  // context length, token-key mismatch).
+  it('does NOT match model names containing "thinking"', () => {
+    expect(ReasoningStripProber.isReasoningFieldError("Model 'kimi-k2-thinking' not found")).toBe(false);
+    expect(ReasoningStripProber.isReasoningFieldError('model qwen3-235b-a22b-thinking-2507 is not loaded')).toBe(false);
+    expect(ReasoningStripProber.isReasoningFieldError('Invalid value for max_tokens (model: glm-4.6-thinking)')).toBe(false);
+    expect(ReasoningStripProber.isReasoningFieldError('context length exceeded for kimi-k2-thinking')).toBe(false);
+  });
+
+  it('does NOT match when only the verb is present (no field marker)', () => {
+    // Generic 400 errors without the field marker must NOT trigger strip.
     expect(ReasoningStripProber.isReasoningFieldError('Invalid value for max_tokens')).toBe(false);
+    expect(ReasoningStripProber.isReasoningFieldError('Unsupported model')).toBe(false);
+  });
+
+  it('does NOT match when only the field marker is present (no rejection verb)', () => {
+    // Mention of the field name without a rejection verb (e.g. an info
+    // log line) must NOT trigger strip.
+    expect(ReasoningStripProber.isReasoningFieldError('request body contains reasoning_effort')).toBe(false);
+    expect(ReasoningStripProber.isReasoningFieldError('chat_template_kwargs supplied')).toBe(false);
+  });
+
+  it('does NOT match unrelated 400s (status-only filters handled by TokenKeyProber)', () => {
     // 413 size limit
     expect(ReasoningStripProber.isReasoningFieldError('Request too large')).toBe(false);
     // 5xx server error
     expect(ReasoningStripProber.isReasoningFieldError('Internal server error')).toBe(false);
     // 401 auth
     expect(ReasoningStripProber.isReasoningFieldError('Invalid API key')).toBe(false);
+    // 429 rate limit
+    expect(ReasoningStripProber.isReasoningFieldError('Rate limit exceeded')).toBe(false);
   });
 
-  it('does NOT match "temperature" alone (no overlap)', () => {
-    // Defensive — substring match could in principle false-positive on
-    // 'tempeRATURE-thinking-...'. Lock the negative case.
+  it('does NOT match "temperature" alone (defensive — keyword could overlap)', () => {
     expect(ReasoningStripProber.isReasoningFieldError('Invalid temperature value')).toBe(false);
   });
 
