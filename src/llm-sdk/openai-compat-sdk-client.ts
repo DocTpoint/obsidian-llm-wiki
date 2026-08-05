@@ -554,46 +554,21 @@ export class OpenAICompatSdkClient implements LLMClient {
         return fullText;
       }
 
-      // v1.23.0 P1.5 follow-up: token-key probe-then-retry for streaming.
-      // Same logic as createMessage — cache the alt key for this
-      // baseURL and retry. No error-body inspection.
-      if (APICallError.isInstance(err) && err.statusCode === 400 && !this.tokenKeyProber.getCachedKey(this.baseURL)) {
-        this.tokenKeyProber.setCachedKey(this.baseURL, 'max_completion_tokens');
-        const retryLanguageModel = this.getProvider(model, this.streamFetchImpl);
-        const { streamText } = await import('ai');
-        const result = streamText({
-          model: retryLanguageModel,
-          ...(system ? { system } : {}),
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
-          maxOutputTokens: max_tokens,
-          providerOptions: this.buildProviderOptions({
-            enableThinking,
-            repetitionPenalty: repetition_penalty,
-          }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-          ...buildSamplingArgs({ temperature, top_p, seed }),
-        });
-        let fullText = '';
-        for await (const chunk of result.textStream) {
-          fullText += chunk;
-          onChunk(chunk);
-        }
-        let reasoningContent = '';
-        try {
-          const reasoning = await result.reasoning;
-          if (typeof reasoning === 'string' && reasoning) {
-            reasoningContent = reasoning;
-          } else if (Array.isArray(reasoning)) {
-            reasoningContent = reasoning.map((r) => (r as { text?: string }).text || '').join('');
-          }
-        } catch { /* no reasoning */ }
-        if (reasoningContent) {
-          fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
-        }
-        return fullText;
-      }
-
-      // v1.26.0 Batch 6: Layer-3 400-retry for reasoning-related fields
-      // (streaming variant — same logic as createMessage above).
+      // v1.26.0 Batch 6 Bug-2 fix: Layer-3 400-retry for reasoning-related
+      // fields (streaming variant — same logic as createMessage above).
+      //
+      // ORDER MATTERS: this branch runs BEFORE the token-key fallback
+      // below. Token-key probe is coarse (any 400 →
+      // max_tokens ↔ max_completion_tokens); if it runs first on a
+      // reasoning-related 400, it would mark the baseURL and skip the
+      // reasoning-strip probe entirely. Then the retry still sends
+      // reasoning_effort and the second 400 is never retried.
+      //
+      // Bug-2 (Aug 2026 code-review): this branch used to be AFTER
+      // the token-key branch on the streaming path — opposite of the
+      // non-streaming path. The token-key branch would mark the
+      // baseURL first and the reasoning-strip probe never fired. Now
+      // both paths follow the same order.
       if (
         APICallError.isInstance(err) &&
         err.statusCode === 400 &&
@@ -634,6 +609,45 @@ export class OpenAICompatSdkClient implements LLMClient {
         }
         return fullText;
       }
+
+      // v1.23.0 P1.5 follow-up: token-key probe-then-retry for streaming.
+      // Same logic as createMessage — cache the alt key for this
+      // baseURL and retry. No error-body inspection.
+      if (APICallError.isInstance(err) && err.statusCode === 400 && !this.tokenKeyProber.getCachedKey(this.baseURL)) {
+        this.tokenKeyProber.setCachedKey(this.baseURL, 'max_completion_tokens');
+        const retryLanguageModel = this.getProvider(model, this.streamFetchImpl);
+        const { streamText } = await import('ai');
+        const result = streamText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          providerOptions: this.buildProviderOptions({
+            enableThinking,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        let fullText = '';
+        for await (const chunk of result.textStream) {
+          fullText += chunk;
+          onChunk(chunk);
+        }
+        let reasoningContent = '';
+        try {
+          const reasoning = await result.reasoning;
+          if (typeof reasoning === 'string' && reasoning) {
+            reasoningContent = reasoning;
+          } else if (Array.isArray(reasoning)) {
+            reasoningContent = reasoning.map((r) => (r as { text?: string }).text || '').join('');
+          }
+        } catch { /* no reasoning */ }
+        if (reasoningContent) {
+          fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+        }
+        return fullText;
+      }
+
       throw mapAiSdkError(err);
     }
   }
