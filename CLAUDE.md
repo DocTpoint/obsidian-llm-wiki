@@ -462,7 +462,14 @@ for the full post-mortem.
   schema declares only `reasoningEffort`, `textVerbosity`,
   `strictJsonSchema`, `user` for chat options
 - `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:531-540` — `filter`
-  deletes any key not in the schema shape
+  is a passthrough that keeps keys NOT in the schema shape and
+  spreads them into the body (NOT a strip). The fields never reach
+  wire because `buildProviderOptions` returns them under
+  `"openaiCompatible"` while path 2 reads
+  `providerOptions[this.providerOptionsName]` — the per-id lookup
+  misses for every provider id we ship. See
+  `[[feedback_force_disable_thinking_openai_compat_noop]]` for the
+  full mechanism description.
 - `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:541` — emit path:
   `reasoning_effort: compatibleOptions.reasoningEffort`
 - `@ai-sdk/openai@3.0.86/dist/index.mjs:693` — `reasoningEffort` zod
@@ -477,6 +484,80 @@ for the full post-mortem.
 asserts `reasoning_effort: 'none'` IS on the body (not just on the
 `providerOptions` argument handed to the SDK — that assertion was
 PR #410's blind spot).
+
+### ⚠️ Force-disable thinking — call-site wiring (v1.26.0 PR #411 F5-A)
+
+PR #411 review surfaced a **third attribution correction** (eucher,
+2026-08-05 05:07 UTC): `dedup-phase.ts:379, 434` used the constant
+`enableThinkingOverride = false` as both a value (the override IS
+false → spread nothing) and a flag (`false ? A : {}` always picks
+`{}`). The result: `enableThinking: false` never entered `llmArgs`,
+and Layers 1-3 of this fallback were unreachable from the dedup-phase
+call site. Three log lines reported otherwise (debug at `:303, :431`
+printed `disableThinking=force …` and `disableThinking=true`; warn at
+`:448` printed `enableThinking_sent=true`) — all derived from the same
+broken ternary.
+
+**Fix:** renamed to `FORCE_DISABLE_THINKING = true` (clearly a flag,
+not a value) and made the spread unconditional. Log lines now print
+truthful values (`disableThinking=force` / `enableThinking_sent=false`).
+Regression guard in `dedup-phase.test.ts` asserts `enableThinking:
+false` on every call to `createMessage.mock.calls[*]`.
+
+**E2e impact** on the 2141-page vault (deepseek-v4-flash, all other
+settings unchanged):
+
+| state | wall-time | what changed |
+|---|---|---|
+| v1.25.x baseline | 979s | thinking mode, no retries |
+| Batch 2 (PR #410) | 365s | retry/backoff live; Layers 1-3 still dead code |
+| **F5-A (PR #411)** | **151s** | Layers 1-3 now live end-to-end |
+
+**−85% vs baseline, −59% vs Batch 2.** The full `feedback_force_disable_thinking_dedup_wiring`
+post-mortem records this as the third correction in the
+979s→365s→151s chain. See also the previous two:
+`[[feedback_force_disable_thinking_openai_compat_noop]]` (factor 1:
+zod-strip / misaddressed) and `[[feedback_dedup_phase_halving_dead_code]]`
+(factor 2: halving counter never fires).
+
+### ⚠️ Per-call thinking policy — source-analyzer repair path (v1.26.0 PR #411 F5-B)
+
+eucher's same review also flagged that the
+`source-analyzer.ts:417` JSON-repair callback did not propagate the
+parent's `disableThinking` setting. **We did NOT patch this, by
+design**: DocTpoint's controlled measurement on LM Studio / gemma-4-12b
+(PR #411 review 2026-08-05 05:38 UTC) showed that disabling reasoning
+on the repair call produces structurally valid JSON with **wrong
+content** (concepts duplicated into entities; `concepts = null`;
+contradictions / related_pages / key_points dropped). Repair needs
+reasoning budget to understand broken-JSON semantics, not just
+string-level bracket fixing. Mirroring the parent call's flag would
+have introduced silent data corruption on the parse-failure retry
+path.
+
+The opposite direction confirms the per-call rule:
+`complementaryAppend` at a 600-token cap went from 3 of 3 truncated
+to 0 of 3 with reasoning off (Issue #403 — thinking budget burns
+the short cap). Different call, different policy.
+
+**Per-call policy:**
+
+| call site | `disableThinking` honored? | reason |
+|---|---|---|
+| parent analysis (`source-analyzer.ts:386`) | yes | short-token structured extraction |
+| JSON-repair (`source-analyzer.ts:417`) | **no — always allow reasoning** | needs reasoning budget to understand broken JSON |
+| short-cap `complementaryAppend` | yes | thinking budget burns the cap (Issue #403) |
+
+**Regression guard (inverted):** `source-analyzer-thinking.test.ts`
+asserts the repair callback does NOT pass `enableThinking: false`
+even when `disableThinking: true`. Without this guard, a future
+contributor adding a "uniformly propagate disableThinking" rule
+would re-introduce silent repair corruption.
+
+**Tracked as v1.26.x PATCH:** introduce a per-call `thinkingPolicy`
+enum so the user can express "no reasoning for short-budget calls,
+full reasoning for repair". Until that ships, the asymmetry is
+intentional, not a bug.
 
 ### ⚠️ Obsidian Plugin Submission Rules — `document` is forbidden in production
 
