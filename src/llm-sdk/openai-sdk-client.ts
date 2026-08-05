@@ -267,9 +267,25 @@ export class OpenAISdkClient implements LLMClient {
     // doesn't help us for forward-compat provider option keys.
     const openaiOpts: Record<string, unknown> = {};
 
-    if (opts.enableThinking === false) {
-      // v1.26.0 Batch 6: switch from 'low' to 'none' for the official
-      // OpenAI Responses path.
+    if (
+      opts.enableThinking === false &&
+      !(this.baseURL !== undefined && this.reasoningStripProber.shouldStrip(this.baseURL))
+    ) {
+      // v1.26.0 Batch 6 + Bug-1 fix: switch from 'low' to 'none' for the
+      // official OpenAI Responses path; gate on shouldStrip(baseURL).
+      //
+      // The shouldStrip guard prevents a regression spotted during
+      // code-review (Aug 2026): once Layer-3 marks a baseURL as
+      // "strip" (because it 400'd on reasoning_effort), the next call
+      // must NOT re-inject the field — otherwise the catch-block guard
+      // `!shouldStrip` short-circuits and the reasoning-strip retry
+      // never fires. This is the same guard openai-compat has at
+      // line 322 of openai-compat-sdk-client.ts (B6-4).
+      //
+      // The `baseURL !== undefined` sub-check: shouldStrip only matters
+      // for custom baseURLs (the official OpenAI API never goes through
+      // Layer-3 — there's no per-baseURL cache for it). For the official
+      // path, always emit.
       //
       // History:
       //   - v1.23.0: 'low' was the OpenAI-recommended safe default for
