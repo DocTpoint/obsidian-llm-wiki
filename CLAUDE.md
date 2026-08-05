@@ -403,9 +403,40 @@ matching — fixed list, mirrors `[[token-key-probe.ts]]` design):
 | Layer | Mechanism | Where |
 |-------|-----------|-------|
 | 1 (Primary) | `reasoningEffort: 'none'` (camelCase) — passes zod filter, emits as `reasoning_effort: 'none'` on wire | `openai-compat-sdk-client.ts:267`, `openai-sdk-client.ts:221` |
-| 2 (Co-emit) | Same `reasoningEffort` for Anthropic SDK path | `anthropic-sdk-client.ts` (separate code path; `thinking: { type: 'disabled' }` is the working switch there) |
+| 2 (Co-emit) | Same `reasoningEffort` in Anthropic SDK path — Anthropic uses `thinking: { type: 'disabled' }` (different field, zod-accepted) as its working switch | `anthropic-sdk-client.ts` |
 | 3 (400-retry) | On HTTP 400 mentioning `reasoning_effort` / `thinking` / `chat_template`, retry once with reasoningEffort stripped. Per-baseURL cache prevents infinite loops. | `reasoning-strip-probe.ts` + catch block in both SDK clients |
 | 4 (Prompt-level) | "**Do not reason step by step**" line in dedup prompt | `lint.ts` (Batch 2 already added this) |
+
+**Why Layer 2 is no-op today (corrected post-merge, 2026-08-04):**
+DocTpoint's third comment re-measured the openai-compat SDK source
+and corrected his own earlier claim that `thinking` /
+`chat_template_kwargs` were "stripped". The SDK has TWO independent
+paths into the wire body:
+
+1. **Path 1 — zod schema** (`dist/index.mjs:466-483`): fields
+   declared in `openaiCompatibleLanguageModelChatOptions` (zod
+   shape, lines 322-344) flow through, emitted to wire per schema.
+   `reasoningEffort` (camelCase) → `reasoning_effort` (snake_case).
+   Reads from a hard-coded `"openaiCompatible"` key (works for all
+   provider ids).
+2. **Path 2 — passthrough** (`dist/index.mjs:531-540`): the SDK's
+   `filter()` keeps keys NOT in the zod shape (this is an
+   extra-field passthrough, NOT a strip) and spreads them into the
+   body. Reads from `providerOptions[this.providerOptionsName]` and
+   its camelCase form — there is no hard-coded `"openaiCompatible"`
+   here.
+
+`buildProviderOptions` returns `{ openaiCompatible: openaiOpts }`
+while `getProvider` passes `this.provider` (e.g. `deepseek` /
+`kimi` / `lmstudio` / `custom` / `ollama`). For any provider id
+other than literally `"openai-compatible"`, path 2 looks up a key
+that does not exist. **None of the 15 provider ids in `types.ts`
+is the literal string `"openai-compatible"`** — so the Layer-2
+extra fields (thinking, chat_template_kwargs) never reach the
+wire. The mechanism is correct, but the key doesn't match the
+provider id. Per-id key correction is recorded in
+[[project_v1_26_0_rescoped]] v1.26.x PATCH track (depends on Layer-3
+guard now in place).
 
 **Why no per-vendor matching:** per user guidance (2026-08-04):
 "做好通用、完善的fallback机制即可". The Layer-3 message-match covers
@@ -417,8 +448,13 @@ cost of a false-positive strip (one extra HTTP call) is bounded.
 path that wants force-disable-thinking, use `enableThinking: false`
 on the `createMessage` call — Layer 1 + Layer 3 + Layer 4 cover all
 known backends. **Never write `thinking.type` or `chat_template_kwargs`
-into provider options — those are stripped by the openai-compat SDK
-filter.** See [[project_v1_26_0_batch_6_real_wire_thinking_disable]]
+into provider options on the openai-compat path today** — they're
+silently dropped because `buildProviderOptions` returns under the
+hardcoded `"openaiCompatible"` key while path 2 of the SDK reads
+`providerOptions[this.provider]`. The per-id key correction in
+v1.26.x PATCH unlocks Layer 2; until then, Layer 1 (`reasoningEffort:
+'none'`) is the only verified-working disable mechanism. See
+[[project_v1_26_0_batch_6_real_wire_thinking_disable]]
 for the full post-mortem.
 
 **Verification evidence (cited inline in code):**
