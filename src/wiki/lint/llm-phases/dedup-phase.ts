@@ -376,7 +376,22 @@ export async function runDedupPhase(
     // `link-orphan`, `query-keywords`, and `path-resolution` (also
     // structured JSON-decision tasks) should adopt the same hard-coded
     // force-disable pattern. Out of scope for Batch 2.
-    const enableThinkingOverride = false;
+    //
+    // v1.26.0 Batch 7 follow-up (eucher, PR #411 review comment
+    // 2026-08-05): the previous name `enableThinkingOverride = false`
+    // read as a value (the override IS false → so spread nothing),
+    // but the spread `...(value ? { enableThinking: false } : {})`
+    // was treating it as a flag — `false ? … : {}` is always `{}`, so
+    // `enableThinking` never entered `llmArgs`, and Layers 1-3 of the
+    // 4-layer fallback were unreachable from this call. Renamed to
+    // `FORCE_DISABLE_THINKING` (clear that it is a flag, not a value)
+    // and made the spread unconditional. The 979s→365s e2e attribution
+    // is corrected in [[feedback_force_disable_thinking_dedup_wiring]]
+    // — the gain came from retry/backoff + Layer 4 (prompt-level "Do not
+    // reason step by step"), not from Layers 1-3 (which were never sent
+    // before this fix). After this fix Layers 1-3 will be live and the
+    // expectation is real wall-time reduction, not just retry recovery.
+    const FORCE_DISABLE_THINKING = true;
     //
     // The user-set `pageGenerationConcurrency` is the starting point.
     // When an empty-response soft-throttle is detected (deepseek-v4-flash
@@ -431,7 +446,15 @@ export async function runDedupPhase(
         messages: [{ role: 'user' as const, content: prompt }],
         ...(systemPrompt ? { system: systemPrompt } : {}),
         response_format: { type: 'json_object' as const },
-        ...(enableThinkingOverride ? { enableThinking: false } : {}),
+        // v1.26.0 Batch 7 follow-up (eucher): the previous
+        // `enableThinkingOverride ? … : {}` ternary silently sent
+        // nothing because `override = false` always picks the empty
+        // branch. The flag is now `FORCE_DISABLE_THINKING = true` and
+        // the spread is unconditional so `enableThinking: false`
+        // actually enters llmArgs and reaches buildProviderOptions
+        // (which then maps it to `reasoningEffort: 'none'` /
+        // `thinking: {type: 'disabled'}` per SDK).
+        ...(FORCE_DISABLE_THINKING ? { enableThinking: false } : {}),
       };
 
       const logResponse = (response: string, attempt: 1 | 2 | 3, delayMs: number) => {
@@ -440,7 +463,7 @@ export async function runDedupPhase(
           `system_chars=${systemPrompt?.length ?? 0} ` +
           `model=${lintModel} ` +
           `max_tokens=${TOKENS_LINT_DEDUP_LLM} ` +
-          `disableThinking=${!enableThinkingOverride ? 'true' : 'false'} ` +
+          `disableThinking=${FORCE_DISABLE_THINKING ? 'force' : 'inherit-user'} ` +
           `response_format=json_object attempt=${attempt} delay_ms=${delayMs} | ` +
           `response: raw_length=${response.length} ` +
           `first_100_chars="${response.substring(0, 100).replace(/\n/g, '\\n')}"`
@@ -457,7 +480,7 @@ export async function runDedupPhase(
       retryEvents.push({ batchNum, attempt: 1, delayMs: RETRY_ATTEMPT_2_DELAY_MS });
       console.warn(
         `[Dedup LLM batch ${batchNum}] empty response (attempt 1) — ` +
-        `retrying after ${RETRY_ATTEMPT_2_DELAY_MS}ms. enableThinking_sent=${enableThinkingOverride ? 'false' : 'true'} ` +
+        `retrying after ${RETRY_ATTEMPT_2_DELAY_MS}ms. enableThinking_sent=${FORCE_DISABLE_THINKING ? 'false' : 'unset'} ` +
         `prompt_chars=${prompt.length} max_tokens=${TOKENS_LINT_DEDUP_LLM} model=${lintModel}`
       );
       await new Promise(resolve => window.setTimeout(resolve, RETRY_ATTEMPT_2_DELAY_MS));

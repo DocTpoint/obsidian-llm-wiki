@@ -472,6 +472,37 @@ describe('runDedupPhase — LLM verify path', () => {
     expect(result).toEqual([]);
   });
 
+  // v1.26.0 Batch 7 follow-up (eucher, PR #411 review comment 2026-08-05):
+  // the previous `enableThinkingOverride = false` ternary silently sent
+  // nothing (false ? A : {} always picks {}), so Layers 1-3 of the 4-layer
+  // fallback were unreachable from the dedup-phase call. Renamed to
+  // FORCE_DISABLE_THINKING and made the spread unconditional. This is
+  // the regression guard that pins the wiring — without it, the test
+  // passes whether the client receives enableThinking or not.
+  it('passes enableThinking: false to createMessage (Batch 7 follow-up wiring fix)', async () => {
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/x.md', basename: 'x.md' },
+        { path: 'wiki/entities/X.md', basename: 'X.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/x.md', '---\ntype: entity\n---\n# x\nshared'],
+        ['wiki/entities/X.md', '---\ntype: entity\n---\n# X\nshared'],
+      ]),
+    };
+    await runDedupPhase(ctx, input, () => {});
+    expect(createMessage).toHaveBeenCalled();
+    // The dedup-phase hardcoded force-disable must reach the LLM as
+    // enableThinking: false on every attempt. Before the fix the field
+    // was silently dropped by the (false ? A : {}) ternary.
+    for (const call of createMessage.mock.calls) {
+      const args = call[0] as { enableThinking?: boolean };
+      expect(args.enableThinking).toBe(false);
+    }
+  });
+
   // v1.26.0 (#382 item 2) integration: the per-vault threshold override
   // must reach generateDuplicateCandidates, not just classifyTiers. Two
   // pages sharing 1/3 of their link graph (jaccard ≈ 0.333) produce NO
