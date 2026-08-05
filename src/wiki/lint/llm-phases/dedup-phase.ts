@@ -738,8 +738,21 @@ export async function runDedupPhase(
     // v1.26.0 (#382 item 1, Batch 2): log non-rate-limit failures
     // separately so DocTpoint's batch-expansion truncation hypothesis
     // is measurable across dedup runs.
+    //
+    // v1.26.0 Batch 7 + CR-3 fix (PR #411 simplify review 2026-08-05):
+    // pass the FULL failure item, not just `f.reason`. The structured
+    // `type: 'parse-failure'` discriminator on dedupFailures (added in
+    // commit 6e6388a) was being dropped at every consumer — the
+    // `isRateLimitFailure` structured-form branch was unreachable from
+    // production. Without the fix, a future edit to the parse-failure
+    // reason string that mentions "throttl" or "rate limit" would
+    // silently misclassify parse-failures as 429s, vanish the
+    // [Duplicate Batch Failures] truncation counter, AND fire a
+    // spurious [Duplicate Rate Limit] Notice. The CR-3 regression
+    // guarantee was on the test page; this wiring puts it on the
+    // running plugin's call path too.
     const nonRateLimitFailures = dedupFailures.filter(f =>
-      !isRateLimitFailure(f.reason)
+      !isRateLimitFailure(f)
     );
     if (nonRateLimitFailures.length > 0) {
       console.warn(

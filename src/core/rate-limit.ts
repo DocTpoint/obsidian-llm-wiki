@@ -50,7 +50,13 @@ export function detectRateLimitFailures(
   currentConcurrency: number,
   currentBatchDelay: number,
 ): RateLimitInfo | null {
-  const rateLimitFailures = failedItems.filter(f => isRateLimitFailure(f.reason));
+  // v1.26.0 Batch 7 + CR-3 fix (PR #411 simplify review 2026-08-05):
+  // pass the full item so `isRateLimitFailure` can honor the
+  // `type: 'parse-failure'` discriminator added in commit 6e6388a.
+  // Before this fix the structured-form branch was unreachable — only
+  // the free-text regex matched, which is exactly what the CR-3 fix
+  // was meant to bypass.
+  const rateLimitFailures = failedItems.filter(f => isRateLimitFailure(f));
 
   if (rateLimitFailures.length === 0) return null;
 

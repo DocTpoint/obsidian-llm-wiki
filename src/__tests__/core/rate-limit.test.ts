@@ -118,6 +118,35 @@ describe('detectRateLimitFailures', () => {
     );
     expect(result?.suggestedDelay).toBe(500);
   });
+
+  // v1.26.0 Batch 7 + CR-3 fix (PR #411 simplify review 2026-08-05):
+  // the `type: 'parse-failure'` discriminator MUST be honored by
+  // `detectRateLimitFailures` in production, not just by
+  // `isRateLimitFailure` directly. Before this test, the
+  // structured-form branch was only reachable when callers passed the
+  // full item — `detectRateLimitFailures` itself was passing
+  // `f.reason` (string) only, so the discriminator never reached the
+  // predicate in the dedup-phase call path.
+  it('does NOT classify a type=parse-failure item as rate-limit (CR-3 wiring)', () => {
+    // Even though the free-text reason mentions "throttl" (which the
+    // prose regex would match), the type discriminator wins. The
+    // dedup-phase Batch 7 commits push exactly this shape.
+    const result = detectRateLimitFailures(
+      [{ name: 'batch-1', type: 'parse-failure', reason: 'parse-failure: response was throttled mid-flight' }],
+      3, 300,
+    );
+    expect(result).toBeNull();
+  });
+
+  it('still classifies a plain-prose "throttled" reason without type', () => {
+    // The non-discriminated path stays intact for callers that don't
+    // tag their failure kind (url-fallback, transient-retry, etc.).
+    const result = detectRateLimitFailures(
+      [{ name: 'p1', reason: 'request was throttled' }],
+      3, 300,
+    );
+    expect(result?.count).toBe(1);
+  });
 });
 
 describe('formatRateLimitNotice', () => {
