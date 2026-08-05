@@ -340,10 +340,22 @@ export async function runDedupPhase(
     //          non-reasoning models (gpt-4o, gpt-4-turbo).
     //        - OpenAI 兼容 SDK (openai-compat-sdk-client.ts:240-270):
     //          `thinking.type: 'disabled'` + `chat_template_kwargs` is
-    //          honored by DeepSeek / Kimi / GLM-4.6+; silently ignored
-    //          by most other OpenAI-compatible backends (LM Studio,
-    //          llama.cpp); OpenRouter is the documented exception
-    //          (uses a different key — no-op fallback).
+    //          honored by DeepSeek / Kimi / GLM-4.6+ AT THE WIRE if the
+    //          fields reach it; in practice they do NOT, because the AI
+    //          SDK's path-2 passthrough
+    //          (`@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:533-534`)
+    //          reads `providerOptions[this.providerOptionsName]` (our
+    //          provider id — `deepseek` / `kimi` / `lmstudio` / etc.),
+    //          not the hardcoded `"openaiCompatible"` key that
+    //          buildProviderOptions returns under. None of the 15
+    //          provider ids is literally `"openai-compatible"`, so the
+    //          extras are dropped before the body is built. eucher
+    //          verified the same byte-identical no-op on llama.cpp via
+    //          curl at the wire (Issue #382 follow-up comment,
+    //          2026-08-04) — `chat_template_kwargs` honours the value
+    //          there, but the no-op comes from the SDK, not the
+    //          backend. OpenRouter is the documented exception (uses
+    //          a different key — no-op fallback).
     //        - OpenAI Codex SDK (openai-codex-sdk-client.ts:152-154):
     //          `reasoningEffort: 'low'` is a no-op for Codex Responses.
     //      The setting only affects thinking-capable models where the
@@ -549,22 +561,46 @@ export async function runDedupPhase(
           // into dedupFailures with a distinct reason tag. The
           // `throwOnEmpty: true` option above handles the empty-body
           // case; this handles the "got body but parse failed" case.
+          //
+          // v1.26.0 Batch 7 follow-up (DocTpoint Item 5): also route
+          // shape-mismatches (`{duplicates: 'yes'}` / `{duplicates: 42}`
+          // / `{duplicates: null}` — parsed successfully but the
+          // `duplicates` field is not an array) into dedupFailures with
+          // the same `type: 'parse-failure'` discriminator. Same root
+          // cause as the `=== null` branch (LLM didn't return the shape
+          // we asked for), same operator consequence (truncation /
+          // prompt-format mismatch we need to count for tuning), and
+          // the previous `Array.isArray(rawDumps) ? rawDups : []` line
+          // silently masked it — operators lost the real signal. See
+          // the regression guard test in
+          // `__tests__/wiki/lint/llm-phases/dedup-phase.test.ts`.
           const dedupResult = await parseJsonResponse(dedupResponse, undefined, {
             throwOnEmpty: true,
             silentOnEmpty: false,
           }) as { duplicates?: DuplicateResult[] } | null;
 
-          if (dedupResult === null) {
-            // Parse failure / truncated — NOT a legitimate empty.
-            // Route into dedupFailures with a distinct reason tag so
-            // the [Duplicate Batch Failures] warning can distinguish
-            // this from network/429 errors. The fulfilled/rejected
-            // branch downstream treats dedupFailures as a record of
-            // skipped batches; the post-loop summary line
+          // One parse-failure branch covers BOTH outcome kinds — the
+          // whole-response failure (null) and the shape-mismatch (parsed
+          // but `duplicates` is not an array). Same reason tag, same
+          // `type` discriminator so the rate-limit classifier excludes
+          // both from the 429 grouping.
+          const rawDups = dedupResult?.duplicates;
+          const shapeMismatch =
+            dedupResult !== null && !Array.isArray(rawDups);
+          if (dedupResult === null || shapeMismatch) {
+            // Parse failure / truncated / shape mismatch — NOT a
+            // legitimate empty. Route into dedupFailures with a
+            // distinct reason tag so the [Duplicate Batch Failures]
+            // warning can distinguish this from network/429 errors.
+            // The fulfilled/rejected branch downstream treats
+            // dedupFailures as a record of skipped batches; the
+            // post-loop summary line
             // (`[Duplicate Batch Failures] ${count} batches`) will
             // surface this. dedupFailures is captured by closure on
             // line 470; the push here is the canonical record path.
-            const reason = 'parse-failure: response present but JSON unparseable or truncated';
+            const reason = shapeMismatch
+              ? `parse-failure: response parsed but 'duplicates' is not an array (got ${rawDups === null ? 'null' : typeof rawDups})`
+              : 'parse-failure: response present but JSON unparseable or truncated';
             console.warn(`lintWiki: batch ${batchNum} ${reason}`);
             // CR-3 fix: explicit `type: 'parse-failure'` discriminator
             // so the rate-limit classifier excludes this entry from the
@@ -574,10 +610,8 @@ export async function runDedupPhase(
             return [];
           }
 
-          console.debug(`lintWiki: batch ${batchNum}/${batches.length} → ${dedupResult?.duplicates?.length || 0} duplicates confirmed`);
-          // Guard against non-array LLM responses (single object, string, etc.)
-          const rawDups = dedupResult?.duplicates;
-          return Array.isArray(rawDups) ? rawDups : [];
+          console.debug(`lintWiki: batch ${batchNum}/${batches.length} → ${rawDups?.length || 0} duplicates confirmed`);
+          return rawDups;
         })
       );
 

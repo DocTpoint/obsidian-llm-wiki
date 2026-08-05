@@ -10,10 +10,19 @@ import { OpenAICompatSdkClient } from '../../llm-sdk/openai-compat-sdk-client';
 // v1.26.0 Batch 6: `reasoningEffort` IS in the zod schema (line 331:
 // `z.string().optional()`) and IS emitted to the wire as `reasoning_effort`
 // (line 541). This is the force-disable-thinking mechanism that replaced
-// the stripped `thinking` + `chat_template_kwargs` from PR #410 (Batch 2),
-// which the SDK's `filter()` at line 531-540 deleted before the body was
-// built. DocTpoint verified wire-reaches via fetch-interceptor on LM
-// Studio / gemma-4-12b (Issue #382 comment 2, 2026-08-04).
+// `thinking` + `chat_template_kwargs` from PR #410 (Batch 2), which never
+// reached the wire: those two keys are not in the zod schema, and the
+// SDK's path-2 passthrough at line 533-534 reads from
+// `providerOptions[this.providerOptionsName]` (the provider id —
+// `deepseek` / `kimi` / `lmstudio` / etc.), not the hardcoded
+// `"openaiCompatible"` key that buildProviderOptions returns under.
+// None of the 15 provider ids in `types.ts` is literally
+// `"openai-compatible"`, so the lookup misses for every provider and the
+// extras never spread into the body. DocTpoint verified via
+// fetch-interceptor on LM Studio / gemma-4-12b (Issue #382 comment 3,
+// 2026-08-04 — supersedes his earlier comment 2, which attributed the
+// no-op to a `filter()` "delete" — the filter is a passthrough, the
+// real reason is the key mismatch).
 describe('OpenAICompatSdkClient — what reaches the request body', () => {
   it('carries reasoning_effort="none" + the seed and the sampling knobs', async () => {
     let body: Record<string, unknown> = {};

@@ -323,12 +323,22 @@ export class OpenAICompatSdkClient implements LLMClient {
    * measurement (Issue #382 comment 2, 2026-08-04) confirmed the field
    * reaches the backend; reasoning_tokens=0 in the response.
    *
-   * Earlier this mapped to `thinking.type: 'disabled'` — the SDK's zod
-   * schema did not declare that key, so the filter at line 531-540
-   * deleted it before the body was built. The field never left the
-   * process; Batch 2's e2e 979s→365s gain came from retry/halving alone.
-   * See [[project_v1_26_0_batch_6_real_wire_thinking_disable]] for the
-   * post-mortem.
+   * Earlier this mapped to `thinking.type: 'disabled'` — neither it nor
+   * `chat_template_kwargs` were declared in the AI SDK's zod schema
+   * (openaiCompatibleLanguageModelChatOptions, line 322-344 of
+   * @ai-sdk/openai-compatible@2.0.62/dist/index.mjs), and the SDK's
+   * "passthrough" path (line 533-534) reads from
+   * `providerOptions[this.providerOptionsName]` (the provider id we
+   * pass in — `deepseek` / `kimi` / `lmstudio` / etc.) rather than the
+   * hardcoded `"openaiCompatible"` key that buildProviderOptions
+   * returns under. None of the 15 provider ids in `types.ts` is the
+   * literal string `"openai-compatible"`, so the lookup misses for
+   * every provider and the extras never reach the wire. DocTpoint
+   * identified this via fetch-interceptor on Issue #382 comment 3
+   * (2026-08-04); the field never left the process on the openai-compat
+   * path. The 979s→365s e2e gain came from retry/backoff only. See
+   * [[project_v1_26_0_batch_6_real_wire_thinking_disable]] for the
+   * full post-mortem.
    */
   private buildProviderOptions(opts: {
     enableThinking?: boolean;
@@ -340,13 +350,18 @@ export class OpenAICompatSdkClient implements LLMClient {
       // v1.26.0 Batch 6: force-disable thinking via reasoningEffort.
       //
       // Prior mechanism (PR #410 / Batch 2) used `thinking.type: 'disabled'`
-      // + `chat_template_kwargs.enable_thinking: false` — both are NOT in
+      // + `chat_template_kwargs.enable_thinking: false` — neither is in
       // @ai-sdk/openai-compatible's zod schema
       // (openaiCompatibleLanguageModelChatOptions, line 322-344 of dist/index.mjs),
-      // so the SDK's `filter()` at line 531-540 deletes them before the
-      // request body is built. They NEVER left the process on the
-      // openai-compat path. Verified by DocTpoint via fetch-interceptor
-      // (Issue #382 comment 2, 2026-08-04).
+      // and the SDK's "passthrough" path at line 533-534 reads from
+      // `providerOptions[this.providerOptionsName]` (our provider id —
+      // `deepseek` / `kimi` / `lmstudio` / etc.), not the hardcoded
+      // `"openaiCompatible"` key that buildProviderOptions returns under.
+      // For every provider id we ship (none is literally
+      // `"openai-compatible"`), that lookup misses and the fields never
+      // reach the wire. Verified by DocTpoint via fetch-interceptor
+      // (Issue #382 comment 3, 2026-08-04 — supersedes his earlier
+      // comment 2 which called this "stripped"; it is misaddressed).
       //
       // The new mechanism is `reasoningEffort: 'none'` (camelCase) which
       // the zod schema DOES accept (line 331: `z.string().optional()`) and
@@ -404,15 +419,21 @@ export class OpenAICompatSdkClient implements LLMClient {
 
     // repetition_penalty is NOT in
     // openaiCompatibleLanguageModelChatOptions (zod schema, line 322-344 of
-    // dist/index.mjs), so the SDK's `filter()` at line 531-540 deletes it
-    // before the request body is built. The field never leaves the process
-    // on the openai-compat path, as has been the case since v1.23.0.
+    // dist/index.mjs). The SDK's path-2 passthrough (line 533-534) reads
+    // from `providerOptions[this.providerOptionsName]` — our provider id
+    // (`deepseek` / `kimi` / `lmstudio` / etc.), not the hardcoded
+    // `"openaiCompatible"` key that buildProviderOptions returns under.
+    // None of the 15 provider ids is literally `"openai-compatible"`, so
+    // the passthrough lookup misses for every provider and the field
+    // never reaches the wire on the openai-compat path. Has been the case
+    // since v1.23.0 — that migration dropped the
+    // pre-AI-SDK `unsupportedFields` blocklist that used to gate this.
     //
-    // v1.26.0 Batch 6: reasoningEffort (line 267) IS in the zod schema and
+    // v1.26.0 Batch 6: reasoningEffort (above) IS in the zod schema and
     // does reach the wire as `reasoning_effort` (line 541). repetition_penalty
     // is kept in the object for completeness — the user's Custom Advanced
-    // Setting can opt in, but the field is a no-op today. Correcting it is
-    // deliberately not part of this change: it would deliver
+    // Setting can opt in, but the field is a no-op today. Correcting it
+    // is deliberately not part of this change: it would deliver
     // repetition_penalty to all ten providers on this path at once, and no
     // backend is known to read it.
     //

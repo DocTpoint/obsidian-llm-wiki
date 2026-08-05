@@ -857,4 +857,56 @@ describe('runDedupPhase — batch failure diagnostic (throwOnEmpty)', () => {
       warnSpy.mockRestore();
     }
   });
+
+  // v1.26.0 Batch 7 follow-up (DocTpoint Item 5): a parsed response
+  // whose `duplicates` field is NOT an array (string / number / object /
+  // null) is the same shape of failure as `parseJsonResponse === null`
+  // — the LLM didn't return the contract we asked for. Pre-fix,
+  // `Array.isArray(rawDups) ? rawDups : []` silently masked this; the
+  // [Duplicate Batch Failures] log was blind to shape mismatches and
+  // operators lost the real signal for prompt-format regressions.
+  it('LLM returning parsed JSON with non-array "duplicates" routes to dedupFailures (v1.26.0 Batch 7 follow-up)', async () => {
+    // Three variants — string, number, null — all parse successfully but
+    // none match the { duplicates: DuplicateResult[] } contract.
+    const responses = [
+      '{"duplicates":"yes"}',
+      '{"duplicates":42}',
+      '{"duplicates":null}',
+    ];
+    for (const response of responses) {
+      const createMessage = vi.fn().mockResolvedValue(response);
+      const client = { createMessage } as unknown as LLMClient;
+      const ctx = makeLintPhaseContext({ llmClient: () => client });
+      const input: DedupPhaseInput = {
+        wikiFiles: [
+          { path: 'wiki/entities/a.md', basename: 'a.md' },
+          { path: 'wiki/entities/A.md', basename: 'A.md' },
+        ],
+        pageMap: makePageMap([
+          ['wiki/entities/a.md', '---\ntype: entity\n---\n# a\nshared'],
+          ['wiki/entities/A.md', '---\ntype: entity\n---\n# A\nshared'],
+        ]),
+      };
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const result = await runDedupPhase(ctx, input, () => {});
+        expect(result).toEqual([]);
+        expect(createMessage).toHaveBeenCalled();
+        // Batch 7 follow-up: shape-mismatch must surface as a
+        // [Duplicate Batch Failures] warning, with the discriminator
+        // 'parse-failure' so the rate-limit classifier excludes it.
+        const batchFailureWarnings = warnSpy.mock.calls.filter(args =>
+          typeof args[0] === 'string' && args[0].includes('[Duplicate Batch Failures]')
+        );
+        expect(batchFailureWarnings.length).toBeGreaterThan(0);
+        // The per-batch reason carries the discriminator.
+        const reasonWarnings = warnSpy.mock.calls.filter(args =>
+          typeof args[0] === 'string' && args[0].includes("'duplicates' is not an array")
+        );
+        expect(reasonWarnings.length).toBeGreaterThan(0);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    }
+  });
 });
