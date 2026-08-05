@@ -481,6 +481,57 @@ export class OpenAISdkClient implements LLMClient {
         }
         return fullText;
       }
+
+      // v1.26.0 Batch 6 CR-4: Layer-3 400-retry on the streaming path.
+      // Mirrors the createMessage retry at line 211 and the openai-compat
+      // streaming retry at line 576. Custom baseURLs that route through
+      // the OpenAI SDK (e.g. Kimi Coding Plan / z.ai via OpenAI SDK
+      // mode) and 400 on `reasoning_effort: 'none'` need this branch
+      // to recover; otherwise Query Wiki hard-fails where Ingest/Lint
+      // recovered.
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        enableThinking === false &&
+        this.baseURL !== undefined &&
+        !this.reasoningStripProber.shouldStrip(this.baseURL) &&
+        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+      ) {
+        const retryLanguageModel = this.getProvider(model, this.streamFetchImpl);
+        const { streamText } = await import('ai');
+        const result = streamText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          providerOptions: this.buildProviderOptions({
+            enableThinking: true,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        let fullText = '';
+        for await (const chunk of result.textStream) {
+          fullText += chunk;
+          onChunk(chunk);
+        }
+        let reasoningContent = '';
+        try {
+          const reasoning = await result.reasoning;
+          if (typeof reasoning === 'string' && reasoning) {
+            reasoningContent = reasoning;
+          } else if (Array.isArray(reasoning)) {
+            reasoningContent = reasoning.map((r) => (r as { text?: string }).text || '').join('');
+          }
+        } catch { /* no reasoning */ }
+        // Bug-3: markStrip AFTER retry succeeds. If the stream throws,
+        // the cache stays untouched and the outer catch propagates.
+        this.reasoningStripProber.markStrip(this.baseURL);
+        if (reasoningContent) {
+          fullText = wrapReasoningContent(reasoningContent, fullText);
+        }
+        return fullText;
+      }
       throw mapAiSdkError(err);
     }
   }
