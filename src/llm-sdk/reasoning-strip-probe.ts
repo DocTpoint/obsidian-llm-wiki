@@ -82,10 +82,21 @@ const FIELD_MARKERS = [
  * cache.
  *
  * Cache keyed by baseURL because the same gateway typically uses the
- * same wire format across all models.
+ * same wire format across all models. Value is presence (true) — the
+ * key itself is the signal — so a Set is the right primitive, not a
+ * Map<string, true> (which would carry a dead second type parameter
+ * and a dead `=== true` check on every read).
+ *
+ * v1.26.0 Batch 6 review (PR #411 simplify 2026-08-05): the previous
+ * design also exposed an `invalidate(baseUrl?)` overload with zero
+ * production callers — only tests used it. Removed. If a future
+ * "user changed baseURL → re-probe" hook needs to drop the cache, it
+ * can call `markStrip` (it's a present-tense cache, not a complex
+ * state machine — adding back the invalidation path when there's a
+ * real caller is a one-line edit).
  */
 export class ReasoningStripProber {
-  private readonly cache: Map<string, true> = new Map();
+  private readonly cache = new Set<string>();
 
   /**
    * Read cached strip decision for a baseURL.
@@ -93,7 +104,7 @@ export class ReasoningStripProber {
    * and the next call should omit it.
    */
   shouldStrip(baseUrl: string): boolean {
-    return this.cache.get(baseUrl) === true;
+    return this.cache.has(baseUrl);
   }
 
   /**
@@ -101,19 +112,7 @@ export class ReasoningStripProber {
    * Called after a 400 retry revealed the field was the cause.
    */
   markStrip(baseUrl: string): void {
-    this.cache.set(baseUrl, true);
-  }
-
-  /**
-   * Invalidate cached entries. Called when the user changes baseURL
-   * or API key (re-probe on next request), or for unit tests.
-   */
-  invalidate(baseUrl?: string): void {
-    if (baseUrl === undefined) {
-      this.cache.clear();
-    } else {
-      this.cache.delete(baseUrl);
-    }
+    this.cache.add(baseUrl);
   }
 
   /**

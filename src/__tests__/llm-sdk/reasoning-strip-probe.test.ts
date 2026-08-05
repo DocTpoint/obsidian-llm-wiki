@@ -25,23 +25,12 @@ describe('ReasoningStripProber', () => {
     expect(prober.shouldStrip('https://api.openai.com/v1')).toBe(false);
   });
 
-  it('invalidate() clears all entries when called with no argument', () => {
-    const prober = new ReasoningStripProber();
-    prober.markStrip('https://a.example/v1');
-    prober.markStrip('https://b.example/v1');
-    prober.invalidate();
-    expect(prober.shouldStrip('https://a.example/v1')).toBe(false);
-    expect(prober.shouldStrip('https://b.example/v1')).toBe(false);
-  });
-
-  it('invalidate(baseURL) clears only that baseURL', () => {
-    const prober = new ReasoningStripProber();
-    prober.markStrip('https://a.example/v1');
-    prober.markStrip('https://b.example/v1');
-    prober.invalidate('https://a.example/v1');
-    expect(prober.shouldStrip('https://a.example/v1')).toBe(false);
-    expect(prober.shouldStrip('https://b.example/v1')).toBe(true);
-  });
+  // v1.26.0 Batch 6 review (PR #411 simplify 2026-08-05): the previous
+  // `invalidate(baseUrl?)` overload was deleted (zero production
+  // callers — only the test exercised it). The cache now exposes only
+  // `shouldStrip` + `markStrip`; if a "user changed baseURL → re-probe"
+  // hook ever needs to drop the cache, it's a one-line edit to add
+  // back. The tests for invalidate() are removed with the method.
 });
 
 describe('ReasoningStripProber.isReasoningFieldError — two-marker (verb + field) classifier', () => {
