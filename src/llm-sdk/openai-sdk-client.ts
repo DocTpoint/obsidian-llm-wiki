@@ -208,6 +208,12 @@ export class OpenAISdkClient implements LLMClient {
       // OpenAI SDK path) may reject `reasoning_effort: 'none'` with
       // HTTP 400. Same logic as the openai-compat sibling — match the
       // error message, strip the field, retry once, cache the decision.
+      //
+      // Bug-3 (Aug 2026 code-review): markStrip moved AFTER the retry
+      // succeeds (not before). If the retry itself throws (network
+      // blip, transient 5xx), we don't want the cache permanently
+      // poisoned. Mirrors the openai-compat fix at line ~236 of
+      // openai-compat-sdk-client.ts.
       if (
         APICallError.isInstance(err) &&
         err.statusCode === 400 &&
@@ -216,7 +222,6 @@ export class OpenAISdkClient implements LLMClient {
         !this.reasoningStripProber.shouldStrip(this.baseURL) &&
         ReasoningStripProber.isReasoningFieldError(err.message ?? '')
       ) {
-        this.reasoningStripProber.markStrip(this.baseURL);
         const retryLanguageModel = this.getProvider(model, this.fetchImpl);
         const { generateText } = await import('ai');
         const result = await generateText({
@@ -231,6 +236,10 @@ export class OpenAISdkClient implements LLMClient {
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
           ...buildSamplingArgs({ temperature, top_p, seed }),
         });
+        // Retry succeeded — commit the cache decision now. If the
+        // retry above throws, this line never runs and the cache is
+        // untouched; the outer catch propagates the error.
+        this.reasoningStripProber.markStrip(this.baseURL);
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
       }

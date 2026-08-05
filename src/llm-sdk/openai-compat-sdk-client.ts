@@ -226,6 +226,17 @@ export class OpenAICompatSdkClient implements LLMClient {
       // enableThinking=false explicitly (per the dedup-phase
       // `enableThinkingOverride = false`). Per user guidance
       // (2026-08-04): "做好通用、完善的fallback机制即可".
+      //
+      // v1.26.0 Batch 6 Bug-3 fix: markStrip moved AFTER the retry
+      // succeeds (not before). If the retry itself throws — same
+      // backend, transient 5xx, network blip — we don't want the
+      // cache permanently poisoned. Mirrors the token-key branch
+      // pattern (setCachedKey + try + retry; if retry throws, the
+      // outer throw mapAiSdkError catches and the cache is set, but
+      // for the reasoning-strip the cache-write is gated on retry
+      // success because the cache decision is "this baseURL rejects
+      // reasoning_effort" — a transient retry failure shouldn't
+      // cement that decision).
       if (
         APICallError.isInstance(err) &&
         err.statusCode === 400 &&
@@ -233,7 +244,6 @@ export class OpenAICompatSdkClient implements LLMClient {
         !this.reasoningStripProber.shouldStrip(this.baseURL) &&
         ReasoningStripProber.isReasoningFieldError(err.message ?? '')
       ) {
-        this.reasoningStripProber.markStrip(this.baseURL);
         const retryLanguageModel = this.getProvider(model, this.fetchImpl);
         const { generateText } = await import('ai');
         // Retry without reasoningEffort — pass enableThinking=true so
@@ -253,6 +263,10 @@ export class OpenAICompatSdkClient implements LLMClient {
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
           ...buildSamplingArgs({ temperature, top_p, seed }),
         });
+        // Retry succeeded — commit the cache decision now. If the
+        // retry above throws, this line never runs and the cache is
+        // untouched; the outer catch propagates the error.
+        this.reasoningStripProber.markStrip(this.baseURL);
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
       }
@@ -576,7 +590,6 @@ export class OpenAICompatSdkClient implements LLMClient {
         !this.reasoningStripProber.shouldStrip(this.baseURL) &&
         ReasoningStripProber.isReasoningFieldError(err.message ?? '')
       ) {
-        this.reasoningStripProber.markStrip(this.baseURL);
         const retryLanguageModel = this.getProvider(model, this.streamFetchImpl);
         const { streamText } = await import('ai');
         const result = streamText({
@@ -604,6 +617,11 @@ export class OpenAICompatSdkClient implements LLMClient {
             reasoningContent = reasoning.map((r) => (r as { text?: string }).text || '').join('');
           }
         } catch { /* no reasoning */ }
+        // Bug-3: markStrip AFTER the retry succeeds. If the stream
+        // throws (network blip, transient 5xx), the cache is not
+        // poisoned; the outer catch propagates the error and the
+        // next call gets a fresh probe.
+        this.reasoningStripProber.markStrip(this.baseURL);
         if (reasoningContent) {
           fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
         }
