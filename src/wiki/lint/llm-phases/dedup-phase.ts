@@ -340,10 +340,22 @@ export async function runDedupPhase(
     //          non-reasoning models (gpt-4o, gpt-4-turbo).
     //        - OpenAI 兼容 SDK (openai-compat-sdk-client.ts:240-270):
     //          `thinking.type: 'disabled'` + `chat_template_kwargs` is
-    //          honored by DeepSeek / Kimi / GLM-4.6+; silently ignored
-    //          by most other OpenAI-compatible backends (LM Studio,
-    //          llama.cpp); OpenRouter is the documented exception
-    //          (uses a different key — no-op fallback).
+    //          honored by DeepSeek / Kimi / GLM-4.6+ AT THE WIRE if the
+    //          fields reach it; in practice they do NOT, because the AI
+    //          SDK's path-2 passthrough
+    //          (`@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:533-534`)
+    //          reads `providerOptions[this.providerOptionsName]` (our
+    //          provider id — `deepseek` / `kimi` / `lmstudio` / etc.),
+    //          not the hardcoded `"openaiCompatible"` key that
+    //          buildProviderOptions returns under. None of the 15
+    //          provider ids is literally `"openai-compatible"`, so the
+    //          extras are dropped before the body is built. eucher
+    //          verified the same byte-identical no-op on llama.cpp via
+    //          curl at the wire (Issue #382 follow-up comment,
+    //          2026-08-04) — `chat_template_kwargs` honours the value
+    //          there, but the no-op comes from the SDK, not the
+    //          backend. OpenRouter is the documented exception (uses
+    //          a different key — no-op fallback).
     //        - OpenAI Codex SDK (openai-codex-sdk-client.ts:152-154):
     //          `reasoningEffort: 'low'` is a no-op for Codex Responses.
     //      The setting only affects thinking-capable models where the
@@ -364,7 +376,22 @@ export async function runDedupPhase(
     // `link-orphan`, `query-keywords`, and `path-resolution` (also
     // structured JSON-decision tasks) should adopt the same hard-coded
     // force-disable pattern. Out of scope for Batch 2.
-    const enableThinkingOverride = false;
+    //
+    // v1.26.0 Batch 7 follow-up (eucher, PR #411 review comment
+    // 2026-08-05): the previous name `enableThinkingOverride = false`
+    // read as a value (the override IS false → so spread nothing),
+    // but the spread `...(value ? { enableThinking: false } : {})`
+    // was treating it as a flag — `false ? … : {}` is always `{}`, so
+    // `enableThinking` never entered `llmArgs`, and Layers 1-3 of the
+    // 4-layer fallback were unreachable from this call. Renamed to
+    // `FORCE_DISABLE_THINKING` (clear that it is a flag, not a value)
+    // and made the spread unconditional. The 979s→365s e2e attribution
+    // is corrected in [[feedback_force_disable_thinking_dedup_wiring]]
+    // — the gain came from retry/backoff + Layer 4 (prompt-level "Do not
+    // reason step by step"), not from Layers 1-3 (which were never sent
+    // before this fix). After this fix Layers 1-3 will be live and the
+    // expectation is real wall-time reduction, not just retry recovery.
+    const FORCE_DISABLE_THINKING = true;
     //
     // The user-set `pageGenerationConcurrency` is the starting point.
     // When an empty-response soft-throttle is detected (deepseek-v4-flash
@@ -419,7 +446,15 @@ export async function runDedupPhase(
         messages: [{ role: 'user' as const, content: prompt }],
         ...(systemPrompt ? { system: systemPrompt } : {}),
         response_format: { type: 'json_object' as const },
-        ...(enableThinkingOverride ? { enableThinking: false } : {}),
+        // v1.26.0 Batch 7 follow-up (eucher): the previous
+        // `enableThinkingOverride ? … : {}` ternary silently sent
+        // nothing because `override = false` always picks the empty
+        // branch. The flag is now `FORCE_DISABLE_THINKING = true` and
+        // the spread is unconditional so `enableThinking: false`
+        // actually enters llmArgs and reaches buildProviderOptions
+        // (which then maps it to `reasoningEffort: 'none'` /
+        // `thinking: {type: 'disabled'}` per SDK).
+        ...(FORCE_DISABLE_THINKING ? { enableThinking: false } : {}),
       };
 
       const logResponse = (response: string, attempt: 1 | 2 | 3, delayMs: number) => {
@@ -428,7 +463,7 @@ export async function runDedupPhase(
           `system_chars=${systemPrompt?.length ?? 0} ` +
           `model=${lintModel} ` +
           `max_tokens=${TOKENS_LINT_DEDUP_LLM} ` +
-          `disableThinking=${!enableThinkingOverride ? 'true' : 'false'} ` +
+          `disableThinking=${FORCE_DISABLE_THINKING ? 'force' : 'inherit-user'} ` +
           `response_format=json_object attempt=${attempt} delay_ms=${delayMs} | ` +
           `response: raw_length=${response.length} ` +
           `first_100_chars="${response.substring(0, 100).replace(/\n/g, '\\n')}"`
@@ -445,7 +480,7 @@ export async function runDedupPhase(
       retryEvents.push({ batchNum, attempt: 1, delayMs: RETRY_ATTEMPT_2_DELAY_MS });
       console.warn(
         `[Dedup LLM batch ${batchNum}] empty response (attempt 1) — ` +
-        `retrying after ${RETRY_ATTEMPT_2_DELAY_MS}ms. enableThinking_sent=${enableThinkingOverride ? 'false' : 'true'} ` +
+        `retrying after ${RETRY_ATTEMPT_2_DELAY_MS}ms. enableThinking_sent=${FORCE_DISABLE_THINKING ? 'false' : 'unset'} ` +
         `prompt_chars=${prompt.length} max_tokens=${TOKENS_LINT_DEDUP_LLM} model=${lintModel}`
       );
       await new Promise(resolve => window.setTimeout(resolve, RETRY_ATTEMPT_2_DELAY_MS));
@@ -467,7 +502,21 @@ export async function runDedupPhase(
 
     // Process batches in parallel with concurrency limit
     const allDuplicates: DuplicateResult[] = [];
-    const dedupFailures: Array<{ name: string; reason: string }> = [];
+    // v1.26.0 Batch 7 + CR-3 fix: structured `type` discriminator on the
+    // failure record, alongside the free-text `reason`. The rate-limit
+    // classifier (src/core/rate-limit.ts:34) groups failures by string
+    // match on `reason` today; a future wording tweak on the parse-
+    // failure reason ("response was throttled mid-flight" would match
+    // the rate-limit regex, e.g.) would silently misclassify the parse
+    // failure as a rate-limit failure — vanishing from the truncation
+    // counter AND firing a spurious [Duplicate Rate Limit] Notice.
+    //
+    // Setting `type: 'parse-failure'` explicitly excludes the entry
+    // from the rate-limit grouping: rate-limit failures come from
+    // network/429 (which arrive as rejected Promise.allSettled
+    // promises with an Error-shaped reason); parse-failures are
+    // mid-response and have a known discriminator.
+    const dedupFailures: Array<{ name: string; reason: string; type?: string }> = [];
     for (let i = 0; i < batches.length; ) {
       checkCancelled();
       const chunk = batches.slice(i, i + currentConcurrency);
@@ -510,15 +559,82 @@ export async function runDedupPhase(
           // the 2-retry tier, if the response is still empty,
           // parseJsonResponse throws EmptyResponseError and the batch
           // is recorded as a dedupFailure.
+          //
+          // v1.26.0 Batch 7 (DocTpoint #382 comment 1): the null-vs-empty
+          // distinction. parseJsonResponse returns null in two distinct
+          // outcomes:
+          //   1. Legitimate empty: LLM returned `{"duplicates": []}`
+          //      correctly → no duplicates in this batch.
+          //   2. Parse failure / truncated: response was non-empty but
+          //      JSON was malformed OR truncated by max_tokens. The
+          //      retry tier above already exhausted the empty-body case;
+          //      the null here means "got body but couldn't parse it".
+          //
+          // Before Batch 7, both outcomes collapsed to the same `[]`
+          // return. parse-failures inside the success branch NEVER
+          // entered dedupFailures, so the [Duplicate Batch Failures]
+          // log line was blind to mid-response truncation. As traffic
+          // through this call scales up (post-Batch 2 cross-type
+          // expansion), we need a real truncation count before tuning
+          // max_tokens / batch size.
+          //
+          // Approach: keep parseJsonResponse contract stable (silent on
+          // parse-fail, throws on empty — 10+ other call sites depend
+          // on the silent contract). Check `=== null` here and route
+          // into dedupFailures with a distinct reason tag. The
+          // `throwOnEmpty: true` option above handles the empty-body
+          // case; this handles the "got body but parse failed" case.
+          //
+          // v1.26.0 Batch 7 follow-up (DocTpoint Item 5): also route
+          // shape-mismatches (`{duplicates: 'yes'}` / `{duplicates: 42}`
+          // / `{duplicates: null}` — parsed successfully but the
+          // `duplicates` field is not an array) into dedupFailures with
+          // the same `type: 'parse-failure'` discriminator. Same root
+          // cause as the `=== null` branch (LLM didn't return the shape
+          // we asked for), same operator consequence (truncation /
+          // prompt-format mismatch we need to count for tuning), and
+          // the previous `Array.isArray(rawDumps) ? rawDups : []` line
+          // silently masked it — operators lost the real signal. See
+          // the regression guard test in
+          // `__tests__/wiki/lint/llm-phases/dedup-phase.test.ts`.
           const dedupResult = await parseJsonResponse(dedupResponse, undefined, {
             throwOnEmpty: true,
             silentOnEmpty: false,
           }) as { duplicates?: DuplicateResult[] } | null;
 
-          console.debug(`lintWiki: batch ${batchNum}/${batches.length} → ${dedupResult?.duplicates?.length || 0} duplicates confirmed`);
-          // Guard against non-array LLM responses (single object, string, etc.)
+          // One parse-failure branch covers BOTH outcome kinds — the
+          // whole-response failure (null) and the shape-mismatch (parsed
+          // but `duplicates` is not an array). Same reason tag, same
+          // `type` discriminator so the rate-limit classifier excludes
+          // both from the 429 grouping.
           const rawDups = dedupResult?.duplicates;
-          return Array.isArray(rawDups) ? rawDups : [];
+          const shapeMismatch =
+            dedupResult !== null && !Array.isArray(rawDups);
+          if (dedupResult === null || shapeMismatch) {
+            // Parse failure / truncated / shape mismatch — NOT a
+            // legitimate empty. Route into dedupFailures with a
+            // distinct reason tag so the [Duplicate Batch Failures]
+            // warning can distinguish this from network/429 errors.
+            // The fulfilled/rejected branch downstream treats
+            // dedupFailures as a record of skipped batches; the
+            // post-loop summary line
+            // (`[Duplicate Batch Failures] ${count} batches`) will
+            // surface this. dedupFailures is captured by closure on
+            // line 470; the push here is the canonical record path.
+            const reason = shapeMismatch
+              ? `parse-failure: response parsed but 'duplicates' is not an array (got ${rawDups === null ? 'null' : typeof rawDups})`
+              : 'parse-failure: response present but JSON unparseable or truncated';
+            console.warn(`lintWiki: batch ${batchNum} ${reason}`);
+            // CR-3 fix: explicit `type: 'parse-failure'` discriminator
+            // so the rate-limit classifier excludes this entry from the
+            // rate-limit grouping. The free-text reason can change
+            // without affecting the classifier.
+            dedupFailures.push({ name: `batch-${batchNum}`, reason, type: 'parse-failure' });
+            return [];
+          }
+
+          console.debug(`lintWiki: batch ${batchNum}/${batches.length} → ${rawDups?.length || 0} duplicates confirmed`);
+          return rawDups;
         })
       );
 
@@ -622,8 +738,21 @@ export async function runDedupPhase(
     // v1.26.0 (#382 item 1, Batch 2): log non-rate-limit failures
     // separately so DocTpoint's batch-expansion truncation hypothesis
     // is measurable across dedup runs.
+    //
+    // v1.26.0 Batch 7 + CR-3 fix (PR #411 simplify review 2026-08-05):
+    // pass the FULL failure item, not just `f.reason`. The structured
+    // `type: 'parse-failure'` discriminator on dedupFailures (added in
+    // commit 6e6388a) was being dropped at every consumer — the
+    // `isRateLimitFailure` structured-form branch was unreachable from
+    // production. Without the fix, a future edit to the parse-failure
+    // reason string that mentions "throttl" or "rate limit" would
+    // silently misclassify parse-failures as 429s, vanish the
+    // [Duplicate Batch Failures] truncation counter, AND fire a
+    // spurious [Duplicate Rate Limit] Notice. The CR-3 regression
+    // guarantee was on the test page; this wiring puts it on the
+    // running plugin's call path too.
     const nonRateLimitFailures = dedupFailures.filter(f =>
-      !isRateLimitFailure(f.reason)
+      !isRateLimitFailure(f)
     );
     if (nonRateLimitFailures.length > 0) {
       console.warn(

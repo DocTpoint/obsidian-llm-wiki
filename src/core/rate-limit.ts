@@ -21,9 +21,28 @@ export interface RateLimitInfo {
  */
 export const RATE_LIMIT_MARKER_RE = /429|rate.?limit|too many requests|throttl/i;
 
-/** Predicate form of the rate-limit marker regex. */
-export function isRateLimitFailure(reason: string | undefined): boolean {
-  return RATE_LIMIT_MARKER_RE.test(reason || '');
+/**
+ * v1.26.0 Batch 7 + CR-3 fix: accept a structured failure item (with
+ * optional `type` discriminator). If the item carries
+ * `type: 'parse-failure'`, return false UNCONDITIONALLY — the free-text
+ * `reason` is irrelevant for rate-limit grouping. parse-failures are
+ * mid-response (LLM returned a body but JSON parse failed) and have no
+ * relationship to 429 / rate limiting.
+ *
+ * Items without `type` fall back to the original prose-string match
+ * (preserves the v1.23.0 P1.5 contract for non-parse-failure callers
+ * in `src/core/json.ts`, `src/llm-sdk/url-fallback.ts`, etc.).
+ */
+export function isRateLimitFailure(
+  reasonOrItem: string | undefined | { reason?: string; type?: string },
+): boolean {
+  // Structured form: bail early if caller tagged the failure kind.
+  if (typeof reasonOrItem === 'object' && reasonOrItem !== null) {
+    if (reasonOrItem.type === 'parse-failure') return false;
+    return RATE_LIMIT_MARKER_RE.test(reasonOrItem.reason || '');
+  }
+  // Plain string form: original contract.
+  return RATE_LIMIT_MARKER_RE.test(reasonOrItem || '');
 }
 
 export function detectRateLimitFailures(
@@ -31,7 +50,13 @@ export function detectRateLimitFailures(
   currentConcurrency: number,
   currentBatchDelay: number,
 ): RateLimitInfo | null {
-  const rateLimitFailures = failedItems.filter(f => isRateLimitFailure(f.reason));
+  // v1.26.0 Batch 7 + CR-3 fix (PR #411 simplify review 2026-08-05):
+  // pass the full item so `isRateLimitFailure` can honor the
+  // `type: 'parse-failure'` discriminator added in commit 6e6388a.
+  // Before this fix the structured-form branch was unreachable — only
+  // the free-text regex matched, which is exactly what the CR-3 fix
+  // was meant to bypass.
+  const rateLimitFailures = failedItems.filter(f => isRateLimitFailure(f));
 
   if (rateLimitFailures.length === 0) return null;
 

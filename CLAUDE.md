@@ -380,6 +380,185 @@ e2e data.
   commit is already +1,000 LOC across 4 commits; the retry mechanism
   is +150 LOC of which +80 is the inlined implementation).
 
+### ⚠️ Force-disable thinking — 4-layer fallback (v1.26.0 Batch 6)
+
+PR #410 (Batch 2) shipped `enableThinkingOverride = false` for the
+dedup-phase using `thinking.type = 'disabled'` +
+`chat_template_kwargs.enable_thinking = false`. **The PR body claim
+"SDK-level thinking disable is safe across all 4 SDKs" was wrong on
+the openai-compat path** (deepseek-v4-flash, the user's actual
+backend). DocTpoint verified via fetch-interceptor (Issue #382
+comment 2, 2026-08-04) that neither field reaches the wire: the
+AI SDK's zod schema
+(`openaiCompatibleLanguageModelChatOptions`, line 322-344 of
+`@ai-sdk/openai-compatible@2.0.62/dist/index.mjs`) does not declare
+them, so the SDK's `filter()` at line 531-540 deletes them before
+the body is built. **The e2e 979s → 365s improvement came from the
+retry/halving mechanism (commit `e2e75eb`), NOT from thinking being
+disabled.**
+
+Batch 6 corrected this with a **4-layer fallback** (no per-vendor
+matching — fixed list, mirrors `[[token-key-probe.ts]]` design):
+
+| Layer | Mechanism | Where |
+|-------|-----------|-------|
+| 1 (Primary) | `reasoningEffort: 'none'` (camelCase) — passes zod filter, emits as `reasoning_effort: 'none'` on wire | `openai-compat-sdk-client.ts:267`, `openai-sdk-client.ts:221` |
+| 2 (Co-emit) | Same `reasoningEffort` in Anthropic SDK path — Anthropic uses `thinking: { type: 'disabled' }` (different field, zod-accepted) as its working switch | `anthropic-sdk-client.ts` |
+| 3 (400-retry) | On HTTP 400 mentioning `reasoning_effort` / `thinking` / `chat_template`, retry once with reasoningEffort stripped. Per-baseURL cache prevents infinite loops. | `reasoning-strip-probe.ts` + catch block in both SDK clients |
+| 4 (Prompt-level) | "**Do not reason step by step**" line in dedup prompt | `lint.ts` (Batch 2 already added this) |
+
+**Why Layer 2 is no-op today (corrected post-merge, 2026-08-04):**
+DocTpoint's third comment re-measured the openai-compat SDK source
+and corrected his own earlier claim that `thinking` /
+`chat_template_kwargs` were "stripped". The SDK has TWO independent
+paths into the wire body:
+
+1. **Path 1 — zod schema** (`dist/index.mjs:466-483`): fields
+   declared in `openaiCompatibleLanguageModelChatOptions` (zod
+   shape, lines 322-344) flow through, emitted to wire per schema.
+   `reasoningEffort` (camelCase) → `reasoning_effort` (snake_case).
+   Reads from a hard-coded `"openaiCompatible"` key (works for all
+   provider ids).
+2. **Path 2 — passthrough** (`dist/index.mjs:531-540`): the SDK's
+   `filter()` keeps keys NOT in the zod shape (this is an
+   extra-field passthrough, NOT a strip) and spreads them into the
+   body. Reads from `providerOptions[this.providerOptionsName]` and
+   its camelCase form — there is no hard-coded `"openaiCompatible"`
+   here.
+
+`buildProviderOptions` returns `{ openaiCompatible: openaiOpts }`
+while `getProvider` passes `this.provider` (e.g. `deepseek` /
+`kimi` / `lmstudio` / `custom` / `ollama`). For any provider id
+other than literally `"openai-compatible"`, path 2 looks up a key
+that does not exist. **None of the 15 provider ids in `types.ts`
+is the literal string `"openai-compatible"`** — so the Layer-2
+extra fields (thinking, chat_template_kwargs) never reach the
+wire. The mechanism is correct, but the key doesn't match the
+provider id. Per-id key correction is recorded in
+[[project_v1_26_0_rescoped]] v1.26.x PATCH track (depends on Layer-3
+guard now in place).
+
+**Why no per-vendor matching:** per user guidance (2026-08-04):
+"做好通用、完善的fallback机制即可". The Layer-3 message-match covers
+any backend that 400s on a reasoning-related field name with the same
+substring; specific per-vendor behavior is empirically unknown and the
+cost of a false-positive strip (one extra HTTP call) is bounded.
+
+**Hard rule for future contributors:** if you add a new LLM business
+path that wants force-disable-thinking, use `enableThinking: false`
+on the `createMessage` call — Layer 1 + Layer 3 + Layer 4 cover all
+known backends. **Never write `thinking.type` or `chat_template_kwargs`
+into provider options on the openai-compat path today** — they're
+silently dropped because `buildProviderOptions` returns under the
+hardcoded `"openaiCompatible"` key while path 2 of the SDK reads
+`providerOptions[this.provider]`. The per-id key correction in
+v1.26.x PATCH unlocks Layer 2; until then, Layer 1 (`reasoningEffort:
+'none'`) is the only verified-working disable mechanism. See
+[[project_v1_26_0_batch_6_real_wire_thinking_disable]]
+for the full post-mortem.
+
+**Verification evidence (cited inline in code):**
+- `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:322-344` — zod
+  schema declares only `reasoningEffort`, `textVerbosity`,
+  `strictJsonSchema`, `user` for chat options
+- `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:531-540` — `filter`
+  is a passthrough that keeps keys NOT in the schema shape and
+  spreads them into the body (NOT a strip). The fields never reach
+  wire because `buildProviderOptions` returns them under
+  `"openaiCompatible"` while path 2 reads
+  `providerOptions[this.providerOptionsName]` — the per-id lookup
+  misses for every provider id we ship. See
+  `[[feedback_force_disable_thinking_openai_compat_noop]]` for the
+  full mechanism description.
+- `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:541` — emit path:
+  `reasoning_effort: compatibleOptions.reasoningEffort`
+- `@ai-sdk/openai@3.0.86/dist/index.mjs:693` — `reasoningEffort` zod
+  enum `['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']`
+- `@ai-sdk/openai@3.0.86/dist/index.mjs:943` — `'none'` on a
+  `supportsNonReasoningParameters` model skips the reasoning path
+  entirely
+- `@ai-sdk/anthropic@3.0.98/dist/index.mjs:928` — Anthropic SDK
+  zod accepts `thinking: { type: 'disabled' }`
+
+**Wire-body regression test:** `openai-compat-request-body.test.ts`
+asserts `reasoning_effort: 'none'` IS on the body (not just on the
+`providerOptions` argument handed to the SDK — that assertion was
+PR #410's blind spot).
+
+### ⚠️ Force-disable thinking — call-site wiring (v1.26.0 PR #411 F5-A)
+
+PR #411 review surfaced a **third attribution correction** (eucher,
+2026-08-05 05:07 UTC): `dedup-phase.ts:379, 434` used the constant
+`enableThinkingOverride = false` as both a value (the override IS
+false → spread nothing) and a flag (`false ? A : {}` always picks
+`{}`). The result: `enableThinking: false` never entered `llmArgs`,
+and Layers 1-3 of this fallback were unreachable from the dedup-phase
+call site. Three log lines reported otherwise (debug at `:303, :431`
+printed `disableThinking=force …` and `disableThinking=true`; warn at
+`:448` printed `enableThinking_sent=true`) — all derived from the same
+broken ternary.
+
+**Fix:** renamed to `FORCE_DISABLE_THINKING = true` (clearly a flag,
+not a value) and made the spread unconditional. Log lines now print
+truthful values (`disableThinking=force` / `enableThinking_sent=false`).
+Regression guard in `dedup-phase.test.ts` asserts `enableThinking:
+false` on every call to `createMessage.mock.calls[*]`.
+
+**E2e impact** on the 2141-page vault (deepseek-v4-flash, all other
+settings unchanged):
+
+| state | wall-time | what changed |
+|---|---|---|
+| v1.25.x baseline | 979s | thinking mode, no retries |
+| Batch 2 (PR #410) | 365s | retry/backoff live; Layers 1-3 still dead code |
+| **F5-A (PR #411)** | **151s** | Layers 1-3 now live end-to-end |
+
+**−85% vs baseline, −59% vs Batch 2.** The full `feedback_force_disable_thinking_dedup_wiring`
+post-mortem records this as the third correction in the
+979s→365s→151s chain. See also the previous two:
+`[[feedback_force_disable_thinking_openai_compat_noop]]` (factor 1:
+zod-strip / misaddressed) and `[[feedback_dedup_phase_halving_dead_code]]`
+(factor 2: halving counter never fires).
+
+### ⚠️ Per-call thinking policy — source-analyzer repair path (v1.26.0 PR #411 F5-B)
+
+eucher's same review also flagged that the
+`source-analyzer.ts:417` JSON-repair callback did not propagate the
+parent's `disableThinking` setting. **We did NOT patch this, by
+design**: DocTpoint's controlled measurement on LM Studio / gemma-4-12b
+(PR #411 review 2026-08-05 05:38 UTC) showed that disabling reasoning
+on the repair call produces structurally valid JSON with **wrong
+content** (concepts duplicated into entities; `concepts = null`;
+contradictions / related_pages / key_points dropped). Repair needs
+reasoning budget to understand broken-JSON semantics, not just
+string-level bracket fixing. Mirroring the parent call's flag would
+have introduced silent data corruption on the parse-failure retry
+path.
+
+The opposite direction confirms the per-call rule:
+`complementaryAppend` at a 600-token cap went from 3 of 3 truncated
+to 0 of 3 with reasoning off (Issue #403 — thinking budget burns
+the short cap). Different call, different policy.
+
+**Per-call policy:**
+
+| call site | `disableThinking` honored? | reason |
+|---|---|---|
+| parent analysis (`source-analyzer.ts:386`) | yes | short-token structured extraction |
+| JSON-repair (`source-analyzer.ts:417`) | **no — always allow reasoning** | needs reasoning budget to understand broken JSON |
+| short-cap `complementaryAppend` | yes | thinking budget burns the cap (Issue #403) |
+
+**Regression guard (inverted):** `source-analyzer-thinking.test.ts`
+asserts the repair callback does NOT pass `enableThinking: false`
+even when `disableThinking: true`. Without this guard, a future
+contributor adding a "uniformly propagate disableThinking" rule
+would re-introduce silent repair corruption.
+
+**Tracked as v1.26.x PATCH:** introduce a per-call `thinkingPolicy`
+enum so the user can express "no reasoning for short-budget calls,
+full reasoning for repair". Until that ships, the asymmetry is
+intentional, not a bug.
+
 ### ⚠️ Obsidian Plugin Submission Rules — `document` is forbidden in production
 
 **`document`** (the bare global) is **strictly forbidden** in production code. Obsidian is a multi-window application — `document` may refer to the wrong window. The only valid document reference is **`activeDocument`** (Obsidian's popout-window-aware wrapper).
