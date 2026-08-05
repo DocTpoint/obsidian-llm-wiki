@@ -467,7 +467,21 @@ export async function runDedupPhase(
 
     // Process batches in parallel with concurrency limit
     const allDuplicates: DuplicateResult[] = [];
-    const dedupFailures: Array<{ name: string; reason: string }> = [];
+    // v1.26.0 Batch 7 + CR-3 fix: structured `type` discriminator on the
+    // failure record, alongside the free-text `reason`. The rate-limit
+    // classifier (src/core/rate-limit.ts:34) groups failures by string
+    // match on `reason` today; a future wording tweak on the parse-
+    // failure reason ("response was throttled mid-flight" would match
+    // the rate-limit regex, e.g.) would silently misclassify the parse
+    // failure as a rate-limit failure — vanishing from the truncation
+    // counter AND firing a spurious [Duplicate Rate Limit] Notice.
+    //
+    // Setting `type: 'parse-failure'` explicitly excludes the entry
+    // from the rate-limit grouping: rate-limit failures come from
+    // network/429 (which arrive as rejected Promise.allSettled
+    // promises with an Error-shaped reason); parse-failures are
+    // mid-response and have a known discriminator.
+    const dedupFailures: Array<{ name: string; reason: string; type?: string }> = [];
     for (let i = 0; i < batches.length; ) {
       checkCancelled();
       const chunk = batches.slice(i, i + currentConcurrency);
@@ -552,7 +566,11 @@ export async function runDedupPhase(
             // line 470; the push here is the canonical record path.
             const reason = 'parse-failure: response present but JSON unparseable or truncated';
             console.warn(`lintWiki: batch ${batchNum} ${reason}`);
-            dedupFailures.push({ name: `batch-${batchNum}`, reason });
+            // CR-3 fix: explicit `type: 'parse-failure'` discriminator
+            // so the rate-limit classifier excludes this entry from the
+            // rate-limit grouping. The free-text reason can change
+            // without affecting the classifier.
+            dedupFailures.push({ name: `batch-${batchNum}`, reason, type: 'parse-failure' });
             return [];
           }
 

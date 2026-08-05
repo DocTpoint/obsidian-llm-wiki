@@ -1,5 +1,58 @@
 import { describe, it, expect } from 'vitest';
-import { detectRateLimitFailures, formatRateLimitNotice } from '../../core/rate-limit';
+import { detectRateLimitFailures, formatRateLimitNotice, isRateLimitFailure } from '../../core/rate-limit';
+
+// v1.26.0 Batch 7 + CR-3 fix: isRateLimitFailure accepts either a
+// plain string (original contract) or a structured item with a `type`
+// discriminator. parse-failure items must NEVER be classified as
+// rate-limit regardless of free-text reason. This is the regression
+// guard that lets the dedup-phase Batch 7 push tag parse-failures
+// safely without risk of future prose-string drift colliding with
+// the rate-limit regex.
+describe('isRateLimitFailure — CR-3 structured form', () => {
+  it('plain string form: matches "throttl"', () => {
+    expect(isRateLimitFailure('request was throttled')).toBe(true);
+  });
+
+  it('plain string form: matches "429"', () => {
+    expect(isRateLimitFailure('HTTP 429')).toBe(true);
+  });
+
+  it('plain string form: matches "rate limit"', () => {
+    expect(isRateLimitFailure('rate limit exceeded')).toBe(true);
+  });
+
+  it('plain string form: matches "too many requests"', () => {
+    expect(isRateLimitFailure('too many requests')).toBe(true);
+  });
+
+  it('plain string form: does NOT match unrelated text', () => {
+    expect(isRateLimitFailure('parse-failure: response present but JSON unparseable or truncated')).toBe(false);
+    expect(isRateLimitFailure('connection reset')).toBe(false);
+  });
+
+  it('structured form with type=parse-failure: NEVER rate-limit (CR-3 fix)', () => {
+    // The discriminator is the source of truth. The free-text reason
+    // could mention "throttl" or "rate limit" by accident — the
+    // discriminator wins. This is the exact failure mode the CR-3
+    // fix prevents.
+    expect(isRateLimitFailure({ type: 'parse-failure', reason: 'request was throttled' })).toBe(false);
+    expect(isRateLimitFailure({ type: 'parse-failure', reason: 'rate limit exceeded' })).toBe(false);
+    expect(isRateLimitFailure({ type: 'parse-failure', reason: 'parse-failure: response was throttled mid-flight' })).toBe(false);
+  });
+
+  it('structured form without type falls back to prose match', () => {
+    expect(isRateLimitFailure({ reason: 'request was throttled' })).toBe(true);
+    expect(isRateLimitFailure({ reason: 'parse-failure: ...' })).toBe(false);
+  });
+
+  it('structured form with type=undefined falls back to prose match', () => {
+    expect(isRateLimitFailure({ type: undefined, reason: '429' })).toBe(true);
+  });
+
+  it('accepts undefined reason (returns false)', () => {
+    expect(isRateLimitFailure(undefined)).toBe(false);
+  });
+});
 describe('detectRateLimitFailures', () => {
   it('returns null when no rate limit failures', () => {
     const result = detectRateLimitFailures(
