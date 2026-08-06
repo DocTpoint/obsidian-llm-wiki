@@ -1,26 +1,30 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-08-03 (v1.26.0 MINOR re-scoped on main @ `429d956`, release deferred pending 5-batch P0+P1 work; Russian i18n MERGED via PR #397; Batch 1 rev 2 simplified to 方案 1 dual-key bucket per ROI analysis). v1.25.11 PATCH RELEASED. User decision (2026-08-02): include P0+P1 hardening before tag v1.26.0.
+**Last Updated:** 2026-08-05 (v1.26.0 MINOR release prep — CHANGELOG + ROADMAP + CONTRIBUTING + NOTICE all in scope for tag. Main @ `ab0ecfb` after PR #411 merge; 115 commits / 110 files / +10604 / −994 since v1.25.11; 2928 tests / 213 files passing). v1.26.0 carries 5 P0+P1 batches (Batches 1-4 + 6+7) on top of the CLI + #383 follow-up + DocTpoint PRs (#357/#386/#388) + Russian i18n (PR #397) + dedup thresholds (PR #395).
 
 ---
 
-## Current Phase: v1.26.0 MINOR RE-SCOPED on main (release deferred pending 5-batch P0+P1 work); v1.25.11 PATCH RELEASED
+## Current Phase: v1.26.0 MINOR READY FOR RELEASE (tag pending user approval); v1.26.x PATCH items tracked
 
-**v1.26.0 P0+P1 final scope** (user-revised 2026-08-02, 5 batches; **Batch 1 rev 2 simplified 2026-08-03**):
+**v1.26.0 P0+P1 final scope** (user-revised 2026-08-02, 5 batches; **Batch 1 rev 2 simplified 2026-08-03**; **Batch 5 cancelled 2026-08-04**):
 
-| Batch | Item | Issue | Type | Effort |
-|---|---|---|---|---|
-| **1** (in progress) | **Dual-key bucketed dedup** (tp-prefix + lh-link-hash buckets) | #382 item 3 | P1 (prerequisite) | **0.8 week** |
-| 2 | Cross-type dedup candidate set expansion | #382 item 1 | P0 | 1.5-2 weeks |
-| 3 | P1-1/P1-2 wire-or-delete decision (delete recommended) | #382 item 4 | P1 | 0.2 week |
-| 4 | dead-code-as-docs policy (CLAUDE.md + pre-release-gate check) | #382 item 5 | P1 (governance) | 0.3 week |
-| 5 | Settings-owned enum-as-section-value (CVSS-style controlled vocab) | #358 item 8 / #328 §2 | design | 0.5 week |
+| Batch | Item | Issue | Type | Effort | Status |
+|---|---|---|---|---|---|
+| **1** | **Dual-key bucketed dedup** (tp-prefix + lh-link-hash buckets) | #382 item 3 | P1 (prerequisite) | 0.8 week | ✅ MERGED (PR #401) |
+| **2** | Cross-type dedup candidate set expansion | #382 item 1 | P0 | 1.5-2 weeks | ✅ MERGED (PR #410) |
+| **3** | P1-1/P1-2 wire-or-delete decision (delete recommended) | #382 item 4 | P1 | 0.2 week | ✅ MERGED (PR #406) |
+| **4** | dead-code-as-docs policy (CLAUDE.md + pre-release-gate check) | #382 item 5 | P1 (governance) | 0.3 week | ✅ DONE |
+| 5 | ~~Settings-owned enum-as-section-value (CVSS-style controlled vocab)~~ | ~~#358 item 8 / #328 §2~~ | ~~design~~ | n/a | ❌ CANCELLED (2026-08-04) |
+| **6** | Force-disable thinking: real wire fix for openai-compat path (4-layer fallback) | new, from PR #410 post-merge review + #382 comment 2 (DocTpoint) | P0 (hidden bug shipped in v1.26.0) | 0.2 week | ✅ MERGED (PR #411) |
+| **7** | dedup-phase parse-failure routing into `dedupFailures` (CR-3 + structural `type` discriminator) | new, from #382 comment 1 (DocTpoint) | P1 (measurement gap before MINOR) | 0.1 week | ✅ MERGED (PR #411) |
 
 **Estimated total:** ~3.3-3.8 weeks focused work before v1.26.0 MINOR ships.
 
 **Deferred to v1.27.0+ (per user decision 2026-08-02):** #317 (schema.md changes ignored), #326 (defer to canonical pages outside wikiFolder), #306, #295, #184.
 
-**v1.26.0 MINOR scope (already on main, awaiting tag):** headless ingest CLI (`pnpm llm-wiki` script + npm bin) + #383 folder-boundary follow-up (PR #389) + DocTpoint source-lemma deterministic merge (PR #357) + lint dedup thresholds hardening (PR #395) + vault-wide link retarget for `mergeDuplicates` (PR #392, DocTpoint) + `created:` provenance fix (commit `cd734b9`, DocTpoint via PR #396). 10 commits on `main` since v1.25.11 PATCH, 2895 tests / 215 files passing.
+**v1.26.0 MINOR scope (now on main @ `ab0ecfb`, awaiting tag):** headless ingest CLI (`pnpm llm-wiki` script + npm bin, PR #387) + #383 folder-boundary follow-up (PR #389) + DocTpoint source-lemma deterministic merge (PR #357) + lint dedup thresholds hardening (PR #395) + vault-wide link retarget for `mergeDuplicates` (PR #392, DocTpoint) + `created:` provenance fix (commit `cd734b9`, DocTpoint via PR #396) + cross-type dedup expansion (PR #410, Batch 2) + dead-code-as-docs cleanup (PR #406, Batch 3) + Russian i18n (PR #397) + real wire-level force-disable thinking 4-layer fallback (PR #411, Batches 6+7). **115 commits on `main` since v1.25.11 PATCH**, 2928 tests / 213 files passing.
+
+**v1.26.x PATCH items (post-release, pre-v1.27.0 kickoff):** see [[feedback_force_disable_thinking_openai_compat_noop]] + [[feedback_force_disable_thinking_dedup_wiring]] + [[feedback_dedup_phase_halving_dead_code]] + [[feedback_dedup_phase_truncation_vs_empty_conflation]] for the full list (CR-1 halving dead code location-only fix; per-id key correction for `thinking` / `chat_template_kwargs`; `repetition_penalty` visible defect fix via Layer-3 mechanism; LLM empty-response retry extraction to `core/llm-retry.ts`; per-call `thinkingPolicy` enum; `parseJsonShape<T>` helper; shared `BaseUrlKeyedCache<T>` primitive; DeepSeek/Kimi/GLM `reasoning_effort: 'none'` real e2e measurement).
 
 **Per-PR discipline (LOCKED after PR #393/#396 incident 2026-08-02):** for contributor PRs that need rebase after base-branch move, use `gh pr update-branch --rebase` — NEVER locally fork + push + create a new PR. See `[[feedback_pr_merge_credit_preservation]]`. DocTpoint acknowledged + apologized on PR #393.
 

@@ -7,7 +7,7 @@
 > **Obsidian-Review Perfekte Bewertung • Null-Embedding-Graph-Suche • Native Unterstützung für 10 Sprachen • Kompatibel mit jedem LLM-Anbieter**
 > **Lokal zuerst • Kein Backend • DSGVO-freundlich**
 
-![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
+![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-11-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
@@ -183,9 +183,9 @@ Drei Pfade — wähle, was zu deinem Setup passt:
 
 ### 🌐 Sprache
 
-- **🌍 10 UI-Sprachen** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano. UI und Wiki-Ausgabesprache sind unabhängig — dein Wiki kann auf Chinesisch sein, während die Oberfläche auf Englisch ist.
+- **🌍 11 UI-Sprachen** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano, Русский. UI und Wiki-Ausgabesprache sind unabhängig — dein Wiki kann auf Chinesisch sein, während die Oberfläche auf Englisch ist.
 - **📚 10 Wiki-Ausgabesprachen** — dieselbe Auswahl; wähle in Einstellungen → Wiki Configuration. *Custom Input*-Option für Ad-hoc-Prompts.
-- **🈶 269+ übersetzte UI-Strings** — jedes Label, Modal und jeder Hinweis. Eine 11. Sprache hinzuzufügen ist beitragsgesteuert (PR #159-Muster).
+- **🈶 269+ übersetzte UI-Strings** — jedes Label, Modal und jeder Hinweis. Eine 12. Sprache hinzuzufügen ist beitragsgesteuert (PR #159-Muster).
 
 ---
 
@@ -306,7 +306,7 @@ Aus Obsidian Community-Plugins installieren → Provider wählen → **Test Conn
 
 ### Kann ich das Plugin in meiner Sprache nutzen?
 
-🌍 10 Sprachen für sowohl UI als auch Wiki-Ausgabe. UI- und Wiki-Sprache sind unabhängig voneinander. Das Hinzufügen einer 11. Sprache ist beitragsgesteuert (PR #159-Muster).
+🌍 11 Sprachen für sowohl UI als auch Wiki-Ausgabe. UI- und Wiki-Sprache sind unabhängig voneinander. Das Hinzufügen einer 12. Sprache ist beitragsgesteuert (PR #159-Muster).
 
 ### Worin unterscheidet sich das von einem RAG-Chatbot?
 

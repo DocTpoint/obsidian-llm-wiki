@@ -7,7 +7,7 @@
 > **Obsidian Review Perfect Score • Zero-embedding graph retrieval • 10-language native • Works with every provider**
 > **Local-first • No backend • GDPR-Friendly**
 
-![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
+![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-11-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
@@ -50,7 +50,7 @@ You write notes. They sit in folders. Finding what relates to what means remembe
 |---|---|---|---|---|---|
 | **Delivery & install** | ✅ **5 min** — One-click Obsidian plugin: Community Plugins → Install → pick provider → Ingest | ❌ 30 min+ — Compile/download Tauri binary, configure CLI | ❌ 15 min — Claude Code subscription + skill install | ❌ 10 min — Claude Code/Codex subscription + skill setup | ❌ 30 min+ — pip install + Python SDK + local server |
 | **Architecture & dependencies** | ✅ **Zero dependencies** — no vector DB, no embedding model, no external processes (PPR over `[[wiki-link]]` graph, by design) | 🟡 Embeds Python runtime + sigma.js + sqlite; optional embeddings off by default | 🟡 Uses Claude Code's environment — not self-contained; no embeddings | 🟡 Requires separate platform runtime; no embeddings | ❌ Requires Python + embedding model + vector DB (mandatory) |
-| **i18n (UI + wiki output)** | ✅ 10 languages (independent UI / output) | 🟡 2 (EN / 中文) | ❌ English only | ❌ English only | ❌ English only |
+| **i18n (UI + wiki output)** | ✅ 11 languages (independent UI / output) | 🟡 2 (EN / 中文) | ❌ English only | ❌ English only | ❌ English only |
 | **LLM providers** | ✅ 12+ (incl. Codex OAuth, Bedrock, LM Studio, Ollama, Anthropic-compatible, Kimi, GLM, MiniMax, DeepSeek) | 🟡 OpenAI-compatible | 🟡 Subscription via Claude Code | 🟡 Subscription via Claude Code / Codex | 🟡 OpenAI-compatible |
 | **Retrieval & query pipeline** | ✅ **5-stage cascade** — Lex → LLM keyword → substring scan → LLM KB fallback → PPR expansion (truncates on first sufficient signal). Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 2-hop decay only (4-signal heuristic: Adamic-Adar + 2-hop) | ❌ Louvain community detection only | ❌ k-hop previews only (no LLM augment) | ❌ BM25 + semantic over chunks (no graph) |
 | **Graph visualization** | ✅ Obsidian's native Graph View (built in, zero extra size) | ❌ Custom sigma.js + graphology in desktop app | 🟡 vis.js graph.html (separate file) | ❌ Custom sigma.js offline HTML | ❌ Read-only browser viewer |
@@ -182,9 +182,9 @@ Three paths, pick what fits your setup:
 
 ### 🌐 Language
 
-- **🌍 10 UI languages** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano. UI and wiki-output language are independent — your wiki can be Chinese while the interface is English.
-- **📚 10 wiki-output languages** — same set; pick in Settings → Wiki Configuration. *Custom input* option for ad-hoc prompts.
-- **🈶 269+ translated UI strings** — every label, modal, and notice. Adding an 11th language is contributor-driven (PR #159 pattern).
+- **🌍 11 UI languages** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano, Русский. UI and wiki-output language are independent — your wiki can be Chinese while the interface is English.
+- **📚 11 wiki-output languages** — same set; pick in Settings → Wiki Configuration. *Custom input* option for ad-hoc prompts.
+- **🈶 269+ translated UI strings** — every label, modal, and notice. Adding a 12th language is contributor-driven (PR #159 pattern).
 
 ---
 
@@ -304,7 +304,7 @@ Install from Obsidian Community Plugins → pick a provider → **Test Connectio
 
 ### Can I use the plugin in my language?
 
-🌍 10 languages for both UI and wiki output. UI and wiki language are independent. Adding an 11th language is contributor-driven (PR #159 pattern).
+🌍 11 languages for both UI and wiki output. UI and wiki language are independent. Adding a 12th language is contributor-driven (PR #159 pattern).
 
 ### How is this different from a RAG chatbot?
 

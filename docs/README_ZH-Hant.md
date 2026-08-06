@@ -7,7 +7,7 @@
 > **Obsidian 官方市集滿分評分 • 零嵌入圖譜檢索 • 10 種語言原生支援 • 相容所有 LLM 供應商**
 > **本機優先 • 無後端 • GDPR 友善**
 
-![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
+![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-11-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
@@ -184,7 +184,7 @@
 
 - **🌍 10 種 UI 語言** — 英文、簡體中文、繁體中文、日文、韓文、德文、法文、西班牙文、葡萄牙文、義大利文。UI 和 Wiki 輸出語言互相獨立——你的 Wiki 可以是中文而介面是英文。
 - **📚 10 種 Wiki 輸出語言** — 同上；在設定 → Wiki Configuration 中選擇。*自訂輸入* 選項用於臨時提示。
-- **🈶 269+ 個翻譯 UI 字串** — 每個標籤、彈窗和通知。新增第 11 種語言由貢獻者驅動（PR #159 模式）。
+- **🈶 269+ 個翻譯 UI 字串** — 每個標籤、彈窗和通知。新增第 12 種語言由貢獻者驅動（PR #159 模式）。
 
 ---
 
@@ -303,7 +303,7 @@ pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
 
 ### 可以用我的語言使用嗎？
 
-🌍 **10 種語言**支援介面和 Wiki 輸出。介面語言和 Wiki 語言互相獨立。新增第 11 種語言由貢獻者驅動（PR #159 模式）。
+🌍 **11 種語言**支援介面和 Wiki 輸出。介面語言和 Wiki 語言互相獨立。新增第 12 種語言由貢獻者驅動（PR #159 模式）。
 
 ### 這和 RAG 聊天機器人有何不同？
 
