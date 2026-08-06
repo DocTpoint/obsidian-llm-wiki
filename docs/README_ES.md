@@ -4,10 +4,10 @@
 
 > Un plugin de Obsidian que convierte tus notas en una base de conocimiento conectada y consultable: la idea del [Karpathy LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), integrada en el editor donde ya escribes.
 
-> **Puntuación perfecta en la revisión de Obsidian • Recuperación por grafo sin embeddings • 10 idiomas nativos • Funciona con cualquier proveedor**
+> **Puntuación perfecta en la revisión de Obsidian • Recuperación por grafo sin embeddings • 11 idiomas nativos • Funciona con cualquier proveedor**
 > **Local primero • Sin backend • Compatible con RGPD**
 
-![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
+![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-11-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
@@ -50,7 +50,7 @@ Escribes notas. Se quedan en carpetas. Encontrar relaciones significa recordar h
 |---|---|---|---|---|---|
 | **Entrega e instalación** | ✅ **5 min** — Plugin de Obsidian listo para usar: Plugins comunitarios → Instalar → elegir proveedor → Ingestar | ❌ 30 min+ — Compilar/descargar binario Tauri, configurar CLI | ❌ 15 min — requiere suscripción Claude Code + instalar skill | ❌ 10 min — requiere suscripción Claude Code/Codex + configurar skill | ❌ 30 min+ — pip install + Python SDK + servidor local |
 | **Arquitectura y dependencias** | ✅ **Cero dependencias** — sin base de datos vectorial, sin modelo de embeddings, sin procesos externos (PPR sobre el grafo `[[wiki-link]]`, por diseño) | 🟡 Incluye su propio runtime Python + sigma.js + sqlite; embeddings opcionales, desactivados por defecto | 🟡 Usa el entorno de Claude Code — no es autónomo; sin embeddings | 🟡 Requiere plataforma de ejecución separada; sin embeddings | ❌ Requiere Python + modelo de embeddings + BD vectorial (obligatorio) |
-| **i18n (UI + salida wiki)** | ✅ 10 idiomas (UI / salida independientes) | 🟡 2 (EN / 中文) | ❌ Solo inglés | ❌ Solo inglés | ❌ Solo inglés |
+| **i18n (UI + salida wiki)** | ✅ 11 idiomas (UI / salida independientes) | 🟡 2 (EN / 中文) | ❌ Solo inglés | ❌ Solo inglés | ❌ Solo inglés |
 | **Proveedores LLM** | ✅ 12+ (incluye Codex OAuth, Bedrock, LM Studio, Ollama, Anthropic-compatible, Kimi, GLM, MiniMax, DeepSeek) | 🟡 Compatible con OpenAI | 🟡 Suscripción vía Claude Code | 🟡 Suscripción vía Claude Code / Codex | 🟡 Compatible con OpenAI |
 | **Recuperación y pipeline de consulta** | ✅ **Cascada de 5 etapas** — Lex → palabras clave LLM → escaneo de subcadenas → fallback LLM KB → expansión PPR (se trunca al llegar a suficiente señal). Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 Solo decaimiento de 2 saltos (heurística de 4 señales: Adamic-Adar + 2 saltos) | ❌ Solo detección de comunidades Louvain | ❌ Solo previsualizaciones k-hop (sin aumento LLM) | ❌ BM25 + semántico sobre fragmentos (sin grafo) |
 | **Visualización de grafo** | ✅ Graph View nativo de Obsidian (integrado, cero tamaño extra) | ❌ sigma.js personalizado + graphology en app de escritorio | 🟡 graph.html vis.js (archivo separado) | ❌ sigma.js HTML offline personalizado | ❌ Visor de solo lectura en navegador |
@@ -73,7 +73,7 @@ Escribes notas. Se quedan en carpetas. Encontrar relaciones significa recordar h
 - **Quieres algo limpio y autocontenido.** El plugin tiene exactamente cero dependencias externas: sin modelo de embeddings, sin base de datos vectorial, sin paquete pip, sin contenedor Docker. Es un solo plugin de Obsidian que lee tus notas, habla con un LLM y escribe páginas wiki en tu vault. Todo vive dentro de Obsidian.
 - **Quieres un chat consultable que responda desde *tus* notas** — no desde internet — con cada respuesta llevando `[[wiki-links]]` de vuelta a tu grafo de conocimiento.
 - **Te importa la soberanía de datos** — funciona completamente en local con Ollama o LM Studio, sin tocar internet.
-- **Escribes o lees en cualquiera de los 10 idiomas compatibles** — la UI y el idioma de salida del wiki son independientes (tu wiki puede estar en chino mientras la interfaz está en inglés).
+- **Escribes o lees en cualquiera de los 11 idiomas compatibles** — la UI y el idioma de salida del wiki son independientes (tu wiki puede estar en chino mientras la interfaz está en inglés).
 - **Mantienes el grafo escribiendo `[[wiki-links]]`** — cada enlace que escribes ya enriquece la recuperación; sin paso separado de etiquetado/embedding/indexación.
 - **Quieres mantenimiento con un clic** — Escaneo de salud Lint + Smart Fix All mantienen a raya duplicados, enlaces rotos y páginas huérfanas sin que tengas que curar manualmente.
 
@@ -181,8 +181,8 @@ Tres rutas, elige la que se ajuste a tu configuración:
 
 ### 🌐 Idioma
 
-- **🌍 10 idiomas de UI** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano. La UI y el idioma de salida del wiki son independientes — tu wiki puede estar en chino mientras la interfaz está en inglés.
-- **📚 10 idiomas de salida del wiki** — el mismo conjunto; elige en Configuración → Wiki Configuration. Opción *Custom input* para prompts ad-hoc.
+- **🌍 11 idiomas de UI** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano, Русский. La UI y el idioma de salida del wiki son independientes — tu wiki puede estar en chino mientras la interfaz está en inglés.
+- **📚 11 idiomas de salida del wiki** — el mismo conjunto; elige en Configuración → Wiki Configuration. Opción *Custom input* para prompts ad-hoc.
 - **🈶 269+ cadenas de UI traducidas** — cada etiqueta, modal y aviso. Añadir un 11.º idioma es impulsado por contribuciones (patrón PR #159).
 
 ---
@@ -304,7 +304,7 @@ Instala desde Plugins Comunitarios de Obsidian → elige un proveedor → **Test
 
 ### Puedo usar el plugin en mi idioma?
 
-🌍 10 idiomas tanto para la UI como para la salida del wiki. La UI y el idioma del wiki son independientes. Añadir un 11.º idioma es impulsado por contribuciones (patrón PR #159).
+🌍 11 idiomas tanto para la UI como para la salida del wiki. La UI y el idioma del wiki son independientes. Añadir un 12.º idioma es impulsado por contribuciones (patrón PR #159).
 
 ### En qué se diferencia de un chatbot RAG?
 

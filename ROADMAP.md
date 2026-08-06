@@ -2,11 +2,11 @@
 
 > Feature planning and improvement proposals
 
-**Version:** v1.26.0 MINOR — re-scoped on main @ `429d956` (2026-08-03), release deferred. Russian i18n MERGED. v1.25.11 PATCH RELEASED. | **Updated:** 2026-08-03
+**Version:** v1.26.0 MINOR — ready for tag on main @ `ab0ecfb` (2026-08-05), release-prep in progress. v1.25.11 PATCH RELEASED. | **Updated:** 2026-08-05
 
 ## Current Status
 
-**v1.26.0 — RE-SCOPED on 2026-08-02; release deferred pending P0+P1 hardening work.** User decision (2026-08-02): "不立即发版，需要再把高优先级的P0+P1纳入开发后，再发布1.26.0". Main @ `429d956` already contains the v1.26.0 user-visible surface (headless CLI `pnpm llm-wiki` + DocTpoint #357 source-lemma + DocTpoint #386 vault-wide link retarget + DocTpoint #388 `created:` provenance + #383 folder-boundary follow-up + PR #395 lint dedup thresholds + **Russian i18n (PR #397)**) plus the re-scope means the following P0+P1 work must ship before tagging v1.26.0:
+**v1.26.0 MINOR — READY FOR TAG on 2026-08-05; release-prep in progress.** Main @ `ab0ecfb` carries the full v1.26.0 user-visible surface (headless CLI `pnpm llm-wiki` + DocTpoint #357 source-lemma + DocTpoint #386 vault-wide link retarget + DocTpoint #388 `created:` provenance + #383 folder-boundary follow-up + PR #395 lint dedup thresholds + **Russian i18n (PR #397)**) **plus all 5 P0+P1 hardening batches**:
 
 **v1.26.0 P0+P1 final scope** (in execution order; user-revised 2026-08-02 — #317 and #326 deferred to v1.27.0+; **Batch 1 rev 2 simplified 2026-08-03** to 方案 1 dual-key bucket only, abandoning方案 4 spillover + 方案 7 hub bridge per ROI analysis; **2026-08-04 revision**: Batch 5 cancelled, two MINOR-blocking items added after PR #410 merge):
 
@@ -74,8 +74,29 @@
 - `97a135c` feat(i18n): dedup threshold + `llmRetryRecoveredToast` keys in 10 locales
 - `44fdab2` docs: ROADMAP v1.26.x PATCH track + CLAUDE.md tech-debt shift
 - `c15c743` Merge pull request #410 from `green-dalii/feat/v1.26.0-batch-2-cross-type-dedup`
+- `e2e75eb` feat(lint): dedup-phase wire-up + classifyTiers signals + force-disable + retry/halving (Batch 2 + follow-up) — *(already listed above; canonical attribution lives in PR #410)*
+- `03cd74e` fix(lint): route parse-failed dedup batches to dedupFailures (Batch 7)
+- `01e9ab3` feat(sdk): Layer-3 400-retry for reasoning-related fields (Batch 6)
+- `cf4dea7` feat(sdk): OpenAI Responses API force-disable → reasoningEffort: 'none'
+- `f9dcf94` feat(sdk): openai-compat force-disable → reasoningEffort: 'none'
+- `4542b39` test(sdk): wire-level assertions for reasoning disable (Batch 6 Layer 3)
+- `54e66cf` docs: dedup-phase force-disable thinking — 4-layer fallback (v1.26.0 Batch 6)
+- `8f81c56` test(lint): parse-failure enters dedupFailures + legitimate-empty regression guard
+- `33b1678` fix(sdk): Bug-1 — add shouldStrip guard to OpenAI SDK buildProviderOptions
+- `093f4e5` fix(sdk): Bug-2 — reorder streaming retry blocks (reasoning-strip first)
+- `97bd95b` fix(sdk): Bug-3 — move markStrip to AFTER retry success
+- `01a2a8f` fix(sdk): CR-2 — two-marker classifier (verb + field) for reasoning-field error match
+- `a739999` fix(sdk): CR-4 — Layer-3 retry on OpenAI SDK streaming path
+- `6e6388a` fix(lint): CR-3 — structured 'type' discriminator for parse-failure kind
+- `31ca43e` fix(sdk)+fix(lint): post-review attribution + Batch 7 narrow conflation
+- `99579c4` fix(lint): wire FORCE_DISABLE_THINKING into dedup-phase llmArgs (eucher PR #411)
+- `ca51b7b` docs(sdk): record per-call thinkingPolicy for source-analyzer repair path
+- `16c7f87` docs(claude+roadmap): PR #411 compact-prep — 4-layer fallback corrections + per-call thinkingPolicy + DeepSeek/Kimi/GLM measurement tracked
+- `5cb3f37` fix(sdk): CR-3 discriminator reachable in production (PR #411 review)
+- `2ffc003` refactor(sdk): ReasoningStripProber — Set<string> + drop dead invalidate()
+- `ab0ecfb` Merge pull request #411 from `green-dalii/feat/v1.26.0-batch-6-real-wire-thinking-disable`
 
-*Stats*: 2863 tests / 213 files at PR #395 merge → **2895 tests / 215 files** after DocTpoint PR #392 + PR #396 → **2904 tests / 215 files** after Russian i18n PR #397 → **2896 tests / 215 files** after PR #410 (Batch 2, 6 commits — slight net test delta because Batch 1 closed tests for the bucketed dedup path). The PR #410 e2e on the 2141-page vault measured 979s → 365s wall-time (−63%); recall improved 7 → 12 pairs.
+*Stats*: 2863 tests / 213 files at PR #395 merge → **2895 tests / 215 files** after DocTpoint PR #392 + PR #396 → **2904 tests / 215 files** after Russian i18n PR #397 → **2896 tests / 215 files** after PR #410 (Batch 2, 6 commits — slight net test delta because Batch 1 closed tests for the bucketed dedup path) → **2928 tests / 213 files** after PR #411 (Batch 6+7, 20 commits on top of main; +13 net test count from the new CR-3/CR-4/two-marker classifier/wire-body/per-call thinkingPolicy guards, −2 stale dead-code tests removed in PR #406). The PR #410 e2e on the 2141-page vault measured 979s → 365s wall-time (−63%); recall improved 7 → 12 pairs. After PR #411's 4-layer fallback went fully live (Layers 1-3, not just Layer 4 + retry), the same 2141-page vault measures 151s wall-time (−85% vs baseline, −59% vs Batch 2 alone).
 
 *Why MINOR not PATCH*: the CLI ships as a fresh user-visible tool (`pnpm llm-wiki` script, npm bin, subcommand dispatch, complete flag surface) — that is the canonical SemVer trigger for MINOR, not PATCH. The planned `v1.25.12` slot stays unused; the patch slot is not retroactively filled. Version numbers need not be consecutive.
 
