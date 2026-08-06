@@ -22,7 +22,7 @@ import { PROMPTS } from '../../prompts';
 import { parseJsonResponse } from '../../core/json';
 import { renderTemplate } from '../../core/template-renderer';
 import { formatPageRefSummary } from '../../core/ppr-cascade';
-import { buildTurnIndicator, observeVisibleTurn } from '../turn-indicator';
+import { buildTurnIndicator, observeVisibleTurn, updateActiveDot } from '../turn-indicator';
 import { TOKENS_QUERY_ANSWER, TOKENS_QUERY_SAVE_DEDUP, NOTICE_BRIEF, NOTICE_SHORT, NOTICE_NORMAL, NOTICE_ERROR, CUSTOM_QUERY_INSTRUCTIONS_MAX_CHARS } from '../../constants';
 import { capMaxTokens } from '../../core/token-cap';
 import { getSectionLabels } from '../system-prompts';
@@ -822,6 +822,13 @@ export class QueryView extends ItemView {
    * v1.23.2 (#221 Variant 2): rebuild the right-edge turn indicator
    * whenever the conversation changes. Clicking a dot scrolls that
    * turn to the top of the history container.
+   *
+   * v1.25.11 PATCH follow-up v4: the indicator is a translated dot
+   * stack. The whole stack slides vertically so the dot representing
+   * the currently-visible turn sits at the indicator's centre. As
+   * the user scrolls the history container the IntersectionObserver
+   * callback fires `updateActiveDot`, which both swaps the active
+   * class and updates the stack translation.
    */
   private rebuildTurnIndicator(): void {
     if (this._turnObserver) {
@@ -850,7 +857,16 @@ export class QueryView extends ItemView {
       turnLabels,
       (idx) => this.scrollToTurn(idx)
     );
-    this._turnObserver = observeVisibleTurn(this.historyContainer, this._turnIndicator);
+
+    this._turnObserver = observeVisibleTurn(
+      this.historyContainer,
+      this._turnIndicator,
+      (activeIdx) => {
+        if (activeIdx === null) return;
+        if (!this._turnIndicator) return;
+        updateActiveDot(this._turnIndicator, activeIdx);
+      },
+    );
   }
 
   private scrollToTurn(idx: number): void {

@@ -26,6 +26,7 @@ export const ZH_TEXTS = {
     languageEs: 'Español',
     languagePt: 'Português',
     languageIt: 'Italiano',
+    languageRu: 'Русский',
 
     // 状态
     statusTitle: 'LLM Client 状态',
@@ -485,10 +486,27 @@ export const ZH_TEXTS = {
     ingestionStatusBar: '提取中... 点击取消',
     lintStatusBar: '维护中... 点击取消',
     ingestStatusAnalyzing: '提取中… (点击取消)',
-    lintStatusReading: '维护中… (点击取消)',
-    lintStatusDuplicates: '维护中… (点击取消)',
-    lintStatusScanningLinks: '维护中… (点击取消)',
     lintStatusAnalyzing: '维护中… (点击取消)',
+    // v1.25.11 PATCH #169 — fine-grained stage hints for the status bar.
+    // These labels are ADD-only emission sandwiched between the page name
+    // and the always-visible base label (e.g. "My Note · Generating summary ·
+    // Ingesting… (click to cancel)"). They never replace the base label, so
+    // the cancel affordance is preserved through every long-running stage.
+    ingestStageAnalyze: '正在分析源',
+    ingestStageSummary: '正在生成摘要',
+    ingestStageEntity: '正在创建实体',
+    ingestStageConcept: '正在创建概念',
+    ingestStageRetry: '正在重试失败的页面',
+    ingestStageSave: '正在保存页面',
+    ingestStageIndex: '正在生成索引',
+    pdfStageReading: '正在读取 PDF',
+    pdfStageConverting: '正在转换 PDF',
+    pdfStageSidecar: '正在写入附属文件',
+    lintStagePrep: '正在读取页面',
+    lintStageProgrammatic: '正在扫描链接',
+    lintStageAnalyzing: '正在运行 LLM 分析',
+    lintStageDedup: '正在检测重复',
+    lintStageContradiction: '正在检测矛盾',
     ingestionCancelling: '正在取消 — 当前批次完成后将停止',
     ingestionCancelled: '提取已取消',
     crossTypeCollisionNotice: '{count} 个条目合并为跨类型别名（实体 ↔ 概念重复已防止）',
@@ -498,10 +516,17 @@ export const ZH_TEXTS = {
     lintReportSummary: 'Wiki 状态概览：共 {total} 个页面，{aliasesMissing} 个缺失别名，重复 {duplicates} 个，断链 {deadLinks} 个（其中 {deadLinkFromDup} 个涉及重复页面），孤立 {orphans} 个（其中 {orphanFromDup} 个是重复页面），空洞 {emptyPages} 个，无来源引证 {ungroundedQuotes} 个，标签越界 {tagViolations} 个。本次 Lint 耗时 {elapsedSeconds} 秒',
 
     // Advanced LLM Settings (Issues #99 / #128)
-    advancedSettingsModeName: '高级参数设置',
-    advancedSettingsModeDesc: '默认模式遵循模型提供商的推荐设置。仅当你有明确理由覆盖时才切到自定义（例如：某个模型需要固定温度，或者你想关闭模型的思考输出）。',
+    // v1.26.0 (#382 item 2): 名称由"高级参数设置"改为"LLM 高级参数"，
+    // 明确这是 LLM 采样参数，与底部通用的"高级设置"面板区分。
+    advancedLlmModeName: 'LLM 高级参数',
+    advancedLlmModeDesc: '默认模式遵循模型提供商的推荐设置。仅当你有明确理由覆盖时才切到自定义（例如：某个模型需要固定温度，或者你想关闭模型的思考输出）。',
     advancedSettingsDefault: '默认（遵循提供商）',
     advancedSettingsCustom: '自定义（覆盖提供商）',
+    // v1.26.0 (#382 item 2): 底部"高级设置"面板 — 所有非 LLM 采样参数的
+    // 高级用户设置的通用归属（lint 阈值、欢迎页、未来扩展）。
+    advancedSettingsSection: '高级设置',
+    showAdvancedSettingsName: '显示高级设置',
+    showAdvancedSettingsDesc: '开启后显示下方的高级设置；关闭后会隐藏这些设置并将其重置为默认值。',
     disableThinkingName: '禁用思考',
     disableThinkingDesc: '关闭模型响应中的思维链/推理过程输出。默认关闭 —— 由模型自己决定是否显示推理，这样通常能得到最好的回答。只有当你的提供商把原始推理文本塞进回复、而你希望得到一个干净的答案时，才打开它。',
     // Issue #137: 兼容性提示（简短；不列举 provider，避免维护负担）
@@ -512,6 +537,14 @@ export const ZH_TEXTS = {
     repetitionPenaltyName: '重复惩罚',
     repetitionPenaltyDesc: '阻止模型反复说相同的字词。数值越高越能减少重复。只有部分本地模型提供商（Ollama、LM Studio、llama.cpp）接受这个参数；云端提供商会静默忽略。大多数用户留空即可。',
     temperaturePlaceholder: '留空 = 使用提供商默认',
+    // v1.26.0 (#382 item 2): 重复检测阈值（仅自定义高级模式）。
+    // 与上方温度输入共用占位文案，保持同一提示风格。
+    lintDedupJaccardLinkThresholdName: '链接重复相似度',
+    lintDedupJaccardLinkThresholdDesc: '范围 0–1（默认 0.4）。两个页面共同指向的 wiki 链接占各自链接集合的比例达到该值时，被标记为重复。调低 → 更多"只是都链接到同一中心页"的近似重复会被纳入；调高 → 只标记指向几乎相同页面的页面。若看到不相关页面恰好链接到同一中心页造成的误报，可调高此项。留空使用默认值。',
+    lintDedupJaccardBodyGateName: '正文最低相似度',
+    lintDedupJaccardBodyGateDesc: '范围 0–1（默认 0.2）。即使两个页面共享 wiki 链接，正文相似度（按比例）至少达到该值时才会被标记为重复。调低 → 更多候选进入 LLM 复核；调高 → 只标记正文几乎相同的页面。若 LLM 被频繁要求复核明显不是重复的页面，可调高此项。留空使用默认值。',
+    lintDedupBigramThresholdName: '标题相似度',
+    lintDedupBigramThresholdDesc: '范围 0–1（默认 0.4）。两个页面标题（或别名）的字符重合度达到该值时，被标记为重复。调低 → 拼写变体、笔误、同一概念的不同翻译都会纳入；调高 → 只标记标题几乎相同的页面。若 LLM 被要求复核标题差异很大、明显不是重复的页面，可调高此项。留空使用默认值。',
     lintDeadLinkSection: '断链（程序检测）[共 {count} 个]',
     lintEmptyPageSection: '空洞页面（程序检测）[共 {count} 个]',
     lintOrphanSection: '孤立页面（程序检测）[共 {count} 个]',
@@ -631,6 +664,15 @@ export const ZH_TEXTS = {
     reingestConfirmBody: '"{filename}" 的内容已存在于 Wiki 中。仍要重新提取吗？',
     reingestConfirmYes: '重新提取',
     reingestConfirmNo: '跳过',
+    lintDedupIncludeSourcesName: '在去重中包含来源',
+    lintDedupIncludeSourcesDesc: '默认开启。开启后，正文相同的来源在 lint 阶段会被标记为重复。若你的来源语料产生过多误报，可关闭此选项。',
+    lintDedupSectionHeading: '去重检测',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): 通用 Toast 文案，
+    // 复用于所有 LLM 业务路径（dedup / analysis / fix-runners /
+    // conversation-ingest / merge / headless CLI）。{count} 是触发
+    // 重试的批次数量。注意：不要在此承诺"任务已完成"——本次重试仅
+    // 恢复本批次，同一扫描的其他批次可能仍在进行中。
+    llmRetryRecoveredToast: 'LLM 任务：{count} 个批次因 provider 临时响应问题触发重试（已自动恢复）。详见控制台。若频繁出现，请考虑在 Provider 设置中降低 Page Generation Concurrency。',
     longSourceNotice: '📄 "{filename}" 包含 {lines} 行（{size}）。长文本需要多轮迭代提取，LLM 将完整读取文档进行多次分析，耗时可能较长，请耐心等待。',
     longSourceNoticeShort: '📄 检测到大文件（{lines} 行），摄入可能需要较长时间。',
 

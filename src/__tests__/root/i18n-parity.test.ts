@@ -124,3 +124,48 @@ describe('Traditional Chinese (zh-Hant) locale wiring', () => {
     }
   });
 });
+
+// === v1.26.0: Russian (ru) locale — full translation ===
+// Russian i18n is the first non-Latin-script locale. Tests below pin:
+//   1. TEXTS.ru exists with native self-naming key (Русский).
+//   2. WIKI_LANGUAGES.ru registers for the language dropdown.
+//   3. SECTION_LABELS.ru covers every EN section key with non-empty Cyrillic text.
+//   4. Bidirectional parity with en (covered by parameterised test above).
+describe('Russian locale wiring', () => {
+  it('exposes the Russian UI locale', () => {
+    expect(TEXTS.ru).toBeDefined();
+    expect(TEXTS.ru.languageRu).toBe('Русский');
+  });
+
+  it('registers Russian as a selectable wiki output language', () => {
+    expect(WIKI_LANGUAGES.ru).toBe('Русский');
+  });
+
+  it('provides Russian wiki section labels with full coverage', () => {
+    expect(SECTION_LABELS.ru).toBeDefined();
+    const enLabelKeys = Object.keys(SECTION_LABELS.en).sort();
+    const ruLabelKeys = Object.keys(SECTION_LABELS.ru).sort();
+    expect(ruLabelKeys).toEqual(enLabelKeys);
+    for (const value of Object.values(SECTION_LABELS.ru)) {
+      // Non-empty after trim; Cyrillic values pass String.trim() unchanged,
+      // so this is a meaningful "translation exists" check, not just a
+      // whitespace probe.
+      expect(value.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('preserves every {placeholder} from the EN source', () => {
+    // Mechanical regression guard: if a translator drops a placeholder when
+    // rewriting the sentence, runtime string.replace() silently leaves the
+    // {placeholder} literal in the user-visible string — this test catches it.
+    const enKeys = Object.keys(TEXTS.en).sort();
+    for (const key of enKeys) {
+      const enVal = TEXTS.en[key as keyof typeof TEXTS.en] as unknown as string;
+      const ruVal = TEXTS.ru[key as keyof typeof TEXTS.ru] as unknown as string;
+      if (typeof enVal !== 'string' || typeof ruVal !== 'string') continue;
+      const enPlaceholders = [...enVal.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map(m => m[1]).sort();
+      const ruPlaceholders = [...ruVal.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map(m => m[1]).sort();
+      expect(ruPlaceholders, `placeholder drift in key ${key}`).toEqual(enPlaceholders);
+    }
+  });
+});

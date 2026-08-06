@@ -5,6 +5,7 @@ import { scanPollutedSources, fixPollutedSources } from '../../../core/sources-n
 import { parseFrontmatter } from '../../../core/frontmatter';
 import { LINT_PREP_BATCH_READ } from '../../../constants';
 import { LintPhaseContext, ScannerPage } from '../types';
+import { isInFolderScope } from '../../../core/folder-scope';
 
 export interface PreparationResult {
   wikiFiles: Array<{ path: string; basename: string }>;
@@ -20,7 +21,7 @@ export async function runPreparationPhase(
   ctx: LintPhaseContext,
 ): Promise<PreparationResult> {
   const wikiFiles = ctx.app.vault.getMarkdownFiles()
-    .filter(f => f.path.startsWith(ctx.settings.wikiFolder) &&
+    .filter(f => isInFolderScope(f.path, ctx.settings.wikiFolder, false) &&
                  !f.path.includes('index.md') &&
                  !f.path.includes('log.md') &&
                  !f.path.includes('/schema/') &&
@@ -33,7 +34,7 @@ export async function runPreparationPhase(
   ctx.stageNotice?.setMessage(
     getText(ctx.settings.language, 'lintReadingPages').replace('{count}', String(wikiFiles.length))
   );
-  ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStatusReading'));
+  ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStagePrep'));
   console.debug(`lintWiki: reading ${wikiFiles.length} wiki pages in parallel`);
 
   const BATCH_READ = LINT_PREP_BATCH_READ;

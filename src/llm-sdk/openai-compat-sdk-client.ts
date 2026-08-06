@@ -29,7 +29,9 @@ import {
   isUrlError,
 } from '../core/url-fallback';
 import { TokenKeyProber } from './token-key-probe';
+import { ReasoningStripProber } from './reasoning-strip-probe';
 import { reportFinish } from './finish-reason';
+import { buildSamplingArgs } from './sampling-args';
 
 export interface OpenAICompatSdkClientOptions {
   apiKey: string;
@@ -56,6 +58,16 @@ export class OpenAICompatSdkClient implements LLMClient {
    * starts fresh.
    */
   private readonly tokenKeyProber = new TokenKeyProber();
+
+  /**
+   * v1.26.0 Batch 6: Layer-3 fallback cache. Some openai-compat
+   * backends (Gemini-via-shim per #137) reject `reasoning_effort: 'none'`
+   * with HTTP 400. On 400 with a reasoning-related field name in the
+   * error message, we strip the field and retry exactly once; the
+   * strip decision is cached per baseURL so subsequent calls skip
+   * the probe. Mirrors the [[TokenKeyProber]] design.
+   */
+  private readonly reasoningStripProber = new ReasoningStripProber();
 
   constructor(opts: OpenAICompatSdkClientOptions) {
     this.apiKey = opts.apiKey;
@@ -139,7 +151,7 @@ export class OpenAICompatSdkClient implements LLMClient {
   }
 
   async createMessage(params: LLMClient['createMessage'] extends (p: infer P) => unknown ? P : never): Promise<string> {
-    const { model, max_tokens, system, messages, temperature, repetition_penalty, enableThinking, response_format, onFinish } = params;
+    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, seed, enableThinking, onFinish } = params;
 
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
@@ -153,9 +165,8 @@ export class OpenAICompatSdkClient implements LLMClient {
         providerOptions: this.buildProviderOptions({
           enableThinking,
           repetitionPenalty: repetition_penalty,
-          responseFormat: response_format,
         }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-        ...(temperature !== undefined ? { temperature } : {}),
+        ...buildSamplingArgs({ temperature, top_p, seed }),
       });
       reportFinish(onFinish, result.finishReason, result.usage);
       return result.text;
@@ -181,10 +192,81 @@ export class OpenAICompatSdkClient implements LLMClient {
           providerOptions: this.buildProviderOptions({
             enableThinking,
             repetitionPenalty: repetition_penalty,
-            responseFormat: response_format,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
+        reportFinish(onFinish, result.finishReason, result.usage);
+        return result.text;
+      }
+
+      // v1.26.0 Batch 6: Layer-3 400-retry for reasoning-related fields.
+      //
+      // Some openai-compat backends (notably Gemini-via-OpenAI-shim per
+      // Issue #137) reject `reasoning_effort: 'none'` with HTTP 400.
+      // Match the error message for `reasoning_effort` / `thinking` /
+      // `chat_template` (case-insensitive), then retry exactly once
+      // with reasoningEffort stripped from the provider options.
+      //
+      // ORDER MATTERS: this branch runs BEFORE the token-key fallback
+      // below. Token-key probe is a coarse "any 400 → swap max_tokens
+      // ↔ max_completion_tokens" — if we let it run first on a
+      // reasoning-related 400, it would mark the baseURL as
+      // max_completion_tokens and skip the reasoning-strip probe
+      // entirely. Then the retry would still send reasoning_effort
+      // and the second 400 would not be retried at all. Reasoning-
+      // strip must run first when the message clearly identifies the
+      // reasoning field as the cause.
+      //
+      // Guard: skip retry if we've already cached "strip" for this
+      // baseURL — means the first retry already happened (and the
+      // retry would either succeed or fail the same way).
+      //
+      // No per-vendor matching: we don't know which backends reject
+      // which dialect, and the user already opted into
+      // enableThinking=false explicitly (per the dedup-phase
+      // `enableThinkingOverride = false`). Per user guidance
+      // (2026-08-04): "做好通用、完善的fallback机制即可".
+      //
+      // v1.26.0 Batch 6 Bug-3 fix: markStrip moved AFTER the retry
+      // succeeds (not before). If the retry itself throws — same
+      // backend, transient 5xx, network blip — we don't want the
+      // cache permanently poisoned. Mirrors the token-key branch
+      // pattern (setCachedKey + try + retry; if retry throws, the
+      // outer throw mapAiSdkError catches and the cache is set, but
+      // for the reasoning-strip the cache-write is gated on retry
+      // success because the cache decision is "this baseURL rejects
+      // reasoning_effort" — a transient retry failure shouldn't
+      // cement that decision).
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        enableThinking === false &&
+        !this.reasoningStripProber.shouldStrip(this.baseURL) &&
+        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+      ) {
+        const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+        const { generateText } = await import('ai');
+        // Retry without reasoningEffort — pass enableThinking=true so
+        // buildProviderOptions does not re-add the field. The user's
+        // intent ("force-disable thinking") was honored by the first
+        // attempt; on the retry we accept whatever the backend's
+        // default reasoning behavior is, since the field itself is
+        // rejected.
+        const result = await generateText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          providerOptions: this.buildProviderOptions({
+            enableThinking: true,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        // Retry succeeded — commit the cache decision now. If the
+        // retry above throws, this line never runs and the cache is
+        // untouched; the outer catch propagates the error.
+        this.reasoningStripProber.markStrip(this.baseURL);
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
       }
@@ -199,6 +281,11 @@ export class OpenAICompatSdkClient implements LLMClient {
       // Guard: skip retry if we already have a cached key for this
       // baseURL — means the first retry already happened (and failed),
       // so retrying again would loop.
+      //
+      // Runs AFTER the reasoning-strip branch above: the reasoning
+      // branch handles a more specific 400 case (the message clearly
+      // names a reasoning-related field). Token-key is the broader
+      // catch-all for any other 400.
       if (APICallError.isInstance(err) && err.statusCode === 400 && !this.tokenKeyProber.getCachedKey(this.baseURL)) {
         // The default wire format is `max_tokens`. If the gateway
         // rejected it, try `max_completion_tokens`.
@@ -213,9 +300,8 @@ export class OpenAICompatSdkClient implements LLMClient {
           providerOptions: this.buildProviderOptions({
             enableThinking,
             repetitionPenalty: repetition_penalty,
-            responseFormat: response_format,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
@@ -230,51 +316,132 @@ export class OpenAICompatSdkClient implements LLMClient {
    *
    * Same shape as OpenAISdkClient (these providers all speak the
    * OpenAI Chat Completions format). `enableThinking=false` maps to
-   * `reasoningEffort='low'` for reasoning-capable providers (DeepSeek
-   * V3, o1-style on OpenRouter, GLM-Z1).
+   * `reasoningEffort='none'` (v1.26.0 Batch 6) — verified wire-reaches
+   * the openai-compat SDK's zod schema (@ai-sdk/openai-compatible@2.0.62
+   * line 331) and is emitted as `reasoning_effort: 'none'` on the wire
+   * (line 541). DocTpoint's LM Studio / gemma-4-12b fetch-interceptor
+   * measurement (Issue #382 comment 2, 2026-08-04) confirmed the field
+   * reaches the backend; reasoning_tokens=0 in the response.
+   *
+   * Earlier this mapped to `thinking.type: 'disabled'` — neither it nor
+   * `chat_template_kwargs` were declared in the AI SDK's zod schema
+   * (openaiCompatibleLanguageModelChatOptions, line 322-344 of
+   * @ai-sdk/openai-compatible@2.0.62/dist/index.mjs), and the SDK's
+   * "passthrough" path (line 533-534) reads from
+   * `providerOptions[this.providerOptionsName]` (the provider id we
+   * pass in — `deepseek` / `kimi` / `lmstudio` / etc.) rather than the
+   * hardcoded `"openaiCompatible"` key that buildProviderOptions
+   * returns under. None of the 15 provider ids in `types.ts` is the
+   * literal string `"openai-compatible"`, so the lookup misses for
+   * every provider and the extras never reach the wire. DocTpoint
+   * identified this via fetch-interceptor on Issue #382 comment 3
+   * (2026-08-04); the field never left the process on the openai-compat
+   * path. The 979s→365s e2e gain came from retry/backoff only. See
+   * [[project_v1_26_0_batch_6_real_wire_thinking_disable]] for the
+   * full post-mortem.
    */
   private buildProviderOptions(opts: {
     enableThinking?: boolean;
     repetitionPenalty?: number;
-    responseFormat?: { type: 'json_object' };
   }): Record<string, Record<string, unknown>> {
     const openaiOpts: Record<string, unknown> = {};
 
-    if (opts.enableThinking === false) {
-      // DeepSeek / Moonshot Kimi / GLM-4.6+ all use
-      // `thinking.type: 'disabled'` per their official docs:
-      //   - DeepSeek: https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
-      //   - Kimi k2.5/2.6: https://platform.kimi.com/docs/guide/use-kimi-k2-thinking-model
-      //   - GLM-4.6:智谱 BigModel thinking 模型文档
+    if (opts.enableThinking === false && !this.reasoningStripProber.shouldStrip(this.baseURL)) {
+      // v1.26.0 Batch 6: force-disable thinking via reasoningEffort.
       //
-      // Earlier we used `reasoningEffort: 'low'` (OpenAI gpt-5.x
-      // style) but DeepSeek's reasoning_effort only accepts
-      // 'high'/'max' — 'low' is silently mapped to 'high', so the
-      // disable-thinking intent was lost. Switched to
-      // `thinking.type: 'disabled'` which all 3 providers accept.
+      // Prior mechanism (PR #410 / Batch 2) used `thinking.type: 'disabled'`
+      // + `chat_template_kwargs.enable_thinking: false` — neither is in
+      // @ai-sdk/openai-compatible's zod schema
+      // (openaiCompatibleLanguageModelChatOptions, line 322-344 of dist/index.mjs),
+      // and the SDK's "passthrough" path at line 533-534 reads from
+      // `providerOptions[this.providerOptionsName]` (our provider id —
+      // `deepseek` / `kimi` / `lmstudio` / etc.), not the hardcoded
+      // `"openaiCompatible"` key that buildProviderOptions returns under.
+      // For every provider id we ship (none is literally
+      // `"openai-compatible"`), that lookup misses and the fields never
+      // reach the wire. Verified by DocTpoint via fetch-interceptor
+      // (Issue #382 comment 3, 2026-08-04 — supersedes his earlier
+      // comment 2 which called this "stripped"; it is misaddressed).
       //
-      // OpenRouter is an exception — it routes reasoning models via
-      // `reasoning: { enabled: false }`. Users on OpenRouter with
-      // reasoning models should disable enableThinking via the
-      // plugin's Custom Advanced Settings (which can pass through
-      // a different providerOptions shape in v1.24.0).
-      openaiOpts.thinking = { type: 'disabled' };
-      // llama.cpp's llama-server (and most local OpenAI-compatible servers
-      // serving Qwen3-family models) ignores `thinking.type` entirely — it
-      // expects chat_template_kwargs instead. Unknown fields are ignored by
-      // both dialects, so sending both is safe and makes the toggle actually
-      // work against local backends.
-      openaiOpts.chat_template_kwargs = { enable_thinking: false };
+      // The new mechanism is `reasoningEffort: 'none'` (camelCase) which
+      // the zod schema DOES accept (line 331: `z.string().optional()`) and
+      // which the SDK emits as `reasoning_effort: 'none'` (snake_case) on
+      // the wire (line 541). DocTpoint's LM Studio / gemma-4-12b
+      // measurement confirmed wire-reaches + reasoning_tokens=0.
+      //
+      // Backend compatibility (no per-vendor matching):
+      //   - DeepSeek V3/V3.1/V4 — accepts (official reasoning_effort field)
+      //   - Kimi k2.5/2.6 — accepts
+      //   - GLM-4.6 (智谱 BigModel) — accepts
+      //   - LM Studio / llama.cpp — DocTpoint measured
+      //   - OpenRouter — uses `reasoning: { enabled: false }` (different
+      //     dialect, silently ignored on openai-compat path; not a 400)
+      //   - Gemini via OpenAI shim — likely 400; handled by Layer 3
+      //     (400-retry in commit B6-3) which strips the field and retries
+      //
+      // The `!shouldStrip(this.baseURL)` guard: once the Layer-3 retry
+      // learned this backend rejects reasoning_effort, future calls on
+      // this baseURL should NOT re-add the field (otherwise the retry
+      // path would just re-400 forever). The strip decision is a
+      // per-baseURL "this backend doesn't accept this field" signal.
+      openaiOpts.reasoningEffort = 'none';
     }
 
     if (opts.repetitionPenalty !== undefined) {
-      openaiOpts.repetitionPenalty = opts.repetitionPenalty;
+      // The spelling `OpenAICompatibleClient.buildRequestBody` put on the wire
+      // before v1.23.0. Kept, so that correcting the providerOptions key
+      // restores that spelling rather than inventing a new one — but only the
+      // spelling. That client gated every non-standard field on an
+      // `unsupportedFields` set held per client instance, learned from 400
+      // bodies via `parseUnknownFields` and surfaced to the user as a
+      // `paramStripped` notice. The AI-SDK migration dropped all of it, so
+      // whenever a value is set this field now travels ungated — the setting
+      // itself is opt-in, with no default and its input behind Custom Advanced
+      // Settings.
+      //
+      // Which spelling is right is per-backend, not global:
+      //   - llama.cpp b9205 ignores this one — measured once locally, same
+      //     output hash as a field name invented on the spot, three seeds, both
+      //     ends of the range, while `repeat_penalty` changed the output. No
+      //     artefact kept, and the server is no longer reachable
+      //   - the repository counts it among the fields the #137 retry stripped
+      //     on a 400 (CHANGELOG «temperature, repetition_penalty, etc.»), and a
+      //     code comment of that era cites `Unknown name 'repetition_penalty'`
+      //     as a Gemini reply. The issue itself never names the field, and no
+      //     live response is kept — the record is weaker than the thinking one
+      //   - OpenRouter and vLLM document this spelling; whether it ever took
+      //     effect for a user is not established either way
+      // So the fix is a per-provider dialect plus something to replace the
+      // learned blocklist, not a rename. A rename here would trade one broken
+      // set of backends for another.
+      openaiOpts.repetition_penalty = opts.repetitionPenalty;
     }
 
-    if (opts.responseFormat?.type === 'json_object') {
-      openaiOpts.response_format = { type: 'json_object' };
-    }
-
+    // repetition_penalty is NOT in
+    // openaiCompatibleLanguageModelChatOptions (zod schema, line 322-344 of
+    // dist/index.mjs). The SDK's path-2 passthrough (line 533-534) reads
+    // from `providerOptions[this.providerOptionsName]` — our provider id
+    // (`deepseek` / `kimi` / `lmstudio` / etc.), not the hardcoded
+    // `"openaiCompatible"` key that buildProviderOptions returns under.
+    // None of the 15 provider ids is literally `"openai-compatible"`, so
+    // the passthrough lookup misses for every provider and the field
+    // never reaches the wire on the openai-compat path. Has been the case
+    // since v1.23.0 — that migration dropped the
+    // pre-AI-SDK `unsupportedFields` blocklist that used to gate this.
+    //
+    // v1.26.0 Batch 6: reasoningEffort (above) IS in the zod schema and
+    // does reach the wire as `reasoning_effort` (line 541). repetition_penalty
+    // is kept in the object for completeness — the user's Custom Advanced
+    // Setting can opt in, but the field is a no-op today. Correcting it
+    // is deliberately not part of this change: it would deliver
+    // repetition_penalty to all ten providers on this path at once, and no
+    // backend is known to read it.
+    //
+    // The follow-up does not need this key at all for most of it: the SDK
+    // parses `openaiCompatible.reasoningEffort` through its own schema and
+    // emits `reasoning_effort` regardless, which is Gemini's documented way to
+    // decline reasoning, and structured output travels as the standard
+    // `responseFormat` argument.
     return Object.keys(openaiOpts).length > 0 ? { openaiCompatible: openaiOpts } : {};
   }
 
@@ -286,10 +453,12 @@ export class OpenAICompatSdkClient implements LLMClient {
     onChunk: (chunk: string) => void;
     enableThinking?: boolean;
     temperature?: number;
+    top_p?: number;
     repetition_penalty?: number;
+    seed?: number;
     onFinish?: (meta: { finishReason: LLMFinishReason }) => void;
   }): Promise<string> {
-    const { model, max_tokens, system, messages, onChunk, temperature, repetition_penalty, enableThinking, onFinish } = params;
+    const { model, max_tokens, system, messages, onChunk, temperature, top_p, repetition_penalty, seed, enableThinking, onFinish } = params;
 
     // v1.23.0 P1-7 follow-up: stream path uses streamWithFallback
     // (real streaming via window.fetch with CORS fallback to
@@ -322,7 +491,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           enableThinking,
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-        ...(temperature !== undefined ? { temperature } : {}),
+        ...buildSamplingArgs({ temperature, top_p, seed }),
       });
 
       let fullText = '';
@@ -397,7 +566,7 @@ export class OpenAICompatSdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
 
         let fullText = '';
@@ -414,6 +583,66 @@ export class OpenAICompatSdkClient implements LLMClient {
             reasoningContent = reasoning.map((r) => (r as { text?: string }).text || '').join('');
           }
         } catch { /* no reasoning */ }
+        if (reasoningContent) {
+          fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+        }
+        return fullText;
+      }
+
+      // v1.26.0 Batch 6 Bug-2 fix: Layer-3 400-retry for reasoning-related
+      // fields (streaming variant — same logic as createMessage above).
+      //
+      // ORDER MATTERS: this branch runs BEFORE the token-key fallback
+      // below. Token-key probe is coarse (any 400 →
+      // max_tokens ↔ max_completion_tokens); if it runs first on a
+      // reasoning-related 400, it would mark the baseURL and skip the
+      // reasoning-strip probe entirely. Then the retry still sends
+      // reasoning_effort and the second 400 is never retried.
+      //
+      // Bug-2 (Aug 2026 code-review): this branch used to be AFTER
+      // the token-key branch on the streaming path — opposite of the
+      // non-streaming path. The token-key branch would mark the
+      // baseURL first and the reasoning-strip probe never fired. Now
+      // both paths follow the same order.
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        enableThinking === false &&
+        !this.reasoningStripProber.shouldStrip(this.baseURL) &&
+        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+      ) {
+        const retryLanguageModel = this.getProvider(model, this.streamFetchImpl);
+        const { streamText } = await import('ai');
+        const result = streamText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          providerOptions: this.buildProviderOptions({
+            enableThinking: true,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        let fullText = '';
+        for await (const chunk of result.textStream) {
+          fullText += chunk;
+          onChunk(chunk);
+        }
+        let reasoningContent = '';
+        try {
+          const reasoning = await result.reasoning;
+          if (typeof reasoning === 'string' && reasoning) {
+            reasoningContent = reasoning;
+          } else if (Array.isArray(reasoning)) {
+            reasoningContent = reasoning.map((r) => (r as { text?: string }).text || '').join('');
+          }
+        } catch { /* no reasoning */ }
+        // Bug-3: markStrip AFTER the retry succeeds. If the stream
+        // throws (network blip, transient 5xx), the cache is not
+        // poisoned; the outer catch propagates the error and the
+        // next call gets a fresh probe.
+        this.reasoningStripProber.markStrip(this.baseURL);
         if (reasoningContent) {
           fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
         }
@@ -436,7 +665,7 @@ export class OpenAICompatSdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
         let fullText = '';
         for await (const chunk of result.textStream) {
@@ -457,6 +686,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         }
         return fullText;
       }
+
       throw mapAiSdkError(err);
     }
   }

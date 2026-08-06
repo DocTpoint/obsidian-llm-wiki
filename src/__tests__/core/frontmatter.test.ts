@@ -235,11 +235,16 @@ describe('enforceFrontmatterConstraints', () => {
     expect(result).not.toContain('tags: [other]');
   });
 
-  it('preserves created but forces updated to today', () => {
-    const input = '---\ntype: entity\ncreated: 2026-01-01\nupdated: 2026-05-18\n---\n\nBody';
-    const result = enforceFrontmatterConstraints(input, 'entity');
+  it('preserves the caller-supplied created but forces updated to today', () => {
+    // Issue #388: the prior value arrives as an argument. The `created:` line
+    // in the content is the model's, and is not what gets written.
+    const input = '---\ntype: entity\ncreated: 2024-11-03\nupdated: 2026-05-18\n---\n\nBody';
+    const result = enforceFrontmatterConstraints(input, 'entity', undefined, {
+      preserveCreated: '2026-01-01',
+    });
     const today = new Date().toISOString().split('T')[0];
     expect(result).toContain('created: 2026-01-01');
+    expect(result).not.toContain('created: 2024-11-03');
     expect(result).toContain(`updated: ${today}`);
     expect(result).not.toContain('updated: 2026-05-18');
   });
@@ -282,9 +287,11 @@ describe('enforceFrontmatterConstraints', () => {
     expect(result).not.toContain('tags: [other]');
   });
 
-  it('preserves existing created but forces updated to today', () => {
-    const input = '---\ntype: entity\ncreated: 2025-03-20\nupdated: 2024-12-01\n---\n\nBody';
-    const result = enforceFrontmatterConstraints(input, 'entity');
+  it('preserves the caller-supplied created on a page that already has one', () => {
+    const input = '---\ntype: entity\ncreated: 2024-12-01\nupdated: 2024-12-01\n---\n\nBody';
+    const result = enforceFrontmatterConstraints(input, 'entity', undefined, {
+      preserveCreated: '2025-03-20',
+    });
     const today = new Date().toISOString().split('T')[0];
     expect(result).toContain('created: 2025-03-20');
     expect(result).toContain(`updated: ${today}`);
@@ -297,6 +304,48 @@ describe('enforceFrontmatterConstraints', () => {
     const today = new Date().toISOString().split('T')[0];
     expect(result).toContain(`created: ${today}`);
     expect(result).toContain(`updated: ${today}`);
+  });
+
+  // ── Issue #388: `created:` provenance ────────────────────────────
+
+  it('ignores a created date the caller did not supply', () => {
+    // The generation paths hand this function the model's own reply. Without a
+    // prior file there is nothing to preserve, and a date found in that reply
+    // is invented by construction.
+    const input = '---\ntype: entity\ncreated: 2024-11-03\n---\n\nBody';
+    const result = enforceFrontmatterConstraints(input, 'entity');
+    const today = new Date().toISOString().split('T')[0];
+    expect(result).toContain(`created: ${today}`);
+    expect(result).not.toContain('2024-11-03');
+  });
+
+  it('ignores a caller value that is not an ISO date', () => {
+    const input = '---\ntype: entity\n---\n\nBody';
+    const today = new Date().toISOString().split('T')[0];
+    for (const bogus of ['gestern', '2025-13-99x', '', '   ']) {
+      const result = enforceFrontmatterConstraints(input, 'entity', undefined, {
+        preserveCreated: bogus,
+      });
+      expect(result).toContain(`created: ${today}`);
+    }
+  });
+
+  it('reviewed-guard: keeps the caller-supplied created instead of stamping today', () => {
+    // The reviewed branch returns early and previously forced `created` to
+    // today unconditionally, so a reviewed page lost its real creation date on
+    // every pass. With the value supplied it survives; without one the branch
+    // behaves as before.
+    const input = '---\ntype: entity\nreviewed: true\ncreated: 2024-11-03\nupdated: 2020-01-01\n---\n\nBody';
+    const today = new Date().toISOString().split('T')[0];
+
+    const withValue = enforceFrontmatterConstraints(input, 'entity', undefined, {
+      preserveCreated: '2026-01-05',
+    });
+    expect(withValue).toContain('created: 2026-01-05');
+    expect(withValue).toContain(`updated: ${today}`);
+
+    const withoutValue = enforceFrontmatterConstraints(input, 'entity');
+    expect(withoutValue).toContain(`created: ${today}`);
   });
 });
 
@@ -439,6 +488,83 @@ describe('mergeFrontmatter', () => {
     const input = '---\ntype: entity\ncreated: 2026-01-01\nupdated: 2026-01-01\nsources: []\n---\n\nBody';
     const result = mergeFrontmatter(input, 'sources/new');
     expect(result.frontmatter).toContain('[[sources/new]]');
+  });
+
+  // Issue #356 follow-up (v1.25.10 PATCH): the array-only helpers
+  // (replaceOrInsertYamlListField / replaceFrontmatterArrayField) call
+  // extractPassthroughLines and pass the result into serializeFrontmatter so
+  // re-touching a page preserves user-authored top-level fields. The full-page
+  // rewrite path (mergePage → mergeFrontmatter) was missed in the v1.25.10
+  // sweep; borthwick reported 4 entities losing `redirect_to:` after
+  // re-ingest of "The Nature of Technology" on 2026-07-29. These tests pin
+  // the post-fix behaviour for all three custom fields borthwick's repro
+  // exercised (redirect_to / parent_org / source_url) and a fourth common
+  // shape (single-line quoted value).
+  it('preserves a single-line redirect_to through full-page rewrite (Issue #356 follow-up)', () => {
+    const input = `---
+type: entity
+created: 2026-01-01
+updated: 2026-01-01
+reviewed: true
+redirect_to: "[[external/DeepSeek]]"
+sources: ["[[sources/the-great-reorg]]"]
+---
+
+Body
+`;
+    const result = mergeFrontmatter(input, 'sources/the-great-reorg');
+    expect(result.frontmatter).toContain('redirect_to: "[[external/DeepSeek]]"');
+    expect(result.frontmatter).toContain('reviewed: true');
+    expect(result.frontmatter).toContain('[[sources/the-great-reorg]]');
+  });
+
+  it('preserves a single-line parent_org through full-page rewrite (Issue #356 follow-up)', () => {
+    const input = `---
+type: product
+created: 2026-01-01
+updated: 2026-01-01
+parent_org: anthropic
+sources: ["[[sources/the-great-reorg]]"]
+---
+
+Body
+`;
+    const result = mergeFrontmatter(input, 'sources/the-great-reorg');
+    expect(result.frontmatter).toContain('parent_org: anthropic');
+  });
+
+  it('preserves a single-line source_url through full-page rewrite (Issue #356 follow-up)', () => {
+    const input = `---
+type: organization
+created: 2026-01-01
+updated: 2026-01-01
+source_url: "https://www.anthropic.com/company"
+sources: ["[[sources/the-great-reorg]]"]
+---
+
+Body
+`;
+    const result = mergeFrontmatter(input, 'sources/the-great-reorg');
+    expect(result.frontmatter).toContain('source_url: "https://www.anthropic.com/company"');
+  });
+
+  it('preserves multiple custom fields simultaneously (Issue #356 follow-up)', () => {
+    const input = `---
+type: entity
+created: 2026-01-01
+updated: 2026-01-01
+redirect_to: "[[p- John Fowles]]"
+external_id: "nyt-bestseller-1975"
+notion_url: "https://notion.so/abc123"
+sources: ["[[sources/the-aristos]]"]
+---
+
+Body
+`;
+    const result = mergeFrontmatter(input, 'sources/the-aristos');
+    expect(result.frontmatter).toContain('redirect_to: "[[p- John Fowles]]"');
+    expect(result.frontmatter).toContain('external_id: "nyt-bestseller-1975"');
+    expect(result.frontmatter).toContain('notion_url: "https://notion.so/abc123"');
   });
 
   it('deduplicates repeated aliases (parity with enforceFrontmatterConstraints)', () => {

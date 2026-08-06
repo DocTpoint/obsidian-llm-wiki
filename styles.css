@@ -356,20 +356,83 @@
   max-width: 80%;
 }
 
-/* v1.23.2 (#221 Variant 2): vertical turn indicator on the right edge. */
+/* v1.23.2 (#221 Variant 2): vertical turn indicator on the right edge.
+   v1.25.11 PATCH follow-up v6: windowed dot stack.
+
+   The indicator is a WINDOW inside the history container — not a
+   full-height strip. top/bottom are percentages of the history
+   container's clientHeight (resolved to px in JS via
+   ResizeObserver on historyContainer — see turn-indicator.ts).
+   Dots in the indicator render in document order with a 14px
+   pitch (6px dot + 8px gap). Because the indicator participates
+   in history container's overflow scroll, dots roll past the
+   window edges as the user scrolls, which gives the ChatGPT/
+   Grok "where am I in the conversation" feel.
+
+   The window is ASYMMETRIC by design: bottom margin > top margin.
+   The history container's bottom half visually co-exists with the
+   input container below it, so the latest (most-read) turn lives
+   near the bottom. The empirical sweet spot the user discovered
+   (top:200px, bottom:400px on a ~600px viewport ≈ top:33%,
+   bottom:67%) places the window in the upper portion of the chat
+   panel where it's most readable, leaving the lower portion free
+   for the latest turn.
+
+   v4's translateY machinery remains as defence-in-depth; the
+   primary fade/clip is now handled by the window itself.
+*/
 .llm-wiki-turn-indicator {
   position: absolute;
   right: 36px;
-  top: 50%;
-  transform: translateY(-50%);
+  /* Top offset as a percentage of historyContainer.clientHeight.
+     JS writes the px value via ResizeObserver so the visible
+     window stays at 25% of viewport (top) regardless of panel
+     resize. Matches the user's empirical test value (top:200px
+     on a ~800px viewport ≈ 25%). */
+  top: 25%;
+  /* Bottom offset as a percentage of historyContainer.clientHeight.
+     JS writes the px value via ResizeObserver. With top:25% and
+     bottom:50%, the indicator box spans the upper 25% of the
+     history container's visible region — matches the user's
+     empirical test value (bottom:400px on a ~800px viewport ≈
+     50%). Window height = viewport - top - bottom = 25%. */
+  bottom: 50%;
+  width: 14px;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   gap: 8px;
-  padding: 6px 4px;
-  background: var(--background-primary-alt, var(--background-primary));
-  border: 1px solid var(--background-modifier-border-hover);
-  border-radius: 12px;
+  padding: 0;
+  background: transparent;
+  border: 0;
   z-index: 5;
+  pointer-events: auto;
+  /* Indicator stretches from top:20% to bottom:70% (≈ upper third of
+     viewport, slightly enlarged from the v6 33/67 baseline to fit more
+     non-faded dots — user's empirical fine-tune). Dots that translate
+     past the top/bottom edges bleed out of the indicator (since
+     `overflow: visible` is restored for tooltip support). Tooltips on
+     the LEFT of each dot (`right: calc(100% + 8px)`) still overflow
+     into the chat panel because the indicator's parent
+     (`.llm-wiki-query-history`) does NOT clip its descendants. */
+  overflow: visible;
+  /* Defence-in-depth: v4 translateY machinery still works. JS sets
+     --llm-wiki-translate-y on the indicator; each wrapper inherits it
+     via `transform: translateY(var(--llm-wiki-translate-y))`. */
+  --llm-wiki-translate-y: 0px;
+}
+
+.llm-wiki-turn-dot-wrapper {
+  /* Each wrapper sits at its natural position (idx * DOT_PITCH), then
+     the whole stack is translated by the JS-computed offset so the
+     active dot lands at the indicator centre. */
+  transform: translateY(var(--llm-wiki-translate-y, 0px));
+  transition: transform 0.2s ease;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .llm-wiki-turn-dot {
@@ -378,7 +441,23 @@
   border-radius: 50%;
   background: var(--text-faint);
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+  flex: 0 0 auto;
+  transition: background 0.15s ease, transform 0.15s ease, opacity 0.2s ease;
+}
+
+/* Fade zones — applied via JS (toggle .llm-wiki-turn-dot-faded /
+   -mid-fade / -full). Keeping the rules here (instead of inline
+   opacity) keeps theming centralised and clears the Obsidian review
+   bot's no-static-styles-assignment rule. */
+.llm-wiki-turn-dot-faded {
+  opacity: 0;
+  pointer-events: none;
+}
+.llm-wiki-turn-dot-mid-fade {
+  opacity: 0.5;
+}
+.llm-wiki-turn-dot-full {
+  opacity: 1;
 }
 
 .llm-wiki-turn-dot:hover {
@@ -388,6 +467,7 @@
 
 .llm-wiki-turn-dot-active {
   background: var(--interactive-accent);
+  transform: scale(1.5);
 }
 
 /* Tooltip visible on hover, positioned to the left of the dot */
@@ -412,19 +492,8 @@
   border: 1px solid var(--background-modifier-border);
 }
 
-.llm-wiki-turn-dot-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .llm-wiki-turn-dot-wrapper:hover .llm-wiki-turn-dot-tooltip {
   display: block;
-}
-
-.llm-wiki-query-message-assistant .llm-wiki-query-message-body {
-  /* markdown rendered by Obsidian has its own styling */
 }
 
 /* v1.20.0: collapsible thinking-block panel inside the assistant answer.
@@ -555,27 +624,49 @@
   color: var(--text-muted);
 }
 
+/* Settings infoboxes — v1.25.11 PATCH follow-up.
+   ---
+   Obsidian does NOT ship a `.notice.warning` modifier class for
+   settings panels — that convention only exists inside callout
+   markdown (`> [!warning]`). Plugins that need an inline warning box
+   in a settings panel must roll their own CSS, as Templater, Tasks,
+   and Dataview do.
+
+   Previous attempt used `var(--background-modifier-warning)`. Obsidian
+   1.13.x repurposed that token as a saturated brand-orange swatch
+   (it is now used for `.notice-warning` inside markdown callouts, not
+   for inline panels), which left the text illegible against the new
+   fill. We now use the stable `--background-secondary` token for the
+   fill (this token has not changed semantics since Obsidian 1.0) and
+   `--color-orange` for the border + a bold text accent. This is the
+   same pattern used by the Dataview and Tasks plugins.
+
+   The blue infobox follows the same approach with `--interactive-accent`
+   for the border. Both infoboxes are rendered as plain block elements
+   so they occupy the full text width of the settings container. */
 .llm-wiki-blue-infobox {
-  background: var(--background-modifier-hover);
+  background: var(--background-secondary);
   border: 1px solid var(--interactive-accent);
+  border-left: 4px solid var(--interactive-accent);
   border-radius: 6px;
   padding: 8px 14px;
   margin-bottom: 12px;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--text-accent);
+  color: var(--text-normal);
   font-weight: 500;
 }
 
 .llm-wiki-yellow-infobox {
-  background: var(--background-modifier-warning);
+  background: var(--background-secondary);
   border: 1px solid var(--color-orange);
+  border-left: 4px solid var(--color-orange);
   border-radius: 6px;
   padding: 10px 14px;
   margin-bottom: 16px;
   font-size: 13px;
   line-height: 1.5;
-  color: var(--text-warning);
+  color: var(--text-normal);
 }
 
 .llm-wiki-section-hint {

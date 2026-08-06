@@ -374,6 +374,16 @@ export class SourceAnalyzer {
           response_format: { type: 'json_object' },
           cacheBreakpoint: staticPrefix.length,
           maxTokensPerCall: retryCap,
+          // Extraction never mentioned the thinking setting, so whatever the
+          // server had been started with decided it and the setting meant
+          // nothing here. Not the only such call site — the lint alias and tag
+          // runners and the PDF converter still do not pass it, and the welcome
+          // note and the connection probe omit it deliberately — but the one
+          // this change is about. Sent in the disable direction
+          // only, matching every other call site: `disableThinking` defaults to
+          // false, so asking for reasoning would fire on every install that
+          // never opened the setting.
+          ...(this.ctx.settings.disableThinking === true ? { enableThinking: false } : {}),
           onFinish: (meta) => { finish.reason = meta.finishReason; finish.usage = meta.usage; },
         });
 
@@ -414,6 +424,29 @@ export class SourceAnalyzer {
               messages: [{ role: 'user', content: repairPrompt }],
               response_format: { type: 'json_object' },
               maxTokensPerCall: retryCap,
+              // v1.26.0 Batch 7 follow-up (DocTpoint measurement, PR #411
+              // review 2026-08-05 05:38 UTC): eucher's finding that the
+              // repair callback did not propagate `disableThinking` is
+              // true at the surface, but the fix is NOT to mirror the
+              // parent call's setting. DocTpoint's controlled pair on
+              // LM Studio / gemma-4-12b showed that disabling reasoning
+              // on the repair call produces structurally valid JSON with
+              // wrong content (concepts duplicated into entities;
+              // `concepts` set to null; key fields dropped) — silent
+              // data corruption. Repair needs reasoning budget to
+              // understand broken-JSON semantics, not just string-level
+              // bracket fixing. The opposite direction (complementary
+              // append at 600-token cap) IS reasoning-burnt (Issue
+              // #403) and should disable. The per-call policy is:
+              //   - parent analysis call → `disableThinking` honors
+              //   - repair call → always allow reasoning (default
+              //     model behavior; no flag passed means SDK picks)
+              //   - short-cap append call → `disableThinking` honors
+              // The setting is not propagated uniformly. Tracked as a
+              // v1.26.x PATCH item: introduce a per-call-type
+              // `thinkingPolicy` enum so the user can express "no
+              // reasoning for short-budget calls, full reasoning for
+              // repair".
             });
           };
         const analysisData = await parseJsonResponse(response, repairFn, { silentOnEmpty: true }) as Partial<SourceAnalysis> | null;

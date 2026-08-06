@@ -78,7 +78,7 @@ export function normalizeOrphanPagePath(
   pagePath: string,
   wikiFolder: string
 ): string {
-  return pagePath.startsWith(wikiFolder)
+  return pagePath.startsWith(`${wikiFolder}/`)
     ? pagePath
     : `${wikiFolder}/${pagePath}`;
 }

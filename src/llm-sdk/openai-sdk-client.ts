@@ -8,7 +8,8 @@
 //
 //   - Auto-routing gpt-5.1+ / gpt-5.5 / o1-o4 → Responses API
 //   - Auto-selecting max_tokens ↔ max_completion_tokens per model
-//   - Reasoning effort: 'low' | 'medium' | 'high' | 'xhigh'
+//   - Reasoning effort: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+//     (v1.26.0 Batch 6: enableThinking=false maps to 'none' for full skip)
 //   - Unified error type (APICallError) with provider body attached
 //   - Native streaming (textStream, fullStream)
 //
@@ -38,6 +39,8 @@ import {
   isUrlError,
 } from '../core/url-fallback';
 import { reportFinish } from './finish-reason';
+import { buildSamplingArgs } from './sampling-args';
+import { ReasoningStripProber } from './reasoning-strip-probe';
 
 export interface OpenAISdkClientOptions {
   apiKey: string;
@@ -69,6 +72,16 @@ export class OpenAISdkClient implements LLMClient {
   private readonly baseURL: string | undefined;
   private readonly fetchImpl: typeof obsidianFetchBridge;
   private readonly streamFetchImpl: typeof streamWithFallback;
+
+  /**
+   * v1.26.0 Batch 6: Layer-3 fallback cache. Custom OpenAI-compatible
+   * baseURLs (e.g. user-provided self-hosted) may reject
+   * `reasoning_effort: 'none'` with HTTP 400. On 400 with a
+   * reasoning-related field name in the error message, strip the field
+   * and retry exactly once. Per-baseURL cache prevents infinite loops.
+   * Mirrors the [[ReasoningStripProber]] use in OpenAICompatSdkClient.
+   */
+  private readonly reasoningStripProber = new ReasoningStripProber();
 
   constructor(opts: OpenAISdkClientOptions) {
     this.apiKey = opts.apiKey;
@@ -124,7 +137,7 @@ export class OpenAISdkClient implements LLMClient {
 
   async createMessage(params: LLMClient['createMessage'] extends (p: infer P) => unknown ? P : never): Promise<string> {
     // Type-safe params destructure (LLMClient.createMessage signature).
-    const { model, max_tokens, system, messages, temperature, repetition_penalty, enableThinking, response_format, onFinish } = params;
+    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, seed, enableThinking, response_format, onFinish } = params;
 
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
@@ -144,11 +157,18 @@ export class OpenAISdkClient implements LLMClient {
         providerOptions: this.buildProviderOptions({
           enableThinking,
           repetitionPenalty: repetition_penalty,
-          // response_format goes via providerOptions.openai for non-OpenAI compat
+          // Built here, discarded by the SDK. `createOpenAI()(modelId)` returns
+          // the Responses model, which never emits `response_format` under any
+          // name — its JSON mode is `text.format` — and which parses
+          // providerOptions through a zod schema that strips unknown keys.
+          // See the note on `repetition_penalty`.
           responseFormat: response_format,
         }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
         // Plugin-level sampling (OpenAI's standard param).
-        ...(temperature !== undefined ? { temperature } : {}),
+        // `seed` is forwarded but the Responses model discards it; see comment in
+        // src/llm-sdk/sampling-args.ts. Top-level repetition_penalty is
+        // non-standard for OpenAI; pass via providerOptions.
+        ...buildSamplingArgs({ temperature, top_p, seed }),
         // Top-level repetition_penalty is non-standard for OpenAI; pass via providerOptions.
       });
       reportFinish(onFinish, result.finishReason, result.usage);
@@ -177,8 +197,49 @@ export class OpenAISdkClient implements LLMClient {
             repetitionPenalty: repetition_penalty,
             responseFormat: response_format,
           }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
+        reportFinish(onFinish, result.finishReason, result.usage);
+        return result.text;
+      }
+
+      // v1.26.0 Batch 6: Layer-3 400-retry for reasoning-related fields.
+      // Custom OpenAI-compatible baseURLs (Kimi / z.ai / GLM routed via
+      // OpenAI SDK path) may reject `reasoning_effort: 'none'` with
+      // HTTP 400. Same logic as the openai-compat sibling — match the
+      // error message, strip the field, retry once, cache the decision.
+      //
+      // Bug-3 (Aug 2026 code-review): markStrip moved AFTER the retry
+      // succeeds (not before). If the retry itself throws (network
+      // blip, transient 5xx), we don't want the cache permanently
+      // poisoned. Mirrors the openai-compat fix at line ~236 of
+      // openai-compat-sdk-client.ts.
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        enableThinking === false &&
+        this.baseURL !== undefined &&
+        !this.reasoningStripProber.shouldStrip(this.baseURL) &&
+        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+      ) {
+        const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+        const { generateText } = await import('ai');
+        const result = await generateText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          providerOptions: this.buildProviderOptions({
+            enableThinking: true,
+            repetitionPenalty: repetition_penalty,
+            responseFormat: response_format,
+          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        // Retry succeeded — commit the cache decision now. If the
+        // retry above throws, this line never runs and the cache is
+        // untouched; the outer catch propagates the error.
+        this.reasoningStripProber.markStrip(this.baseURL);
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
       }
@@ -189,9 +250,16 @@ export class OpenAISdkClient implements LLMClient {
   /**
    * Map AI-SDK options → OpenAI provider options.
    *
-   * OpenAI reasoning effort: maps `enableThinking=false` → `reasoningEffort: 'low'`
-   * (per OpenAI's GPT-5.5 migration guide, "low" is the safe default for
-   * compatibility — users can override via custom advanced settings).
+   * OpenAI reasoning effort: maps `enableThinking=false` → `reasoningEffort: 'none'`
+   * (v1.26.0 Batch 6). On GPT-5.1+ models the AI SDK
+   * (@ai-sdk/openai@3.0.86/dist/index.mjs:943) skips the reasoning path
+   * entirely when effort is 'none' and supportsNonReasoningParameters is
+   * true — no reasoning tokens billed, no sampling-param validation
+   * overhead. For dedup-phase / fix-runners / merge / ingest JSON-decision
+   * calls this is the right tradeoff.
+   *
+   * Chat Completions path accepts string() (line 4856) so 'none' is also
+   * harmless on the older endpoint.
    *
    * Note: we do NOT support `enableThinking=true` explicitly — leaving it
    * undefined lets OpenAI decide the model's reasoning behavior. This
@@ -208,17 +276,72 @@ export class OpenAISdkClient implements LLMClient {
     // doesn't help us for forward-compat provider option keys.
     const openaiOpts: Record<string, unknown> = {};
 
-    if (opts.enableThinking === false) {
-      openaiOpts.reasoningEffort = 'low';
+    if (
+      opts.enableThinking === false &&
+      !(this.baseURL !== undefined && this.reasoningStripProber.shouldStrip(this.baseURL))
+    ) {
+      // v1.26.0 Batch 6 + Bug-1 fix: switch from 'low' to 'none' for the
+      // official OpenAI Responses path; gate on shouldStrip(baseURL).
+      //
+      // The shouldStrip guard prevents a regression spotted during
+      // code-review (Aug 2026): once Layer-3 marks a baseURL as
+      // "strip" (because it 400'd on reasoning_effort), the next call
+      // must NOT re-inject the field — otherwise the catch-block guard
+      // `!shouldStrip` short-circuits and the reasoning-strip retry
+      // never fires. This is the same guard openai-compat has at
+      // line 322 of openai-compat-sdk-client.ts (B6-4).
+      //
+      // The `baseURL !== undefined` sub-check: shouldStrip only matters
+      // for custom baseURLs (the official OpenAI API never goes through
+      // Layer-3 — there's no per-baseURL cache for it). For the official
+      // path, always emit.
+      //
+      // History:
+      //   - v1.23.0: 'low' was the OpenAI-recommended safe default for
+      //     latency-sensitive cases per the GPT-5.x migration guide.
+      //   - Batch 6: 'none' is the more aggressive switch that fully
+      //     disables reasoning. Per the AI SDK source
+      //     (@ai-sdk/openai@3.0.86/dist/index.mjs:943):
+      //       if (openaiOptions.reasoningEffort !== 'none' ||
+      //           !modelCapabilities.supportsNonReasoningParameters) {
+      //         // …emit reasoning_effort…
+      //       }
+      //     On GPT-5.1+ models (supportsNonReasoningParameters=true),
+      //     'none' skips the reasoning path entirely — no reasoning
+      //     tokens billed, no temperature/top_p/logprobs validation
+      //     overhead. For dedup-phase this is exactly what we want.
+      //
+      //     Chat Completions path (@ai-sdk/openai@3.0.86:4856) accepts
+      //     string() (any value), so 'none' is also harmless there.
+      //
+      //   - Backend compat (no per-vendor matching): OpenAI SDK is
+      //     official OpenAI only — no Gemini-via-shim, no DeepSeek.
+      //     The 400-retry in B6-3 still applies if the user's baseURL
+      //     routes to a non-OpenAI backend that rejects 'none'.
+      openaiOpts.reasoningEffort = 'none';
     }
 
     if (opts.repetitionPenalty !== undefined) {
-      // llama.cpp extension — passed through as-is for compatible providers.
-      openaiOpts.repetitionPenalty = opts.repetitionPenalty;
+      // llama.cpp extension — passed through as-is. The wire name rather than
+      // the camelCase one; which backend reads which spelling is not settled
+      // here, and the sibling compat client carries what is known.
+      //
+      // On this path it never leaves the process. `createOpenAI()(modelId)`
+      // returns the Responses model, which parses providerOptions through a zod
+      // schema and strips whatever the schema does not name — it does not
+      // spread raw fields the way `@ai-sdk/openai-compatible` does. Read on
+      // `@ai-sdk/openai` 3.0.86 as installed; 1.23.0 shipped `^3.0.77`, same
+      // major, unverified. The sibling test asserts
+      // the argument handed to the SDK, not the body, so it cannot tell the
+      // difference — the same blind spot that let a wrong providerOptions key
+      // look correct since v1.23.0, across fifteen releases. Left as-is rather
+      // than removed: establishing which of these fields this client actually
+      // delivers wants a request-body test and its own change.
+      openaiOpts.repetition_penalty = opts.repetitionPenalty;
     }
 
     if (opts.responseFormat?.type === 'json_object') {
-      openaiOpts.response_format = { type: 'json_object' };
+      openaiOpts.response_format = opts.responseFormat;
     }
 
     return Object.keys(openaiOpts).length > 0 ? { openai: openaiOpts } : {};
@@ -246,9 +369,11 @@ export class OpenAISdkClient implements LLMClient {
     onChunk: (chunk: string) => void;
     enableThinking?: boolean;
     temperature?: number;
+    top_p?: number;
     repetition_penalty?: number;
+    seed?: number;
   }): Promise<string> {
-    const { model, max_tokens, system, messages, onChunk, temperature, repetition_penalty, enableThinking } = params;
+    const { model, max_tokens, system, messages, onChunk, temperature, top_p, repetition_penalty, seed, enableThinking } = params;
 
     // v1.23.0 P1.5: same URL fallback as createMessage, so streaming
     // (Query Wiki) is consistent with non-streaming (Ingest / Lint).
@@ -270,7 +395,7 @@ export class OpenAISdkClient implements LLMClient {
           enableThinking,
           repetitionPenalty: repetition_penalty,
         }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-        ...(temperature !== undefined ? { temperature } : {}),
+        ...buildSamplingArgs({ temperature, top_p, seed }),
       });
 
       // Accumulate text deltas (sent to onChunk) and reasoning (prepended).
@@ -333,7 +458,7 @@ export class OpenAISdkClient implements LLMClient {
             enableThinking,
             repetitionPenalty: repetition_penalty,
           }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
-          ...(temperature !== undefined ? { temperature } : {}),
+          ...buildSamplingArgs({ temperature, top_p, seed }),
         });
 
         let fullText = '';
@@ -351,6 +476,57 @@ export class OpenAISdkClient implements LLMClient {
             reasoningContent = reasoning.map((r) => (r as { text?: string }).text || '').join('');
           }
         } catch { /* no reasoning */ }
+        if (reasoningContent) {
+          fullText = wrapReasoningContent(reasoningContent, fullText);
+        }
+        return fullText;
+      }
+
+      // v1.26.0 Batch 6 CR-4: Layer-3 400-retry on the streaming path.
+      // Mirrors the createMessage retry at line 211 and the openai-compat
+      // streaming retry at line 576. Custom baseURLs that route through
+      // the OpenAI SDK (e.g. Kimi Coding Plan / z.ai via OpenAI SDK
+      // mode) and 400 on `reasoning_effort: 'none'` need this branch
+      // to recover; otherwise Query Wiki hard-fails where Ingest/Lint
+      // recovered.
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        enableThinking === false &&
+        this.baseURL !== undefined &&
+        !this.reasoningStripProber.shouldStrip(this.baseURL) &&
+        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+      ) {
+        const retryLanguageModel = this.getProvider(model, this.streamFetchImpl);
+        const { streamText } = await import('ai');
+        const result = streamText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          providerOptions: this.buildProviderOptions({
+            enableThinking: true,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof streamText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        let fullText = '';
+        for await (const chunk of result.textStream) {
+          fullText += chunk;
+          onChunk(chunk);
+        }
+        let reasoningContent = '';
+        try {
+          const reasoning = await result.reasoning;
+          if (typeof reasoning === 'string' && reasoning) {
+            reasoningContent = reasoning;
+          } else if (Array.isArray(reasoning)) {
+            reasoningContent = reasoning.map((r) => (r as { text?: string }).text || '').join('');
+          }
+        } catch { /* no reasoning */ }
+        // Bug-3: markStrip AFTER retry succeeds. If the stream throws,
+        // the cache stays untouched and the outer catch propagates.
+        this.reasoningStripProber.markStrip(this.baseURL);
         if (reasoningContent) {
           fullText = wrapReasoningContent(reasoningContent, fullText);
         }

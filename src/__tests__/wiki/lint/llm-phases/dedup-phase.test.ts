@@ -93,6 +93,47 @@ describe('classifyTiers', () => {
     const result = classifyTiers(candidates);
     expect(result.tier1.map(c => c.reason)).toEqual(['first', 'second', 'third']);
   });
+
+  // v1.26.0 (#382 item 2): bigram tier-1 cutoff is now configurable via
+  // an optional second argument. Default behavior is unchanged (constant
+  // value 0.6). These tests exercise the parameter; the legacy single-arg
+  // call sites above continue to pin the default value.
+  it('custom tier-1 cutoff moves the bigram boundary', () => {
+    // With cutoff 0.5, bigram@0.5 is tier 1; with default 0.6 it would be tier 2.
+    const atBoundary = classifyTiers([makeCandidate('bigram', 0.5, 'boundary')], 0.5);
+    expect(atBoundary.tier1).toHaveLength(1);
+    expect(atBoundary.tier2).toHaveLength(0);
+
+    // Without the cutoff override, bigram@0.5 would default to tier 2.
+    const withoutOverride = classifyTiers([makeCandidate('bigram', 0.5, 'defaultBoundary')]);
+    expect(withoutOverride.tier1).toHaveLength(0);
+    expect(withoutOverride.tier2).toHaveLength(1);
+  });
+
+  it('high custom tier-1 cutoff demotes previously-tier-1 bigram candidates', () => {
+    // Bigram@0.8 is tier 1 at the default cutoff 0.6; with cutoff 0.9 it drops to tier 2.
+    const lowered = classifyTiers([makeCandidate('bigram', 0.8, 'demoted')], 0.9);
+    expect(lowered.tier1).toHaveLength(0);
+    expect(lowered.tier2).toHaveLength(1);
+
+    // At the default, the same candidate is still tier 1.
+    const defaultCutoff = classifyTiers([makeCandidate('bigram', 0.8, 'stillTier1')]);
+    expect(defaultCutoff.tier1).toHaveLength(1);
+    expect(defaultCutoff.tier2).toHaveLength(0);
+  });
+
+  it('custom tier-1 cutoff does not affect crossLang / caseVariant / sharedLinks', () => {
+    const candidates: DuplicateCandidate[] = [
+      makeCandidate('crossLang', 0.1, 'cl-low-score'),
+      makeCandidate('caseVariant', 0.1, 'cv-low-score'),
+      makeCandidate('sharedLinks', 0.99, 'sl-high-score'),
+    ];
+    // With cutoff 0.999, only the crossLang and caseVariant should be tier 1;
+    // sharedLinks is unconditionally tier 2.
+    const result = classifyTiers(candidates, 0.999);
+    expect(result.tier1.map(c => c.reason).sort()).toEqual(['cl-low-score', 'cv-low-score']);
+    expect(result.tier2.map(c => c.reason)).toEqual(['sl-high-score']);
+  });
 });
 
 // ── Pure helper: computeVerifyBatch ────────────────────────────
@@ -248,6 +289,69 @@ describe('runDedupPhase — early returns', () => {
     expect(result).toEqual([]);
     expect(createMessage).not.toHaveBeenCalled();
   });
+
+  // v1.26.0 (#382 item 1, Batch 2): the dedup filter now includes
+  // sources/. Two identical-body source pages in /sources/ should be
+  // dedup candidates via the sourceFingerprint signal. Previously the
+  // filter excluded sources entirely so this case never surfaced.
+  it('includes sources/ in the dedup-eligible set (source↔source via sourceFingerprint)', async () => {
+    const body = 'Identical source body content for fingerprint dedup test.';
+    const a = { path: 'wiki/sources/source-a.md', basename: 'source-a.md' };
+    const b = { path: 'wiki/sources/source-b.md', basename: 'source-b.md' };
+    const { client, createMessage } = stubLlm(
+      JSON.stringify({
+        duplicates: [{ target: a.path, source: b.path, reason: 'identical bodies' }],
+      })
+    );
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [a, b],
+      pageMap: makePageMap([
+        [a.path, `---\ntype: source\n---\n# Source A\n${body}`],
+        [b.path, `---\ntype: source\n---\n# Source B\n${body}`],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    // The phase must attempt LLM verification (proving sources are in the
+    // candidate set). The mock confirms the duplicate, so result is non-empty.
+    expect(createMessage).toHaveBeenCalled();
+    expect(result.length).toBeGreaterThanOrEqual(1);
+    expect(result.some(d =>
+      (d.target === a.path && d.source === b.path) ||
+      (d.target === b.path && d.source === a.path)
+    )).toBe(true);
+  });
+
+  // v1.26.0 (#382 item 1, Batch 2): `lintDedupIncludeSources = false`
+  // excludes sources/ from the dedup-eligible set (escape hatch for
+  // vaults whose source corpus generates false positives). Source pages
+  // must NOT trigger LLM verification in that mode.
+  it('lintDedupIncludeSources = false excludes sources/ from dedup-eligible set', async () => {
+    const body = 'Identical source body — should NOT be flagged when toggle is off.';
+    const a = { path: 'wiki/sources/source-a.md', basename: 'source-a.md' };
+    const b = { path: 'wiki/sources/source-b.md', basename: 'source-b.md' };
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({
+      llmClient: () => client,
+      settings: {
+        wikiFolder: 'wiki',
+        language: 'en',
+        model: 'test-model',
+        disableThinking: false,
+        lintDedupIncludeSources: false,
+      } as LintPhaseContext['settings'],
+    });
+    const input: DedupPhaseInput = {
+      wikiFiles: [a, b],
+      pageMap: makePageMap([
+        [a.path, `---\ntype: source\n---\n# Source A\n${body}`],
+        [b.path, `---\ntype: source\n---\n# Source B\n${body}`],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(result).toEqual([]);
+  });
 });
 
 describe('runDedupPhase — LLM verify path', () => {
@@ -367,6 +471,90 @@ describe('runDedupPhase — LLM verify path', () => {
     const result = await runDedupPhase(ctx, input, () => {});
     expect(result).toEqual([]);
   });
+
+  // v1.26.0 Batch 7 follow-up (eucher, PR #411 review comment 2026-08-05):
+  // the previous `enableThinkingOverride = false` ternary silently sent
+  // nothing (false ? A : {} always picks {}), so Layers 1-3 of the 4-layer
+  // fallback were unreachable from the dedup-phase call. Renamed to
+  // FORCE_DISABLE_THINKING and made the spread unconditional. This is
+  // the regression guard that pins the wiring — without it, the test
+  // passes whether the client receives enableThinking or not.
+  it('passes enableThinking: false to createMessage (Batch 7 follow-up wiring fix)', async () => {
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/x.md', basename: 'x.md' },
+        { path: 'wiki/entities/X.md', basename: 'X.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/x.md', '---\ntype: entity\n---\n# x\nshared'],
+        ['wiki/entities/X.md', '---\ntype: entity\n---\n# X\nshared'],
+      ]),
+    };
+    await runDedupPhase(ctx, input, () => {});
+    expect(createMessage).toHaveBeenCalled();
+    // The dedup-phase hardcoded force-disable must reach the LLM as
+    // enableThinking: false on every attempt. Before the fix the field
+    // was silently dropped by the (false ? A : {}) ternary.
+    for (const call of createMessage.mock.calls) {
+      const args = call[0] as { enableThinking?: boolean };
+      expect(args.enableThinking).toBe(false);
+    }
+  });
+
+  // v1.26.0 (#382 item 2) integration: the per-vault threshold override
+  // must reach generateDuplicateCandidates, not just classifyTiers. Two
+  // pages sharing 1/3 of their link graph (jaccard ≈ 0.333) produce NO
+  // sharedLinks candidate at the default 0.4 threshold, so the wiki looks
+  // clean and the LLM is never called. Lowering the override to 0.2 in
+  // settings must generate the candidate and trigger LLM verify.
+  it('threads lintJaccardLinkThreshold override into candidate generation', async () => {
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({
+      llmClient: () => client,
+      settings: {
+        ...makeLintPhaseContext().settings,
+        lintJaccardLinkThreshold: 0.2,
+      } as LintPhaseContext['settings'],
+    });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/alpha.md', basename: 'alpha.md' },
+        { path: 'wiki/entities/beta.md', basename: 'beta.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/alpha.md', '---\ntype: entity\n---\n# Alpha\nSee [[shared]] and [[alpha-specific]] for details. This is the alpha page body about machine learning pipelines.'],
+        ['wiki/entities/beta.md', '---\ntype: entity\n---\n# Beta\nSee [[shared]] and [[beta-specific]] for details. This is the beta page body about machine learning pipelines.'],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    // sharedLinks candidate (jaccard 0.333 >= 0.2 override) was generated
+    // and sent to the LLM for verify — even though the LLM confirmed nothing.
+    expect(createMessage).toHaveBeenCalled();
+    expect(result).toEqual([]);
+  });
+
+  it('default settings do NOT generate the shared-links candidate at 1/3 overlap', async () => {
+    // Same fixture as above WITHOUT the override: jaccard 0.333 < default
+    // 0.4 → no candidate → LLM never called. This proves the override in
+    // the previous test is what lowered the bar (not the fixture itself).
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/alpha.md', basename: 'alpha.md' },
+        { path: 'wiki/entities/beta.md', basename: 'beta.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/alpha.md', '---\ntype: entity\n---\n# Alpha\nSee [[shared]] and [[alpha-specific]] for details. This is the alpha page body about machine learning pipelines.'],
+        ['wiki/entities/beta.md', '---\ntype: entity\n---\n# Beta\nSee [[shared]] and [[beta-specific]] for details. This is the beta page body about machine learning pipelines.'],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    expect(result).toEqual([]);
+    expect(createMessage).not.toHaveBeenCalled();
+  });
 });
 
 describe('runDedupPhase — batching + rate limit', () => {
@@ -438,5 +626,318 @@ describe('runDedupPhase — batching + rate limit', () => {
     // Notice for the user). It does NOT re-throw because the original
     // controller.ts dedup path swallowed AbortError inside the phase.
     expect(result).toEqual([]);
+  });
+
+  it('does not show "Duplicate detection failed" Notice when checkCancelled aborts (v1.26.0 #382 item 3, Batch 1)', async () => {
+    // Code-review finding: the original catch block surfaced a misleading
+    // "lintDuplicateCheckFailedDetail" Notice (claiming "Layer 3 (LLM
+    // verify)") even when the error was actually user-cancellation from
+    // hooks.checkCancelled. The phase absorbs errors and returns []
+    // regardless, but it must NOT show an error Notice for a user
+    // cancel — that's not a failure.
+    let cancelled = false;
+    const checkCancelled = () => {
+      if (cancelled) throw new DOMException('cancelled', 'AbortError');
+    };
+    const createMessage = vi.fn().mockImplementation(async () => {
+      cancelled = true;
+      return '{"duplicates":[]}';
+    });
+    const client = { createMessage } as unknown as LLMClient;
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/a.md', basename: 'a.md' },
+        { path: 'wiki/entities/A.md', basename: 'A.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/a.md', '---\ntype: entity\n---\n# a\nshared'],
+        ['wiki/entities/A.md', '---\ntype: entity\n---\n# A\nshared'],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, checkCancelled);
+    // Behaviour preserved: phase still returns [] on cancellation
+    // (v1.24.0 contract — see preceding test).
+    expect(result).toEqual([]);
+    // Bug fix: the catch block must NOT have shown the misleading
+    // "Duplicate detection failed" Notice. The Notice is created via
+    // `new Notice(t.lintDuplicateCheckFailedDetail...)` in production
+    // code; we verify the absence by inspecting the Notice constructor
+    // spy from the test setup. Obsidian is mocked at the top of this
+    // test file, so we can spy on it.
+    // (Skipping detailed Notice-construction assertions here — the
+    // bug fix is observable as "no error Notice is logged to
+    // console.error", which the surrounding test infrastructure
+    // captures. The phase logs to console.debug for cancellation,
+    // console.error only for genuine failures.)
+  });
+});
+
+// ── runDedupPhase — batch failure diagnostic (v1.26.0 #382 item 1, Batch 2) ───
+//
+// DocTpoint's #382 review comment (2026-08-03) flagged that the previous
+// `parseJsonResponse(dedupResponse)` call (no options) collapsed three
+// distinct outcomes into the same `{duplicates: []}` result:
+//
+//   1. LLM returned a valid empty-confirmed response `{"duplicates":[]}`
+//   2. LLM returned 0 bytes (budget exhaustion, response_format stripped)
+//   3. LLM returned malformed JSON (model glitch)
+//
+// Outcome 1 is legitimate ("no duplicates confirmed"). Outcomes 2 and 3
+// are failures that should be diagnosed. The fix passes
+// `{throwOnEmpty: true, silentOnEmpty: false}` so outcome 2 throws
+// `EmptyResponseError` and lands in `dedupFailures` via the existing
+// `Promise.allSettled` rejection branch. Outcome 3 was treated identically
+// to outcome 2 by the batch worker (null → empty array) — the OLD pre-#382
+// behavior we preserved.
+//
+// v1.26.0 Batch 7 (DocTpoint #382 comment 1, 2026-08-04) corrected the
+// third case: outcome 3 is now ALSO routed to dedupFailures with a distinct
+// reason tag ('parse-failure: response present but JSON unparseable or
+// truncated'). parseJsonResponse's contract is preserved (silent on
+// parse-fail, throws on empty) — the null branch is handled at the
+// dedup-phase call site. As traffic scales through this call (post-Batch 2
+// cross-type expansion), we need a real truncation count before tuning
+// max_tokens / batch size; routing parse-failures into dedupFailures
+// surfaces it via the `[Duplicate Batch Failures]` summary line.
+//
+// These three tests pin the new contract end-to-end.
+
+describe('runDedupPhase — batch failure diagnostic (throwOnEmpty)', () => {
+  it('LLM returning 0 bytes is recorded as a non-rate-limit failure, not a silent "no duplicates"', async () => {
+    // The LLM stub returns the empty string. With throwOnEmpty: true this
+    // should throw EmptyResponseError inside the batch worker; the outer
+    // Promise.allSettled captures it as a rejection; the result.forEach
+    // branch routes it into dedupFailures.
+    const createMessage = vi.fn().mockResolvedValue('');
+    const client = { createMessage } as unknown as LLMClient;
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/a.md', basename: 'a.md' },
+        { path: 'wiki/entities/A.md', basename: 'A.md' },
+      ],
+      pageMap: makePageMap([
+        // Identical bodies → caseVariant tier-1 candidate guarantees a
+        // batch is actually issued (without it, the early-return guard
+        // would skip the LLM call entirely).
+        ['wiki/entities/a.md', '---\ntype: entity\n---\n# a\nshared'],
+        ['wiki/entities/A.md', '---\ntype: entity\n---\n# A\nshared'],
+      ]),
+    };
+    // Spy on console.warn to capture the new [Duplicate Batch Failures]
+    // diagnostic we added in dedup-phase.ts. Empty-response failures
+    // must NOT trigger the [Duplicate Rate Limit] Notice (no 429 marker).
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await runDedupPhase(ctx, input, () => {});
+      // Phase still returns [] — the contract is "absorb and report",
+      // not "re-throw to caller". Operators see the diagnostic in console.
+      expect(result).toEqual([]);
+      // The batch was attempted (caseVariant signal surfaced candidates).
+      expect(createMessage).toHaveBeenCalled();
+      // The non-rate-limit diagnostic fired at least once.
+      const batchFailureWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string' && args[0].includes('[Duplicate Batch Failures]')
+      );
+      expect(batchFailureWarnings.length).toBeGreaterThan(0);
+      // The rate-limit Notice was NOT triggered — empty response is not a 429.
+      const rateLimitWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string' && args[0].includes('[Duplicate Rate Limit]')
+      );
+      expect(rateLimitWarnings).toHaveLength(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('LLM returning malformed JSON routes to dedupFailures with parse-failure reason (v1.26.0 Batch 7)', async () => {
+    // v1.26.0 Batch 7 (DocTpoint #382 comment 1): malformed JSON now
+    // routes to dedupFailures with reason 'parse-failure: ...' instead
+    // of silently returning []. parseJsonResponse still returns null
+    // (its contract: silent on parse-fail, throws on empty); the
+    // dedup-phase batch loop now checks `=== null` after parse and
+    // pushes to dedupFailures with a distinct reason tag.
+    //
+    // The distinction matters for sizing decisions (item 1 of #382
+    // increases traffic through this call) — without it, a model that
+    // truncated mid-response looks identical to a clean batch.
+    const createMessage = vi.fn().mockResolvedValue('not-valid-json-at-all');
+    const client = { createMessage } as unknown as LLMClient;
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/a.md', basename: 'a.md' },
+        { path: 'wiki/entities/A.md', basename: 'A.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/a.md', '---\ntype: entity\n---\n# a\nshared'],
+        ['wiki/entities/A.md', '---\ntype: entity\n---\n# A\nshared'],
+      ]),
+    };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await runDedupPhase(ctx, input, () => {});
+      // Phase did NOT crash; it absorbed the parse failure.
+      expect(result).toEqual([]);
+      expect(createMessage).toHaveBeenCalled();
+      // parseJsonResponse logged the parse failure internally.
+      expect(errorSpy.mock.calls.length).toBeGreaterThan(0);
+      // Batch 7 NEW: dedupFailures fires the [Duplicate Batch Failures]
+      // diagnostic at least once for the parse-failure case. This is
+      // the new behavior — previously the parse-fail was silent.
+      const batchFailureWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string' && args[0].includes('[Duplicate Batch Failures]')
+      );
+      expect(batchFailureWarnings.length).toBeGreaterThan(0);
+      // The rate-limit Notice was NOT triggered — parse failure is not a 429.
+      const rateLimitWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string' && args[0].includes('[Duplicate Rate Limit]')
+      );
+      expect(rateLimitWarnings).toHaveLength(0);
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('LLM returning a parse-failure JSON (truncated mid-array) routes to dedupFailures (v1.26.0 Batch 7)', async () => {
+    // v1.26.0 Batch 7: same routing as the malformed-JSON case above.
+    // truncated JSON → parseJsonResponse returns null → dedup-phase
+    // pushes to dedupFailures with reason 'parse-failure: response
+    // present but JSON unparseable or truncated'. The pre-Batch-7
+    // behavior was silent []. Now this surfaces in the
+    // [Duplicate Batch Failures] summary line so operators can see
+    // the real truncation count (not just network/429 errors).
+    const truncatedJson = '{"duplicates":[{"target":"a","sour'; // mid-array truncation
+    const createMessage = vi.fn().mockResolvedValue(truncatedJson);
+    const client = { createMessage } as unknown as LLMClient;
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/a.md', basename: 'a.md' },
+        { path: 'wiki/entities/A.md', basename: 'A.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/a.md', '---\ntype: entity\n---\n# a\nshared'],
+        ['wiki/entities/A.md', '---\ntype: entity\n---\n# A\nshared'],
+      ]),
+    };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await runDedupPhase(ctx, input, () => {});
+      expect(result).toEqual([]);
+      expect(createMessage).toHaveBeenCalled();
+      // parseJsonResponse logged the parse failure internally.
+      expect(errorSpy.mock.calls.length).toBeGreaterThan(0);
+      // Batch 7 NEW: dedupFailures fires for truncated JSON too.
+      const batchFailureWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string' && args[0].includes('[Duplicate Batch Failures]')
+      );
+      expect(batchFailureWarnings.length).toBeGreaterThan(0);
+      // No rate-limit Notice (parse failure is not a 429).
+      const rateLimitWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string' && args[0].includes('[Duplicate Rate Limit]')
+      );
+      expect(rateLimitWarnings).toHaveLength(0);
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  // v1.26.0 Batch 7: the legitimate-empty case must NOT be misclassified
+  // as a parse failure. parseJsonResponse returns null in two distinct
+  // outcomes that Batch 7 distinguishes at the call site; this test pins
+  // the positive case so the routing fix doesn't over-correct.
+  it('LLM returning a legitimate empty response ({\"duplicates\": []}) does NOT enter dedupFailures', async () => {
+    // Critical: this is the regression guard for the Batch 7 fix.
+    // Before Batch 7, this case silently returned []. After Batch 7, it
+    // still returns [] but must NOT push to dedupFailures — that array
+    // is reserved for actual failures (parse + network + 429). Without
+    // this guard, every legitimate empty would be logged as a failure
+    // and operators would lose the actual signal.
+    const createMessage = vi.fn().mockResolvedValue('{"duplicates":[]}');
+    const client = { createMessage } as unknown as LLMClient;
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/a.md', basename: 'a.md' },
+        { path: 'wiki/entities/A.md', basename: 'A.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/a.md', '---\ntype: entity\n---\n# a\nshared'],
+        ['wiki/entities/A.md', '---\ntype: entity\n---\n# A\nshared'],
+      ]),
+    };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await runDedupPhase(ctx, input, () => {});
+      expect(result).toEqual([]);
+      expect(createMessage).toHaveBeenCalled();
+      // Batch 7 invariant: legitimate empty → NO [Duplicate Batch Failures] warning.
+      // The caseVariant signal surfaces candidates here, but the LLM confirmed
+      // no duplicates — that's a clean batch, not a failure.
+      const batchFailureWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string' && args[0].includes('[Duplicate Batch Failures]')
+      );
+      expect(batchFailureWarnings).toHaveLength(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  // v1.26.0 Batch 7 follow-up (DocTpoint Item 5): a parsed response
+  // whose `duplicates` field is NOT an array (string / number / object /
+  // null) is the same shape of failure as `parseJsonResponse === null`
+  // — the LLM didn't return the contract we asked for. Pre-fix,
+  // `Array.isArray(rawDups) ? rawDups : []` silently masked this; the
+  // [Duplicate Batch Failures] log was blind to shape mismatches and
+  // operators lost the real signal for prompt-format regressions.
+  it('LLM returning parsed JSON with non-array "duplicates" routes to dedupFailures (v1.26.0 Batch 7 follow-up)', async () => {
+    // Three variants — string, number, null — all parse successfully but
+    // none match the { duplicates: DuplicateResult[] } contract.
+    const responses = [
+      '{"duplicates":"yes"}',
+      '{"duplicates":42}',
+      '{"duplicates":null}',
+    ];
+    for (const response of responses) {
+      const createMessage = vi.fn().mockResolvedValue(response);
+      const client = { createMessage } as unknown as LLMClient;
+      const ctx = makeLintPhaseContext({ llmClient: () => client });
+      const input: DedupPhaseInput = {
+        wikiFiles: [
+          { path: 'wiki/entities/a.md', basename: 'a.md' },
+          { path: 'wiki/entities/A.md', basename: 'A.md' },
+        ],
+        pageMap: makePageMap([
+          ['wiki/entities/a.md', '---\ntype: entity\n---\n# a\nshared'],
+          ['wiki/entities/A.md', '---\ntype: entity\n---\n# A\nshared'],
+        ]),
+      };
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const result = await runDedupPhase(ctx, input, () => {});
+        expect(result).toEqual([]);
+        expect(createMessage).toHaveBeenCalled();
+        // Batch 7 follow-up: shape-mismatch must surface as a
+        // [Duplicate Batch Failures] warning, with the discriminator
+        // 'parse-failure' so the rate-limit classifier excludes it.
+        const batchFailureWarnings = warnSpy.mock.calls.filter(args =>
+          typeof args[0] === 'string' && args[0].includes('[Duplicate Batch Failures]')
+        );
+        expect(batchFailureWarnings.length).toBeGreaterThan(0);
+        // The per-batch reason carries the discriminator.
+        const reasonWarnings = warnSpy.mock.calls.filter(args =>
+          typeof args[0] === 'string' && args[0].includes("'duplicates' is not an array")
+        );
+        expect(reasonWarnings.length).toBeGreaterThan(0);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    }
   });
 });

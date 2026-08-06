@@ -34,7 +34,7 @@ import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { canonicalizeSectionHeaders, stripUnknownSections } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
-import { parseFrontmatter, enforceFrontmatterConstraints, mergeFrontmatter } from '../../core/frontmatter';
+import { parseFrontmatter, enforceFrontmatterConstraints } from '../../core/frontmatter';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
@@ -236,6 +236,9 @@ export async function createNewPage(
 
     const cleanedContent = cleanMarkdownResponse(pageContent);
     // Issue #85: pass settings so custom tag vocabulary is honored.
+    // Issue #388: no `preserveCreated` — this page is being created, so there is
+    // no prior file and no real creation date to preserve. Anything `created:`
+    // in the model's reply says about the past is invented by construction.
     const enforcedContent = enforceFrontmatterConstraints(cleanedContent, pageType, ctx.settings);
     const labels = getSectionLabels(ctx.settings);
     // Re-assert the known section labels before the link corrector runs, so a
@@ -270,21 +273,113 @@ export async function createNewPage(
         conversationLabel: `Conversation: ${sourceFile.basename}`,
       },
     );
-    // Issue #155 / provenance (LOCAL PATCH): stamp the canonical source into
-    // frontmatter programmatically, mirroring mergePage/updateRelatedPage. The
-    // generate prompt only passes the source as a {{source_file}} hint and trusts
-    // the (weak, local) model to write `sources:` — it usually doesn't, leaving a
-    // source-of-truth wiki without provenance. Applied AFTER mentions injection
-    // (orthogonal: this touches frontmatter, injection touches the body). The
-    // Mentions citation still points to the origin note (#244 design intent);
-    // this only fills the `sources:` frontmatter field. mergeFrontmatter dedups
-    // against any source the model did emit, so it is idempotent.
-    const stampSource = sourceSlug ? `sources/${sourceSlug}` : sourceFile.path;
-    const { frontmatter, body } = mergeFrontmatter(mentionsInjectedContent, stampSource);
-    const stampedContent = frontmatter ? `${frontmatter}\n\n${body}` : mentionsInjectedContent;
-    await ctx.createOrUpdateFile(path, stampedContent, 'createNewPage');
+    // #365 v1.25.11 PATCH: stamp `sources:` provenance on every freshly
+    // generated page. `enforceFrontmatterConstraints` rewrites the
+    // frontmatter block from a fixed allowlist (`type/created/updated/tags/
+    // aliases/reviewed`), so the `sources:` that `merge-page.ts:93` writes
+    // is stripped here. Splice `mergeFrontmatter` AFTER every transform step
+    // (last thing before the write). We use the SAME helper that
+    // `merge-page.ts:95` uses, so the byte-shape of the `sources:` entry is
+    // identical regardless of which code path produced the page — bit-
+    // identical `[[sources/<slug>]]` wikilink form (line 490 of frontmatter.ts
+    // rewraps every entry). This is the Plan-A path: smallest blast radius
+    // because the only thing the surrounding code learns is that
+    // `createNewPage` now goes through `mergeFrontmatter` before the write;
+    // we do not touch `enforceFrontmatterConstraints` (which 8+ callers
+    // depend on, including the fix-runners that re-touch pages and would
+    // otherwise need to relearn this rule).
+    //
+    // Guarded by `sourceSlug` truthiness so the two non-ingest call sites
+    // (conversation-ingest.ts:251 / :270 do not pass sourceSlug) leave the
+    // content unchanged — they never had a source-stamp in the LLM prompt,
+    // and synthesising `sources/undefined` would be a hard regression on the
+    // conversation-source path.
+    //
+    // If `enforceFrontmatterConstraints` returned content without a
+    // parseable frontmatter block (LLM drift on the very rare path),
+    // `mergeFrontmatter` reports `wasMerged:false` — we leave the content
+    // unchanged rather than synthesise a thin frontmatter block. The
+    // sources stamp is a best-effort add-on; it is strictly less risky than
+    // the primary write.
+    // Inline source-stamp to avoid `mergeFrontmatter`'s 4× regex pass
+    // (parseFrontmatter + extractBody + extractPassthroughLines +
+    // serializeFrontmatter rebuild). `enforceFrontmatterConstraints`
+    // already produced a clean YAML block; we only need to splice
+    // `sources: [[[sources/<slug>]]]` into the existing block without
+    // re-serializing type/created/updated/tags/aliases. The original
+    // `mergeFrontmatter` helper still owns the merge-page.ts path
+    // (which has different requirements: emit a fresh `updated:`
+    // stamp and full re-serialization).
+    const sourcedContent = sourceSlug
+      ? appendSourceSlugToFrontmatter(mentionsInjectedContent, sourceSlug)
+      : mentionsInjectedContent;
+    // LOCAL PATCH 11b (write audit): name the writing code path at the single
+    // write gate. Upstream's `origin` parameter is optional, so this is the
+    // only line of the local stack that survives here — the provenance stamp
+    // itself is upstream's #365 implementation as of v1.26.0.
+    await ctx.createOrUpdateFile(path, sourcedContent, 'createNewPage');
     return path;
   } catch (error) {
     throw contextualizeError(error, info.name, pageType);
   }
+}
+
+/**
+ * v1.25.11 PATCH #365 source-stamp helper (Plan A): splice a single
+ * `[[sources/<slug>]]` entry into the document's existing frontmatter
+ * block without re-serializing the whole YAML. Designed to be called
+ * AFTER `enforceFrontmatterConstraints` has produced a clean block
+ * (so the byte-shape of type/created/updated/tags/aliases is already
+ * canonical). Falls back to returning the input unchanged when the
+ * content has no parseable frontmatter — same semantics as
+ * `mergeFrontmatter.wasMerged=false`.
+ *
+ * The dedup contract matches `mergeFrontmatter` line 484-490: a Set
+ * of normalized wikilink forms, re-wrapped as `[[name]]`. The slug
+ * input here is the bare source slug (no `sources/` prefix and no
+ * `[[]]` wrapper); we add both to keep the wire format identical to
+ * what `merge-page.ts:95` would have produced.
+ */
+function appendSourceSlugToFrontmatter(content: string, sourceSlug: string): string {
+  if (!content.startsWith('---')) return content;
+  const fmEnd = content.indexOf('\n---\n', 3);
+  if (fmEnd === -1) return content;
+  const fmText = content.substring(3, fmEnd);
+  const body = content.substring(fmEnd + 5);
+  const sourceEntry = `[[sources/${sourceSlug}]]`;
+
+  const lines = fmText.split('\n');
+  const sourcesIdx = lines.findIndex(l => /^sources:\s*$/.test(l));
+  if (sourcesIdx === -1) {
+    // No existing `sources:` key — insert one. Anchor on `tags:` so the
+    // block order (type / created / updated / sources / tags / aliases /
+    // reviewed) matches the canonical layout produced by
+    // `enforceFrontmatterConstraints` + `serializeFrontmatter`.
+    const tagsIdx = lines.findIndex(l => /^tags:\s*$/.test(l));
+    const insertAt = tagsIdx === -1 ? lines.length : tagsIdx;
+    lines.splice(insertAt, 0, `sources:\n  - ${sourceEntry}`);
+  } else {
+    // Existing `sources:` block — append the new entry if not already
+    // present. Scan only indented continuation lines (same semantics
+    // as `mergeFrontmatter`'s Set dedup, lines 484-490).
+    const existing = new Set<string>();
+    for (let i = sourcesIdx + 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line.startsWith('- ')) break;
+      const entry = line.substring(2).trim();
+      if (entry.startsWith('[[') && entry.endsWith(']]')) {
+        existing.add(entry.slice(2, -2).trim());
+      }
+    }
+    if (existing.has(sourceEntry.slice(2, -2))) return content;
+    // Find the first non-`sources:` continuation line — that's where we
+    // append. If no continuation lines exist yet, insert immediately
+    // after the `sources:` key.
+    let insertAt = sourcesIdx + 1;
+    while (insertAt < lines.length && lines[insertAt].trim().startsWith('- ')) {
+      insertAt++;
+    }
+    lines.splice(insertAt, 0, `  - ${sourceEntry}`);
+  }
+  return `---\n${lines.join('\n')}\n---\n${body}`;
 }

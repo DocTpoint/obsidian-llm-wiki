@@ -26,6 +26,7 @@ export const EN_TEXTS = {
     languageEs: 'Español',
     languagePt: 'Português',
     languageIt: 'Italiano',
+    languageRu: 'Русский',
 
     // Status
     statusTitle: 'LLM Client Status',
@@ -508,10 +509,27 @@ export const EN_TEXTS = {
     ingestionStatusBar: 'Ingesting... click to cancel',
     lintStatusBar: 'Linting... click to cancel',
     ingestStatusAnalyzing: 'Ingesting… (click to cancel)',
-    lintStatusReading: 'Linting… (click to cancel)',
-    lintStatusDuplicates: 'Linting… (click to cancel)',
-    lintStatusScanningLinks: 'Linting… (click to cancel)',
     lintStatusAnalyzing: 'Linting… (click to cancel)',
+    // v1.25.11 PATCH #169 — fine-grained stage hints for the status bar.
+    // These labels are ADD-only emission sandwiched between the page name
+    // and the always-visible base label (e.g. "My Note · Generating summary ·
+    // Ingesting… (click to cancel)"). They never replace the base label, so
+    // the cancel affordance is preserved through every long-running stage.
+    ingestStageAnalyze: 'Analyzing source',
+    ingestStageSummary: 'Generating summary',
+    ingestStageEntity: 'Creating entity',
+    ingestStageConcept: 'Creating concept',
+    ingestStageRetry: 'Retrying failed page',
+    ingestStageSave: 'Saving pages',
+    ingestStageIndex: 'Generating index',
+    pdfStageReading: 'Reading PDF',
+    pdfStageConverting: 'Converting PDF',
+    pdfStageSidecar: 'Writing sidecar',
+    lintStagePrep: 'Reading pages',
+    lintStageProgrammatic: 'Scanning links',
+    lintStageAnalyzing: 'Running LLM analysis',
+    lintStageDedup: 'Detecting duplicates',
+    lintStageContradiction: 'Detecting contradictions',
     ingestionCancelling: 'Cancelling — will stop after current batch completes',
     ingestionCancelled: 'Ingestion cancelled',
     crossTypeCollisionNotice: '{count} items merged as cross-type aliases (entity ↔ concept duplicates prevented)',
@@ -520,11 +538,21 @@ export const EN_TEXTS = {
     lintReportTitle: 'Wiki lint report',
     lintReportSummary: 'Wiki status overview: {total} pages total, {aliasesMissing} pages missing aliases, {duplicates} duplicate pages, {deadLinks} dead links ({deadLinkFromDup} involve duplicates), {orphans} orphan pages ({orphanFromDup} are duplicates), {emptyPages} empty pages, {ungroundedQuotes} ungrounded quotes, {tagViolations} out-of-vocabulary tags. Lint elapsed: {elapsedSeconds}s',
 
-    // Advanced LLM Settings (v1.20.0: default = no provider-specific overrides)
-    advancedSettingsModeName: 'Advanced parameter settings',
-    advancedSettingsModeDesc: 'Default mode follows whatever the model provider recommends. Switch to Custom only when you have a specific reason to override (for example: a particular model needs a fixed temperature, or you want to suppress the model\'s reasoning output).',
+    // Advanced LLM Settings (v1.20.0: default = no provider-specific overrides).
+    // v1.26.0 (#382 item 2): renamed advancedSettingsModeName →
+    // advancedLlmModeName so the label scopes to LLM sampling params and is
+    // not confused with the generic bottom "Advanced settings" panel.
+    advancedLlmModeName: 'Advanced LLM parameters',
+    advancedLlmModeDesc: 'Default mode follows whatever the model provider recommends. Switch to Custom only when you have a specific reason to override (for example: a particular model needs a fixed temperature, or you want to suppress the model\'s reasoning output).',
     advancedSettingsDefault: 'Default (follow provider)',
     advancedSettingsCustom: 'Custom (override provider)',
+    // v1.26.0 (#382 item 2): bottom "Advanced settings" panel — generic
+    // home for all advanced-user settings that are NOT LLM sampling params
+    // (those live under advancedLlmModeName above). Off by default; the
+    // toggle reveals lint thresholds, the Welcome note, and future knobs.
+    advancedSettingsSection: 'Advanced settings',
+    showAdvancedSettingsName: 'Show advanced settings',
+    showAdvancedSettingsDesc: 'Turn on to reveal advanced settings below. Turning off hides them and resets them to defaults.',
     disableThinkingName: 'Disable thinking',
     disableThinkingDesc: 'Turn off the model\'s chain-of-thought / reasoning output in its response. Default off — the model decides whether to show reasoning, and that usually gives the best answer. Turn this on only if your provider dumps raw reasoning text into the response and you want a clean answer.',
     // Issue #137: compatibility hints for advanced settings (kept short; no
@@ -536,6 +564,16 @@ export const EN_TEXTS = {
     repetitionPenaltyName: 'Repetition penalty',
     repetitionPenaltyDesc: 'Discourages the model from repeating the same words or phrases. Higher numbers mean less repetition. Only certain local-model providers (Ollama, LM Studio, llama.cpp) accept this; cloud providers will silently ignore it. Most users leave this blank.',
     temperaturePlaceholder: 'leave blank = provider default',
+    // v1.26.0 (#382 item 2): Lint dedup threshold overrides (bottom
+    // "Advanced settings" panel, showAdvancedSettings toggle on). The
+    // "leave blank" placeholder above is reused so the input row reads the
+    // same as the temperature rows in the Advanced section.
+    lintDedupJaccardLinkThresholdName: 'Duplicate link similarity',
+    lintDedupJaccardLinkThresholdDesc: 'Range 0–1 (default 0.4). Two pages are flagged as duplicates when the wiki-links they both point to overlap by at least this fraction. Lower → catches more near-duplicates (including pages that just share common hubs); higher → only flags pages that point to nearly the same set of pages. Raise if you see false positives between pages that happen to link to the same hub. Leave blank for the default.',
+    lintDedupJaccardBodyGateName: 'Minimum body similarity',
+    lintDedupJaccardBodyGateDesc: 'Range 0–1 (default 0.2). Even if two pages share wiki-links, they\'re only flagged as duplicates when their body text is at least this similar (as a fraction). Lower → more candidates pass through to LLM verification; higher → only nearly-identical bodies get flagged. Raise if LLM is being asked about pages that obviously aren\'t duplicates. Leave blank for the default.',
+    lintDedupBigramThresholdName: 'Title similarity',
+    lintDedupBigramThresholdDesc: 'Range 0–1 (default 0.4). Two pages are flagged as duplicates when the characters in their titles (or aliases) overlap by at least this fraction. Lower → catches spelling variants, typos, and translations of the same concept; higher → only flags near-identical titles. Raise if LLM is reviewing pages with very different names that aren\'t actually duplicates. Leave blank for the default.',
     lintDeadLinkSection: 'Dead links (detected) [{count}]',
     lintEmptyPageSection: 'Empty pages (detected) [{count}]',
     lintOrphanSection: 'Orphan pages (detected) [{count}]',
@@ -656,6 +694,32 @@ export const EN_TEXTS = {
     reingestConfirmBody: 'The content of "{filename}" is already in the wiki. Re-ingest it anyway?',
     reingestConfirmYes: 'Re-ingest',
     reingestConfirmNo: 'Skip',
+    // v1.26.0 (#382 item 1, Batch 2): sources participate in dedup by
+    // default via the sourceFingerprint signal (body-hash equality). Off
+    // here to exclude source pages from lint duplicate-detection.
+    lintDedupIncludeSourcesName: 'Include sources in dedup',
+    lintDedupIncludeSourcesDesc: 'On by default. When on, sources with identical bodies are flagged as duplicates during lint. Turn off if your source corpus generates false positives.',
+    // v1.26.0 (#382 item 1, Batch 2): sub-heading for the dedup
+    // sub-group at the bottom of the "Advanced settings" panel.
+    lintDedupSectionHeading: 'Duplicate detection',
+    // v1.26.0 (#382 item 1, Batch 2): Notice Toast fired when the
+    // dedup-phase empty-response retry mechanism kicks in. Designed
+    // for cross-LLM-phase reuse — fix-runners, analysis-phase, etc.
+    // can use the same Toast key when they adopt the retry helper.
+    // The {count} placeholder is the number of batches that recovered
+    // via immediate + 2s-backoff retry.
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): the Toast text must be
+    // reusable across ALL LLM business paths (dedup, analysis, fix-runners,
+    // conversation-ingest, merge, headless CLI). Generic phrasing — no
+    // reference to any specific phase. The {count} placeholder is the
+    // number of batches that recovered via retry.
+    //
+    // NOTE: We deliberately do NOT claim "task completed" in the Toast —
+    // the retry recovered this batch but other batches in the same
+    // scan may still be running. The Toast is informational ("here's
+    // what happened, look in the console for full detail"), not a
+    // status claim. Operators reading the console see the truth.
+    llmRetryRecoveredToast: 'LLM task: {count} batch(es) needed retry due to a transient provider response issue. See console for detail. If this recurs, consider lowering Page Generation Concurrency in Provider settings.',
     longSourceNotice: '📄 "{filename}" has {lines} lines ({size}). Long texts require iterative batch extraction — the LLM reads the full document in multiple passes. This may take several minutes. Please be patient.',
     longSourceNoticeShort: '📄 Large file detected ({lines} lines). Ingestion may take a while.',
 

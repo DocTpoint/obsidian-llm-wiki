@@ -55,7 +55,7 @@ export function runProgrammaticPhase(
 
   // 5. Dead links
   ctx.stageNotice?.setMessage(getText(ctx.settings.language, 'lintScanningLinks'));
-  ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStatusScanningLinks'));
+  ctx.wikiEngine.updateStatusBar(getText(ctx.settings.language, 'lintStageProgrammatic'));
   console.debug('lintWiki: scanning dead links');
   const deadLinks = scanDeadLinks(
     input.pageMap, input.knownTargets, input.knownTargetsLower, ctx.settings.wikiFolder

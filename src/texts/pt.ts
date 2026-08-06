@@ -26,6 +26,7 @@ export const PT_TEXTS = {
     languageEs: 'Español',
     languagePt: 'Português',
     languageIt: 'Italiano',
+    languageRu: 'Русский',
 
     // Status
     statusTitle: 'Status do LLM Client',
@@ -389,7 +390,6 @@ export const PT_TEXTS = {
     autoSmartFixName: 'Correção inteligente automática',
     autoSmartFixDesc: 'Quando o lint for executado, aplica automaticamente todas as correções (Smart Fix All) sem exibir o modal de relatório. O resumo das correções ainda é exibido ao concluir.',
     autoSmartFixNotice: 'Correção inteligente automática: aplicando todas as correções...',
-
     autoIngestLevelName: 'Notificação de ingestão automática',
     autoIngestLevelDesc: 'Como notificar quando a ingestão automática for concluída. "Aviso" (transitório) não bloqueia. "Modal" abre o relatório completo. Desativado quando o Modo Watch é "Apenas notificar".',
     autoIngestLevelNotice: 'Aviso (não bloqueante)',
@@ -483,6 +483,14 @@ export const PT_TEXTS = {
     reingestConfirmBody: 'O conteúdo de "{filename}" já está no wiki. Reingerir mesmo assim?',
     reingestConfirmYes: 'Reingerir',
     reingestConfirmNo: 'Ignorar',
+    lintDedupIncludeSourcesName: 'Incluir fontes na deduplicação',
+    lintDedupIncludeSourcesDesc: 'Ativado por padrão. Quando ativado, fontes com corpos idênticos são sinalizadas como duplicatas durante o lint. Desative se o seu corpus de fontes gerar falsos positivos.',
+    lintDedupSectionHeading: 'Deduplicação',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): texto genérico,
+    // reutilizável para todas as rotas de negócio LLM. {count} é o
+    // número de lotes que precisaram de nova tentativa. Não dizemos
+    // "Lint concluído" — a nova tentativa recupera apenas este lote.
+    llmRetryRecoveredToast: 'Tarefa LLM: {count} lote(s) precisaram de nova tentativa devido a uma resposta transitória do provedor. Veja o console para detalhes. Se isso se repetir, reduza Page Generation Concurrency nas configurações do provedor.',
     ingestReportFailedGuidance: 'Estes itens não puderam ser criados automaticamente. Você pode criar as páginas manualmente ou reduzir a granularidade da extração e reingerir o arquivo fonte.',
     ingestReportCollisions: 'Colisões cross-type (fundidas como alias)',
 
@@ -504,10 +512,22 @@ export const PT_TEXTS = {
     ingestionStatusBar: 'Ingerindo... clique para cancelar',
     lintStatusBar: 'Verificando... clique para cancelar',
     ingestStatusAnalyzing: 'Ingerindo… (clique para cancelar)',
-    lintStatusReading: 'Verificando… (clique para cancelar)',
-    lintStatusDuplicates: 'Verificando… (clique para cancelar)',
-    lintStatusScanningLinks: 'Verificando… (clique para cancelar)',
     lintStatusAnalyzing: 'Verificando… (clique para cancelar)',
+    ingestStageAnalyze: 'Analisando a fonte',
+    ingestStageSummary: 'Gerando o resumo',
+    ingestStageEntity: 'Criando a entidade',
+    ingestStageConcept: 'Criando o conceito',
+    ingestStageRetry: 'Tentando novamente a página com falha',
+    ingestStageSave: 'Salvando páginas',
+    ingestStageIndex: 'Gerando o índice',
+    pdfStageReading: 'Lendo o PDF',
+    pdfStageConverting: 'Convertendo o PDF',
+    pdfStageSidecar: 'Escrevendo o arquivo secundário',
+    lintStagePrep: 'Lendo páginas',
+    lintStageProgrammatic: 'Verificando links',
+    lintStageAnalyzing: 'Executando análise LLM',
+    lintStageDedup: 'Detectando duplicatas',
+    lintStageContradiction: 'Detectando contradições',
     ingestionCancelling: 'Cancelando — irá parar após o lote atual',
     ingestionCancelled: 'Ingestão cancelada',
     crossTypeCollisionNotice: '{count} elementos fundidos como alias cross-type (duplicatas entidade ↔ conceito evitadas)',
@@ -517,10 +537,18 @@ export const PT_TEXTS = {
     lintReportSummary: 'Visão geral do wiki: {total} páginas no total, {aliasesMissing} sem aliases, {duplicates} duplicados, {deadLinks} links quebrados ({deadLinkFromDup} envolvem duplicados), {orphans} órfãs ({orphanFromDup} são duplicados), {emptyPages} vazias, {ungroundedQuotes} citações sem fonte, {tagViolations} tags fora do vocabulário. Lint: {elapsedSeconds}s',
 
     // Advanced LLM Settings (Issues #99 / #128)
-    advancedSettingsModeName: 'Configuração de parâmetros avançados',
-    advancedSettingsModeDesc: 'O modo padrão segue as recomendações do seu provedor. Mude para Personalizado apenas se tiver uma razão específica para substituir (por exemplo, um modelo específico precisa de temperatura fixa, ou você quer suprimir a saída de raciocínio).',
+    // v1.26.0 (#382 item 2): nome alterado de «Configuração de parâmetros
+    // avançados» para «Parâmetros LLM avançados» — restrito à amostragem LLM,
+    // para distingui-lo do painel genérico «Configurações avançadas» abaixo.
+    advancedLlmModeName: 'Parâmetros LLM avançados',
+    advancedLlmModeDesc: 'O modo padrão segue as recomendações do seu provedor. Mude para Personalizado apenas se tiver uma razão específica para substituir (por exemplo, um modelo específico precisa de temperatura fixa, ou você quer suprimir a saída de raciocínio).',
     advancedSettingsDefault: 'Padrão (seguir o provedor)',
     advancedSettingsCustom: 'Personalizado (substituir o provedor)',
+    // v1.26.0 (#382 item 2): painel «Configurações avançadas» abaixo — o local
+    // genérico para todas as configurações avançadas que não são parâmetros LLM.
+    advancedSettingsSection: 'Configurações avançadas',
+    showAdvancedSettingsName: 'Mostrar configurações avançadas',
+    showAdvancedSettingsDesc: 'Ative para mostrar as configurações avançadas abaixo. Desativar oculta-as e redefine-as para os valores padrão.',
     disableThinkingName: 'Desabilitar pensamento',
     disableThinkingDesc: 'Desativa a cadeia de pensamento/raciocínio na resposta do modelo. Desativado por predefinição — o modelo decide se mostra raciocínio, o que geralmente dá a melhor resposta. Ative apenas se o seu provedor inserir texto de raciocínio bruto na resposta e você quiser uma resposta limpa.',
     // Issue #137: Avisos de compatibilidade (breves; sem lista de provedores)
@@ -531,6 +559,14 @@ export const PT_TEXTS = {
     repetitionPenaltyName: 'Penalidade de repetição',
     repetitionPenaltyDesc: 'Impede o modelo de repetir as mesmas palavras ou frases. Valores mais altos reduzem a repetição. Apenas alguns provedores de modelos locais (Ollama, LM Studio, llama.cpp) aceitam este parâmetro; provedores em nuvem ignoram-no silenciosamente. A maioria dos usuários deixa vazio.',
     temperaturePlaceholder: 'deixar vazio = padrão do provedor',
+    // v1.26.0 (#382 item 2): Limiares de detecção de duplicados
+    // (somente modo avançado personalizado).
+    lintDedupJaccardLinkThresholdName: 'Similaridade de links duplicados',
+    lintDedupJaccardLinkThresholdDesc: 'Intervalo 0–1 (padrão 0,4). Duas páginas são sinalizadas como duplicadas quando a proporção de links wiki que compartilham em relação aos links totais atinge pelo menos este valor. Mais baixo → mais quase-duplicados são captados (incluindo páginas que apenas apontam para o mesmo hub); mais alto → apenas páginas que apontam para um conjunto quase idêntico são sinalizadas. Aumente este valor se vir falsos positivos entre páginas não relacionadas que simplesmente apontam para o mesmo hub. Deixe em branco para usar o padrão.',
+    lintDedupJaccardBodyGateName: 'Similaridade mínima do corpo',
+    lintDedupJaccardBodyGateDesc: 'Intervalo 0–1 (padrão 0,2). Mesmo que duas páginas compartilhem links wiki, elas só são sinalizadas como duplicadas se a similaridade dos seus textos atingir pelo menos este valor. Mais baixo → mais candidatos passam para a verificação do LLM; mais alto → apenas corpos quase idênticos são sinalizados. Aumente este valor se o LLM estiver revisando páginas que claramente não são duplicadas. Deixe em branco para usar o padrão.',
+    lintDedupBigramThresholdName: 'Similaridade de títulos',
+    lintDedupBigramThresholdDesc: 'Intervalo 0–1 (padrão 0,4). Duas páginas são sinalizadas como duplicadas quando os caracteres dos seus títulos (ou aliases) coincidem pelo menos nesta proporção. Mais baixo → variantes ortográficas, erros de digitação e traduções do mesmo conceito são captados; mais alto → apenas títulos quase idênticos são sinalizados. Aumente este valor se o LLM revisar páginas com nomes muito diferentes que não são realmente duplicadas. Deixe em branco para usar o padrão.',
     lintDeadLinkSection: 'Links quebrados (detectados) [{count}]',
     lintEmptyPageSection: 'Páginas vazias (detectadas) [{count}]',
     lintOrphanSection: 'Páginas órfãs (detectadas) [{count}]',

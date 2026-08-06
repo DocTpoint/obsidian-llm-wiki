@@ -26,6 +26,7 @@ export const FR_TEXTS = {
     languageEs: 'Español',
     languagePt: 'Português',
     languageIt: 'Italiano',
+    languageRu: 'Русский',
 
     // Status
     statusTitle: 'État du client LLM',
@@ -389,7 +390,7 @@ export const FR_TEXTS = {
     autoSmartFixName: 'Correction intelligente automatique',
     autoSmartFixDesc: 'Lors de l\'exécution du lint, applique automatiquement toutes les corrections (Smart Fix All) sans afficher le modal de rapport. Le résumé des corrections s\'affiche toujours à la fin.',
     autoSmartFixNotice: 'Correction intelligente automatique : application de toutes les corrections...',
-
+    // v1.26.0 (#382 item 2): Interrupteur d\'options avancées dans la section
     autoIngestLevelName: "Notification d'ingestion automatique",
     autoIngestLevelDesc: 'Comment notifier lorsque l\'ingestion automatique se termine. "Avis" (transitoire) est non bloquant. "Modal" ouvre le rapport complet. Désactivé lorsque le mode Watch est "Avis uniquement".',
     autoIngestLevelNotice: 'Avis (non bloquant)',
@@ -486,10 +487,22 @@ export const FR_TEXTS = {
     ingestionStatusBar: 'Ingestion en cours... cliquer pour annuler',
     lintStatusBar: 'Vérification en cours... cliquer pour annuler',
     ingestStatusAnalyzing: 'Ingestion… (cliquer pour annuler)',
-    lintStatusReading: 'Vérification… (cliquer pour annuler)',
-    lintStatusDuplicates: 'Vérification… (cliquer pour annuler)',
-    lintStatusScanningLinks: 'Vérification… (cliquer pour annuler)',
     lintStatusAnalyzing: 'Vérification… (cliquer pour annuler)',
+    ingestStageAnalyze: 'Analyse de la source',
+    ingestStageSummary: 'Génération du résumé',
+    ingestStageEntity: 'Création de l\'entité',
+    ingestStageConcept: 'Création du concept',
+    ingestStageRetry: 'Nouvelle tentative de la page échouée',
+    ingestStageSave: 'Enregistrement des pages',
+    ingestStageIndex: 'Génération de l\'index',
+    pdfStageReading: 'Lecture du PDF',
+    pdfStageConverting: 'Conversion du PDF',
+    pdfStageSidecar: 'Écriture du fichier annexe',
+    lintStagePrep: 'Lecture des pages',
+    lintStageProgrammatic: 'Analyse des liens',
+    lintStageAnalyzing: 'Analyse LLM en cours',
+    lintStageDedup: 'Détection des doublons',
+    lintStageContradiction: 'Détection des contradictions',
     ingestionCancelling: 'Annulation — arrêt après le lot en cours',
     ingestionCancelled: 'Ingestion annulée',
     crossTypeCollisionNotice: '{count} éléments fusionnés comme alias cross-type (doublons entité ↔ concept évités)',
@@ -499,10 +512,18 @@ export const FR_TEXTS = {
     lintReportSummary: "Aperçu de l'état du wiki : {total} pages au total, {aliasesMissing} pages sans alias, {duplicates} pages dupliquées, {deadLinks} liens cassés ({deadLinkFromDup} impliquent des doublons), {orphans} pages orphelines ({orphanFromDup} sont des doublons), {emptyPages} pages vides, {ungroundedQuotes} citations non fondées, {tagViolations} tags hors vocabulaire. Durée du lint : {elapsedSeconds}s",
 
     // Advanced LLM Settings (Issues #99 / #128)
-    advancedSettingsModeName: 'Paramètres avancés',
-    advancedSettingsModeDesc: 'Le mode par défaut suit les recommandations de votre fournisseur. Passez en mode Personnalisé uniquement si vous avez une raison spécifique de le faire (par exemple, un modèle particulier nécessite une température fixe, ou vous souhaitez supprimer la sortie de raisonnement).',
+    // v1.26.0 (#382 item 2): nom changé de « Paramètres avancés » en
+    // « Paramètres LLM avancés » — restreint à l'échantillonnage LLM, pour le
+    // distinguer du panneau générique « Paramètres avancés » en bas.
+    advancedLlmModeName: 'Paramètres LLM avancés',
+    advancedLlmModeDesc: 'Le mode par défaut suit les recommandations de votre fournisseur. Passez en mode Personnalisé uniquement si vous avez une raison spécifique de le faire (par exemple, un modèle particulier nécessite une température fixe, ou vous souhaitez supprimer la sortie de raisonnement).',
     advancedSettingsDefault: 'Par défaut (suivre le fournisseur)',
     advancedSettingsCustom: 'Personnalisé (remplacer le fournisseur)',
+    // v1.26.0 (#382 item 2): panneau « Paramètres avancés » en bas — le lieu
+    // générique pour tous les réglages avancés qui ne sont pas des paramètres LLM.
+    advancedSettingsSection: 'Paramètres avancés',
+    showAdvancedSettingsName: 'Afficher les paramètres avancés',
+    showAdvancedSettingsDesc: 'Activez pour afficher les réglages avancés ci-dessous. Désactiver les masque et les rétablit aux valeurs par défaut.',
     disableThinkingName: 'Désactiver le raisonnement',
     disableThinkingDesc: 'Désactive l\'affichage de la chaîne de pensée/du raisonnement dans la réponse. Désactivé par défaut — le modèle décide lui-même d\'afficher ou non son raisonnement, ce qui donne généralement la meilleure réponse. Activez-le uniquement si votre fournisseur insère du texte de raisonnement brut dans la réponse et que vous souhaitez une réponse propre.',
     // Issue #137 : Notes de compatibilité (courtes ; pas de liste de fournisseurs)
@@ -513,6 +534,14 @@ export const FR_TEXTS = {
     repetitionPenaltyName: 'Pénalité de répétition',
     repetitionPenaltyDesc: 'Empêche le modèle de répéter les mêmes mots ou phrases. Des valeurs plus élevées réduisent la répétition. Seuls certains fournisseurs de modèles locaux (Ollama, LM Studio, llama.cpp) acceptent ce paramètre ; les fournisseurs cloud l\'ignorent silencieusement. La plupart des utilisateurs laissent ce champ vide.',
     temperaturePlaceholder: 'laisser vide = valeur par défaut du fournisseur',
+    // v1.26.0 (#382 item 2): Seuils de détection des doublons
+    // (mode avancé personnalisé uniquement).
+    lintDedupJaccardLinkThresholdName: 'Similarité des liens en doublon',
+    lintDedupJaccardLinkThresholdDesc: 'Plage 0–1 (par défaut 0,4). Deux pages sont signalées comme doublons lorsque la proportion de liens wiki qu\'elles partagent par rapport à leurs liens totaux atteint au moins cette valeur. Plus bas → davantage de quasi-doublons sont captés (y compris des pages qui pointent simplement vers le même centre) ; plus haut → seules les pages pointant vers un ensemble quasi identique sont signalées. Augmentez cette valeur si des pages sans rapport sont signalées à tort parce qu\'elles pointent vers le même centre. Laissez vide pour utiliser la valeur par défaut.',
+    lintDedupJaccardBodyGateName: 'Similarité minimale du corps',
+    lintDedupJaccardBodyGateDesc: 'Plage 0–1 (par défaut 0,2). Même si deux pages partagent des liens wiki, elles ne sont signalées comme doublons que si la similarité de leurs textes atteint au moins cette valeur. Plus bas → davantage de candidats parviennent à la vérification LLM ; plus haut → seuls les corps quasi identiques sont signalés. Augmentez cette valeur si le LLM examine des pages qui ne sont manifestement pas des doublons. Laissez vide pour utiliser la valeur par défaut.',
+    lintDedupBigramThresholdName: 'Similarité des titres',
+    lintDedupBigramThresholdDesc: 'Plage 0–1 (par défaut 0,4). Deux pages sont signalées comme doublons lorsque les caractères de leurs titres (ou alias) coïncident au moins à cette proportion. Plus bas → les variantes orthographiques, coquilles et traductions d\'un même concept sont captées ; plus haut → seuls les titres quasi identiques sont signalés. Augmentez cette valeur si le LLM examine des pages aux noms très différents qui ne sont pas réellement des doublons. Laissez vide pour utiliser la valeur par défaut.',
     lintDeadLinkSection: 'Liens cassés (détectés) [{count}]',
     lintEmptyPageSection: 'Pages vides (détectées) [{count}]',
     lintOrphanSection: 'Pages orphelines (détectées) [{count}]',
@@ -631,6 +660,14 @@ export const FR_TEXTS = {
     reingestConfirmBody: 'Le contenu de « {filename} » est déjà dans le wiki. Le ré-ingérer quand même ?',
     reingestConfirmYes: 'Ré-ingérer',
     reingestConfirmNo: 'Ignorer',
+    lintDedupIncludeSourcesName: 'Inclure les sources dans la déduplication',
+    lintDedupIncludeSourcesDesc: 'Activé par défaut. Quand activé, les sources avec un corps identique sont signalées comme doublons pendant le lint. Désactivez si votre corpus de sources génère des faux positifs.',
+    lintDedupSectionHeading: 'Déduplication',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): formulation générique,
+    // réutilisable pour tous les chemins métier LLM. {count} est le
+    // nombre de lots qui ont nécessité une nouvelle tentative. On ne
+    // dit pas « Lint terminé » — la relance ne concerne que ce lot.
+    llmRetryRecoveredToast: 'Tâche LLM : {count} lot(s) ont nécessité une nouvelle tentative en raison d\'une réponse transitoire du fournisseur. Voir la console pour plus de détails. Si cela se reproduit, réduisez Page Generation Concurrency dans les paramètres du fournisseur.',
     longSourceNotice: '📄 "{filename}" contient {lines} lignes ({size}). Les textes longs nécessitent une extraction itérative par lots — le LLM lit le document complet en plusieurs passes. Cela peut prendre plusieurs minutes. Veuillez patienter.',
     longSourceNoticeShort: '📄 Fichier volumineux détecté ({lines} lignes). Ingestion peut prendre du temps.',
 

@@ -1,17 +1,22 @@
 {
   "name": "karpathywiki",
-  "version": "1.25.10",
+  "version": "1.26.0",
   "packageManager": "pnpm@10.14.0",
   "description": "Karpathy's LLM Wiki implementation - multi-page knowledge generation with conversational query",
   "main": "main.js",
+  "bin": {
+    "llm-wiki": "./tools/llm-wiki-cli/run-llm-wiki.mjs"
+  },
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
     "build:dev": "node esbuild.config.mjs dev",
+    "llm-wiki": "node tools/llm-wiki-cli/run-llm-wiki.mjs",
     "lint": "eslint src/ --max-warnings=0",
     "css-lint": "node scripts/css-lint.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck:tools": "tsc -p tools/llm-wiki-cli/tsconfig.json --noEmit"
   },
   "keywords": [
     "obsidian",

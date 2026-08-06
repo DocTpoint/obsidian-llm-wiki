@@ -37,3 +37,41 @@ export function isInFolderScope(
 ): boolean {
   return filePath.startsWith(folderScopePrefix(folderPath, isRoot));
 }
+
+/**
+ * True when `filePath` names the folder itself OR anything inside it.
+ * The sibling case is `isInFolderScope`; the identity case was previously
+ * hand-rolled at every call site as `path === folder || isInFolderScope(...)`
+ * (e.g. PR #384's `FolderSuggestModal`, where the missing identity clause
+ * let the wiki folder itself leak back into the picker). Centralizing it
+ * keeps the boundary semantics in one file with one test suite.
+ *
+ * `folderPath` is compared with trailing slashes stripped so a normalised
+ * folder path and an unnormalised one with a trailing slash both match.
+ */
+export function isAtOrInFolderScope(
+  filePath: string,
+  folderPath: string,
+  isRoot: boolean
+): boolean {
+  const trimmedFolder = folderPath.replace(/\/+$/, '');
+  if (trimmedFolder.length > 0 && filePath === trimmedFolder) return true;
+  return isInFolderScope(filePath, folderPath, isRoot);
+}
+
+/**
+ * Whether a path may be presented to the user as an ingest source folder
+ * or watched folder. Combines the wiki boundary, the config directory, and
+ * the wiki folder's own identity. Used by both `FileSuggestModal`,
+ * `FolderSuggestModal` and the multi-file variant — one rule, three sites.
+ */
+export function isExcludedFromSourcePicker(
+  path: string,
+  wikiFolder: string,
+  configDir: string
+): boolean {
+  return (
+    isAtOrInFolderScope(path, wikiFolder, false) ||
+    isAtOrInFolderScope(path, configDir, false)
+  );
+}

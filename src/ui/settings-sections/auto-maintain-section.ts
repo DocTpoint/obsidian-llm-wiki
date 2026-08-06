@@ -15,7 +15,10 @@
  *   - Auto-Watch Debounce number input
  *   - Periodic Lint dropdown (off / daily / weekly / monthly)
  *   - Auto Smart Fix toggle
- *   - Welcome Note toggle (v1.23.0 Phase 5.1.5)
+ *
+ * v1.26.0 (#382 item 2): the Welcome Note toggle moved OUT of this
+ * section into the bottom "Advanced settings" panel — it is a one-time
+ * first-run choice, not a daily-driver auto-behavior knob.
  *
  * Why extracted:
  *   - 160 LOC of auto-behavior configuration. The block has the deepest
@@ -31,7 +34,6 @@
  *     tempSettings.watchedFolders[] (mutated via splice on Remove).
  *   - Web Clipper Preset adds 'Clippings/' to watchedFolders.
  *   - Auto-Watch Debounce is in seconds (UI) but stored as ms.
- *   - Welcome Note toggle is named createWelcomeNote in settings.
  */
 
 import { Setting, Notice } from 'obsidian';
@@ -55,7 +57,19 @@ export function renderAutoMaintainSection(tab: LLMWikiSettingTab, containerEl: H
       .setValue(tempSettings.startupCheckNoticeLevel)
       .onChange((value: 'visible' | 'silent') => { tempSettings.startupCheckNoticeLevel = value; }));
 
-  // Beta + cost warning infoboxes
+  // Beta + cost warning infoboxes.
+  // v1.25.11 PATCH follow-up: the previous attempt used Obsidian's
+  // `.notice.warning` modifier, but Obsidian does not ship such a
+  // class for settings panels — it only exists inside callout markdown
+  // (`> [!warning]`). The fallback to a hand-rolled CSS box is the
+  // approach used by other first-party-style plugins (Tasks, Templater,
+  // Dataview). We use the official `Setting` container so Obsidian
+  // sizes the infobox to the panel's full text width (avoiding the
+  // inline-block half-width bug that `createDiv` caused) and rely on
+  // `var(--background-secondary)` for the fill — this token survives
+  // the 1.13 warning-palette overhaul, unlike the previous
+  // `--background-modifier-warning` which 1.13 redefined as a saturated
+  // brand orange swatch.
   const betaDiv = containerEl.createDiv({ cls: 'llm-wiki-blue-infobox' });
   betaDiv.setText('🧪 ' + tab.getText('autoMaintainBetaBadge'));
 
@@ -189,12 +203,4 @@ export function renderAutoMaintainSection(tab: LLMWikiSettingTab, containerEl: H
     .addToggle(toggle => toggle
       .setValue(tempSettings.autoSmartFix)
       .onChange((value) => { tempSettings.autoSmartFix = value; }));
-
-  // v1.23.0 Phase 5.1.5: first-run Welcome note toggle.
-  new Setting(containerEl)
-    .setName(tab.getText('welcomeNoteSettingsToggle'))
-    .setDesc(tab.getText('welcomeNoteSettingsToggleDesc'))
-    .addToggle(toggle => toggle
-      .setValue(tempSettings.createWelcomeNote)
-      .onChange((value) => { tempSettings.createWelcomeNote = value; }));
 }

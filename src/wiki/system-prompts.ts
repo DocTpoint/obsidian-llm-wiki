@@ -132,6 +132,19 @@ export const SECTION_LABELS: Record<string, Record<string, string>> = {
     existing_knowledge: 'Conoscenza esistente', resolution_suggestion: 'Suggerimento di risoluzione',
     source_page: 'Pagina sorgente', related_pages: 'Pagine correlate', updated: 'Aggiornato',
   },
+  // v1.26.0: Russian (ru) section labels
+  ru: {
+    basic_information: 'Основная информация', description: 'Описание',
+    related_content: 'Связанный контент', mentions_in_source: 'Упоминания в источнике',
+    new_information: 'Новая информация', definition: 'Определение',
+    key_characteristics: 'Ключевые характеристики', applications: 'Применения',
+    related_concepts: 'Связанные концепции', related_entities: 'Связанные сущности',
+    source: 'Источник', core_content: 'Основное содержание', key_entities: 'Ключевые сущности',
+    key_concepts: 'Ключевые концепции', main_points: 'Основные пункты',
+    resolved_contradictions: 'Разрешённые противоречия', new_claim: 'Новое утверждение',
+    existing_knowledge: 'Существующее знание', resolution_suggestion: 'Предложение по разрешению',
+    source_page: 'Страница-источник', related_pages: 'Связанные страницы', updated: 'Обновлено',
+  },
 };
 
 export function getSectionLabels(settings: LLMWikiSettings): Record<string, string> {

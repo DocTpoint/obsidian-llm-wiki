@@ -26,6 +26,7 @@ export const JA_TEXTS = {
     languageEs: 'Español',
     languagePt: 'Português',
     languageIt: 'Italiano',
+    languageRu: 'Русский',
 
     // Status
     statusTitle: 'LLM Client の状態',
@@ -387,7 +388,6 @@ export const JA_TEXTS = {
     autoSmartFixName: '自動スマート修正',
     autoSmartFixDesc: 'Lint 実行時に、レポートモーダルを表示せず自動的にすべての修正（スマート一括修正）を適用します。修正完了後もサマリーは表示されます。',
     autoSmartFixNotice: '自動スマート修正：すべての修正を適用中...',
-
     autoIngestLevelName: '自動取り込み通知方法',
     autoIngestLevelDesc: '自動取り込み完了時の通知方法。「通知」は一時的に表示され操作を妨げません。「モーダル」は完全なレポートを開きます。Watch モードが「通知のみ」の場合は無効です。',
     autoIngestLevelNotice: '通知（非ブロッキング）',
@@ -484,10 +484,22 @@ export const JA_TEXTS = {
     ingestionStatusBar: '取り込み中... クリックでキャンセル',
     lintStatusBar: 'チェック中... クリックでキャンセル',
     ingestStatusAnalyzing: '取り込み中… (クリックでキャンセル)',
-    lintStatusReading: 'チェック中… (クリックでキャンセル)',
-    lintStatusDuplicates: 'チェック中… (クリックでキャンセル)',
-    lintStatusScanningLinks: 'チェック中… (クリックでキャンセル)',
     lintStatusAnalyzing: 'チェック中… (クリックでキャンセル)',
+    ingestStageAnalyze: 'ソースを解析中',
+    ingestStageSummary: '要約を生成中',
+    ingestStageEntity: 'エンティティを作成中',
+    ingestStageConcept: 'コンセプトを作成中',
+    ingestStageRetry: '失敗したページを再試行中',
+    ingestStageSave: 'ページを保存中',
+    ingestStageIndex: 'インデックスを生成中',
+    pdfStageReading: 'PDF を読み取り中',
+    pdfStageConverting: 'PDF を変換中',
+    pdfStageSidecar: 'サイドカーを書き出し中',
+    lintStagePrep: 'ページを読み取り中',
+    lintStageProgrammatic: 'リンクをスキャン中',
+    lintStageAnalyzing: 'LLM分析を実行中',
+    lintStageDedup: '重複を検出中',
+    lintStageContradiction: '矛盾を検出中',
     ingestionCancelling: 'キャンセル中 — 現在のバッチ完了後に停止します',
     ingestionCancelled: '取り込みがキャンセルされました',
     crossTypeCollisionNotice: '{count}件がクロスタイプ別名として統合（エンティティ ↔ コンセプト重複を防止）',
@@ -497,10 +509,18 @@ export const JA_TEXTS = {
     lintReportSummary: 'Wiki 状態の概要: 合計 {total} ページ、{aliasesMissing} ページにエイリアス欠落、重複 {duplicates}、デッドリンク {deadLinks}（うち {deadLinkFromDup} は重複関連）、孤立 {orphans}（うち {orphanFromDup} は重複）、空ページ {emptyPages}、根拠のない引用 {ungroundedQuotes}、語彙外タグ {tagViolations}。Lint 実行時間: {elapsedSeconds}秒',
 
     // Advanced LLM Settings (Issues #99 / #128)
-    advancedSettingsModeName: '高度なパラメータ設定',
-    advancedSettingsModeDesc: 'デフォルトモードはモデルプロバイダーが推奨する設定に従います。明確に上書きする理由がある場合（例：特定のモデルに固定温度が必要、モデルの思考出力を抑制したい）のみ、カスタムに切り替えてください。',
+    // v1.26.0 (#382 item 2): 名称を「高度なパラメータ設定」から
+    // 「LLM 高度なパラメータ」に変更 — LLM サンプリングに特化し、
+    // 下部の汎用「詳細設定」パネルと区別。
+    advancedLlmModeName: 'LLM 高度なパラメータ',
+    advancedLlmModeDesc: 'デフォルトモードはモデルプロバイダーが推奨する設定に従います。明確に上書きする理由がある場合（例：特定のモデルに固定温度が必要、モデルの思考出力を抑制したい）のみ、カスタムに切り替えてください。',
     advancedSettingsDefault: 'デフォルト（プロバイダーに従う）',
     advancedSettingsCustom: 'カスタム（プロバイダーを上書き）',
+    // v1.26.0 (#382 item 2): 下部の「詳細設定」パネル — LLM サンプリング以外の
+    // 高度なユーザー設定の汎用の場所（lint 閾値、ウェルカムノート、将来の拡張）。
+    advancedSettingsSection: '詳細設定',
+    showAdvancedSettingsName: '詳細設定を表示',
+    showAdvancedSettingsDesc: 'オンにすると下に高度な設定が表示されます。オフにすると非表示になり、デフォルト値にリセットされます。',
     disableThinkingName: '思考を無効にする',
     disableThinkingDesc: 'モデル応答の思考過程/推論テキスト出力をオフにします。デフォルトはオフで、モデルが推論を表示するかを自分で決めるため、それが通常最も良い回答になります。プロバイダーが生の推論テキストを応答に混ぜてしまい、きれいな答えが欲しい場合にのみオンにしてください。',
     // Issue #137: 互換性に関する注意事項（簡潔；プロバイダ一覧は省略）
@@ -511,6 +531,13 @@ export const JA_TEXTS = {
     repetitionPenaltyName: '繰り返しペナルティ',
     repetitionPenaltyDesc: 'モデルが同じ単語や言い回しを繰り返すのを抑止します。値が高いほど繰り返しを減らします。このパラメータを受け付けるのは一部のローカルモデルプロバイダー（Ollama、LM Studio、llama.cpp）のみで、クラウドプロバイダーは暗黙に無視します。ほとんどのユーザーは空欄のままで問題ありません。',
     temperaturePlaceholder: '空欄 = プロバイダーのデフォルト',
+    // v1.26.0 (#382 item 2): 重複検出のしきい値（カスタム詳細モードのみ）。
+    lintDedupJaccardLinkThresholdName: 'リンク重複の類似度',
+    lintDedupJaccardLinkThresholdDesc: '範囲 0–1（デフォルト 0.4）。2 つのページが共通して指す wiki リンクの割合が、それぞれのリンク総数のうち少なくともこの値に達している場合に重複と判定されます。下げる → 近似重複をより多く検出（同じハブへのリンクしかないページも含む）；上げる → ほぼ同じページ群へリンクしているページのみが対象になります。無関係なページが同じハブにリンクしているだけの誤検出が多い場合は、この値を上げてください。空欄でデフォルトを使用します。',
+    lintDedupJaccardBodyGateName: '本文の最低類似度',
+    lintDedupJaccardBodyGateDesc: '範囲 0–1（デフォルト 0.2）。2 つのページが wiki リンクを共有していても、本文の類似度（割合）が少なくともこの値に達している場合にのみ重複と判定されます。下げる → LLM の検証に回る候補が増える；上げる → 本文がほぼ同一のページのみが対象になります。明らかに重複ではないページを LLM が検証しているようなら、この値を上げてください。空欄でデフォルトを使用します。',
+    lintDedupBigramThresholdName: 'タイトルの類似度',
+    lintDedupBigramThresholdDesc: '範囲 0–1（デフォルト 0.4）。2 つのページのタイトル（またはエイリアス）の文字一致率が少なくともこの値に達している場合に重複と判定されます。下げる → 表記揺れ、タイポ、同じ概念の翻訳なども検出；上げる → タイトルがほぼ同一のページのみが対象になります。タイトルが大きく異なるページを LLM が検証しているようなら、この値を上げてください。空欄でデフォルトを使用します。',
     lintDeadLinkSection: 'デッドリンク（検出）[{count} 件]',
     lintEmptyPageSection: '空ページ（検出）[{count} 件]',
     lintOrphanSection: '孤立ページ（検出）[{count} 件]',
@@ -629,6 +656,14 @@ export const JA_TEXTS = {
     reingestConfirmBody: '「{filename}」の内容はすでにWikiに存在します。それでも再取り込みしますか？',
     reingestConfirmYes: '再取り込み',
     reingestConfirmNo: 'スキップ',
+    lintDedupIncludeSourcesName: '重複検出にソースを含める',
+    lintDedupIncludeSourcesDesc: 'デフォルトで有効です。有効にすると、本文が同一のソースが lint で重複としてフラグ付けされます。誤検出が多い場合は無効にしてください。',
+    lintDedupSectionHeading: '重複検出',
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): 汎用的な文言、
+    // すべての LLM 業務パスで再利用。{count} は再試行が必要だった
+    // バッチ数。「Lint は完了しました」とは書かない — 再試行は
+    // このバッチのみを回復する。
+    llmRetryRecoveredToast: 'LLM タスク：{count} 件のバッチがプロバイダの一時的な応答問題により再試行を必要としました（自動回復済み）。詳細はコンソールを参照してください。頻繁に発生する場合は、Provider 設定の Page Generation Concurrency を下げてください。',
     longSourceNotice: '"📄 「{filename}」は{lines}行（{size}）です。長文は複数パスの反復抽出が必要で、LLMが全文書を分析するため数分かかる場合があります。しばらくお待ちください。"',
     longSourceNoticeShort: '"📄 大きなファイル（{lines}行）を検出しました。取り込みに時間がかかることがあります。"',
 

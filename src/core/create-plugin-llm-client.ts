@@ -46,6 +46,8 @@ export function createLLMClient(
   return wrapWithAdvancedSettings(client, {
     maxTokensPerCall: settings.maxTokensPerCall,
     extractionTemperature: settings.extractionTemperature,
+    extractionTopP: settings.extractionTopP,
+    samplingSeed: settings.samplingSeed,
     chatTemperature: settings.chatTemperature,
     repetitionPenalty: settings.repetitionPenalty,
   });

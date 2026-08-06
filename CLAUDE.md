@@ -1,10 +1,36 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-07-29 (v1.25.10 PATCH RELEASED — 16 commits / 78 files / +3499 / −315 / 2713 tests / 202 files. main @ `fc0f1ce` after PR #373 merge. DocTpoint PRs #370 + #371 consolidated into commits `98afe42` + `292d42e` with `Co-authored-by: DocTpoint` trailer; both source PRs closed with thanks. v1.25.10 PATCH scope: 5 locked from #330/#356 + DocTpoint batch (#363 format+parser, #364 folder boundary) + Guru35 batch (#366 slug migration option d phase 1 helper, #367 lint-perf P0-1+P1-1+P1-2 from v1.25.7 deferred, #368 docs+settings hint as `enhancement`). #365 deferred v1.26.0+; PR #357 anchored v1.26.0+.)
+**Last Updated:** 2026-08-05 (v1.26.0 MINOR release prep — CHANGELOG + ROADMAP + CONTRIBUTING + NOTICE all in scope for tag. Main @ `ab0ecfb` after PR #411 merge; 115 commits / 110 files / +10604 / −994 since v1.25.11; 2928 tests / 213 files passing). v1.26.0 carries 5 P0+P1 batches (Batches 1-4 + 6+7) on top of the CLI + #383 follow-up + DocTpoint PRs (#357/#386/#388) + Russian i18n (PR #397) + dedup thresholds (PR #395).
 
 ---
 
-## Current Phase: v1.25.10 PATCH RELEASED; v1.26.0 MINOR in design phase.
+## Current Phase: v1.26.0 MINOR READY FOR RELEASE (tag pending user approval); v1.26.x PATCH items tracked
+
+**v1.26.0 P0+P1 final scope** (user-revised 2026-08-02, 5 batches; **Batch 1 rev 2 simplified 2026-08-03**; **Batch 5 cancelled 2026-08-04**):
+
+| Batch | Item | Issue | Type | Effort | Status |
+|---|---|---|---|---|---|
+| **1** | **Dual-key bucketed dedup** (tp-prefix + lh-link-hash buckets) | #382 item 3 | P1 (prerequisite) | 0.8 week | ✅ MERGED (PR #401) |
+| **2** | Cross-type dedup candidate set expansion | #382 item 1 | P0 | 1.5-2 weeks | ✅ MERGED (PR #410) |
+| **3** | P1-1/P1-2 wire-or-delete decision (delete recommended) | #382 item 4 | P1 | 0.2 week | ✅ MERGED (PR #406) |
+| **4** | dead-code-as-docs policy (CLAUDE.md + pre-release-gate check) | #382 item 5 | P1 (governance) | 0.3 week | ✅ DONE |
+| 5 | ~~Settings-owned enum-as-section-value (CVSS-style controlled vocab)~~ | ~~#358 item 8 / #328 §2~~ | ~~design~~ | n/a | ❌ CANCELLED (2026-08-04) |
+| **6** | Force-disable thinking: real wire fix for openai-compat path (4-layer fallback) | new, from PR #410 post-merge review + #382 comment 2 (DocTpoint) | P0 (hidden bug shipped in v1.26.0) | 0.2 week | ✅ MERGED (PR #411) |
+| **7** | dedup-phase parse-failure routing into `dedupFailures` (CR-3 + structural `type` discriminator) | new, from #382 comment 1 (DocTpoint) | P1 (measurement gap before MINOR) | 0.1 week | ✅ MERGED (PR #411) |
+
+**Estimated total:** ~3.3-3.8 weeks focused work before v1.26.0 MINOR ships.
+
+**Deferred to v1.27.0+ (per user decision 2026-08-02):** #317 (schema.md changes ignored), #326 (defer to canonical pages outside wikiFolder), #306, #295, #184.
+
+**v1.26.0 MINOR scope (now on main @ `ab0ecfb`, awaiting tag):** headless ingest CLI (`pnpm llm-wiki` script + npm bin, PR #387) + #383 folder-boundary follow-up (PR #389) + DocTpoint source-lemma deterministic merge (PR #357) + lint dedup thresholds hardening (PR #395) + vault-wide link retarget for `mergeDuplicates` (PR #392, DocTpoint) + `created:` provenance fix (commit `cd734b9`, DocTpoint via PR #396) + cross-type dedup expansion (PR #410, Batch 2) + dead-code-as-docs cleanup (PR #406, Batch 3) + Russian i18n (PR #397) + real wire-level force-disable thinking 4-layer fallback (PR #411, Batches 6+7). **115 commits on `main` since v1.25.11 PATCH**, 2928 tests / 213 files passing.
+
+**v1.26.x PATCH items (post-release, pre-v1.27.0 kickoff):** see [[feedback_force_disable_thinking_openai_compat_noop]] + [[feedback_force_disable_thinking_dedup_wiring]] + [[feedback_dedup_phase_halving_dead_code]] + [[feedback_dedup_phase_truncation_vs_empty_conflation]] for the full list (CR-1 halving dead code location-only fix; per-id key correction for `thinking` / `chat_template_kwargs`; `repetition_penalty` visible defect fix via Layer-3 mechanism; LLM empty-response retry extraction to `core/llm-retry.ts`; per-call `thinkingPolicy` enum; `parseJsonShape<T>` helper; shared `BaseUrlKeyedCache<T>` primitive; DeepSeek/Kimi/GLM `reasoning_effort: 'none'` real e2e measurement).
+
+**Per-PR discipline (LOCKED after PR #393/#396 incident 2026-08-02):** for contributor PRs that need rebase after base-branch move, use `gh pr update-branch --rebase` — NEVER locally fork + push + create a new PR. See `[[feedback_pr_merge_credit_preservation]]`. DocTpoint acknowledged + apologized on PR #393.
+
+**v1.25.11 PATCH (2026-07-31, 8 commits, ~80 files, 2744 tests):**
+
+- Sources provenance stamp (#365 partial); README absolute URLs (#375); fine-grained status-bar stage hints (#169); simplify follow-up applied 4 fixes (F2+F4+F5+F6) with 2 indicator findings (F1, F7) reverted after user e2e feedback.
 
 **v1.25.10 PATCH** (RELEASED 2026-07-29, sequential on v1.25.9): ten-item scope (locked 2026-07-28, expanded from initial 5 after DocTpoint + Guru35 morning batches):
 - admission criterion in Task Requirements (closes DocTpoint §2 "rules stated twice in the same prompt")
@@ -238,6 +264,304 @@ If any dimension regresses between commit and release time, Gate 6
 - "I'll add tests later" → Tests must accompany the change
 - "The PR review will catch it" → The reviewer has less context than you
 - "ESLint passes, TypeScript errors are fine" → ESLint does NOT check type safety
+
+### 🚫 Dead-code-as-docs policy (v1.26.0 Batch 4, 2026-08-03)
+
+**Rule.** Dead code (exported symbols with zero production importers) has a **half-life of one release cycle**. Either wire it into the production path before the next MINOR ships, or delete it before the next MINOR ships. Do not ship dead code across two releases.
+
+**Why this rule exists:** two instances already on the record — v1.25.10 PATCH #367 P1-1 (`lint-analysis-cache.ts`) + P1-2 (`lint-smart-skip.ts`) shipped as dead code and survived until v1.26.0 Batch 3 PR #406 deletion; v1.25.0 PDF cache-only architecture shipped some helpers without callers post-pivot. Two is a pattern. Three would be a culture.
+
+**What "dead code" means:** exported function / class / type with **zero non-test importers in `src/`**. Test-only importers don't count as "wired". Excluded: types declared inline (vanish with sole consumer), stale tests shadowing canonical tests (separate "test hygiene" concern).
+
+**Enforcement:**
+- Per-PR review: simplify's Reuse angle + code-review max-effort flag dead code. Either fix in-scope or split into follow-up PR.
+- Per-release audit: `pre-release-gate` skill Phase 2g (added 2026-08-03, Batch 4) lists files introduced since last tag with zero production importers. Findings FAIL the gate; remediation = wire or delete.
+- **Hard rule for future contributors:** if you find yourself saying "let's ship it dead and wire it next release", you've already lost — file the wire-up as part of the same PR or wait.
+
+**Related:** [[feedback-dead-code-as-docs]] (memory), `pre-release-gate` Phase 2g.
+
+### ⚠️ Tech debt: "LLM Advanced" vs "Advanced settings" panel name collision
+
+The plugin has TWO separate settings panels that both contain "Advanced" in
+their labels and easily confuse contributors:
+
+1. **LLM Advanced section** — `src/ui/settings-sections/advanced-section.ts`
+   — rendered inside LLM Configuration. Gated by `advancedSettingsMode`
+   ('default' | 'custom'). Internal field was `advancedSettingsMode`; v1.26.0
+   renamed the i18n key to `advancedLlmModeName` for clarity but kept the
+   internal field name. Contains: temperature, repetitionPenalty,
+   forcePdfSupport.
+
+2. **Bottom "Advanced settings" panel** — `src/ui/settings-sections/advanced-settings-section.ts`
+   — gated by `showAdvancedSettings` boolean. Contains: lint dedup
+   thresholds, maxConversationHistory, writePdfMarkdownToVault, slugCase,
+   createWelcomeNote, lintDedupIncludeSources (Batch 2).
+
+**Why this is a real problem (v1.26.0 Batch 2 evidence):** During Batch 2
+implementation the lintDedupIncludeSources toggle was initially rendered
+in the LLM Advanced section (mistake: dedup scope is a per-source-file
+filter, NOT an LLM sampling parameter). Correct location is the bottom
+panel, where the toggle is now rendered. The structural naming collision
+was the root cause of the slip.
+
+**Mitigations in scope of v1.27.0+ (do NOT attempt in Batch 2):**
+- Rename `advancedSettingsMode` → `advancedLlmMode` (breaking schema change;
+  needs migration; revisit when the Settings tab is reorganised).
+- Restructure the Settings tab layout so LLM-sampling and per-source-file
+  toggles live in distinct top-level sections (visual separation beats
+  naming discipline).
+- Add a `Settings tab section header` convention so the two "Advanced"
+  blocks are visually distinguished in code.
+
+**Hard rule for contributors:** when adding a setting toggle, decide FIRST
+which scope it belongs to (LLM sampling vs per-source-file/UI/storage
+behaviour). The LLM Advanced section is for `temperature`,
+`repetitionPenalty`, and provider-specific overrides ONLY. Everything else
+goes in the bottom "Advanced settings" panel.
+
+### ⚠️ Tech debt: LLM empty-response retry is inline in dedup-phase — must be extracted
+
+v1.26.0 (#382 item 1, Batch 2) added empty-response retry + transient
+concurrency halving directly inside `runDedupPhase` (see
+`src/wiki/lint/llm-phases/dedup-phase.ts`). The mechanism is
+provider-agnostic (works for any LLM that returns 200 + 0-byte body under
+burst load — e.g., deepseek-v4-flash thinking mode) and the user-facing
+Notice Toast is built around a reusable i18n key (`llmRetryRecoveredToast`
+in 10 locales) so the message wording can be reused by other LLM
+business paths.
+
+**Why this is debt (not a feature):** The same retry pattern is needed by
+every LLM call site in the plugin — at minimum:
+- `runAnalysisPhase` (already returning empty on the same vault)
+- `fix-runners` (alias / dead-link / orphan / empty-page fixes)
+- `merge-duplicates`
+- `conversation-ingest`
+- `analyzeSource` (in ingest path)
+- the new headless CLI `tools/llm-wiki-cli/`
+
+Without extraction, every future LLM business path has to re-implement
+retry + backoff + concurrency halving + log + Notice. That is the
+"copy-paste of similar logic across 5+ files" anti-pattern that the
+Six-Gate framework flags in Gate 2 (side effects).
+
+**Mitigation in scope of v1.26.x PATCH (do NOT attempt in Batch 2):**
+- Extract `src/core/llm-retry.ts` exposing:
+  ```ts
+  export interface LlmRetryOptions {
+    maxAttempts: 1 | 2 | 3;       // 1 = no retry, 3 = immediate + 2s delayed
+    delayMs: number;              // backoff between attempts 1 → 2
+    inScanConcurrencyFloor: 1;    // if concurrency > 1 and retries fire,
+                                   // halve for the rest of the scan
+    onRetry?: (event: RetryEvent) => void;  // log hook
+    onRecovered?: (count: number) => void; // Notice hook
+  }
+  export async function callLlmWithRetry<T>(
+    client: LLMClient, args: LlmCreateMessageArgs, opts: LlmRetryOptions,
+  ): Promise<{ response: T; retryEvents: RetryEvent[] }>;
+  ```
+- Refactor `runDedupPhase` to call `callLlmWithRetry(...)` instead of
+  inlining the loop + backoff + concurrency halving.
+- Adopt the helper in `runAnalysisPhase` (highest priority — confirmed
+  affected on the 2141-page vault), then `fix-runners`, then ingest.
+- The existing `llmRetryRecoveredToast` i18n key is reused unchanged
+  across all callers (the helper passes a `count` argument).
+
+**User decision 2026-08-04** (post e2e #8, 365s wall-time on 2141-page
+vault, down from 979s baseline): tech debt moves from v1.27.0 (MINOR
+feature window) to **v1.26.x PATCH** so the perf infrastructure
+ships BEFORE the next feature batch lands in v1.27.0. Avoids
+"feature work interleaved with perf infrastructure" in the MINOR
+window. See [[project_v1_26_0_batch_2_dedup_streaming]] for the
+e2e data.
+
+**Why the inlining was OK for Batch 2:**
+- Only dedup-phase was empirically affected (verified on the 2141-page
+  vault e2e in Aug 2026).
+- The inline implementation is small enough (~80 lines) to live in one
+  file until the second caller needs it — extract on the second use,
+  not the first.
+- Cross-cutting refactor would have inflated Batch 2 scope (this
+  commit is already +1,000 LOC across 4 commits; the retry mechanism
+  is +150 LOC of which +80 is the inlined implementation).
+
+### ⚠️ Force-disable thinking — 4-layer fallback (v1.26.0 Batch 6)
+
+PR #410 (Batch 2) shipped `enableThinkingOverride = false` for the
+dedup-phase using `thinking.type = 'disabled'` +
+`chat_template_kwargs.enable_thinking = false`. **The PR body claim
+"SDK-level thinking disable is safe across all 4 SDKs" was wrong on
+the openai-compat path** (deepseek-v4-flash, the user's actual
+backend). DocTpoint verified via fetch-interceptor (Issue #382
+comment 2, 2026-08-04) that neither field reaches the wire: the
+AI SDK's zod schema
+(`openaiCompatibleLanguageModelChatOptions`, line 322-344 of
+`@ai-sdk/openai-compatible@2.0.62/dist/index.mjs`) does not declare
+them, so the SDK's `filter()` at line 531-540 deletes them before
+the body is built. **The e2e 979s → 365s improvement came from the
+retry/halving mechanism (commit `e2e75eb`), NOT from thinking being
+disabled.**
+
+Batch 6 corrected this with a **4-layer fallback** (no per-vendor
+matching — fixed list, mirrors `[[token-key-probe.ts]]` design):
+
+| Layer | Mechanism | Where |
+|-------|-----------|-------|
+| 1 (Primary) | `reasoningEffort: 'none'` (camelCase) — passes zod filter, emits as `reasoning_effort: 'none'` on wire | `openai-compat-sdk-client.ts:267`, `openai-sdk-client.ts:221` |
+| 2 (Co-emit) | Same `reasoningEffort` in Anthropic SDK path — Anthropic uses `thinking: { type: 'disabled' }` (different field, zod-accepted) as its working switch | `anthropic-sdk-client.ts` |
+| 3 (400-retry) | On HTTP 400 mentioning `reasoning_effort` / `thinking` / `chat_template`, retry once with reasoningEffort stripped. Per-baseURL cache prevents infinite loops. | `reasoning-strip-probe.ts` + catch block in both SDK clients |
+| 4 (Prompt-level) | "**Do not reason step by step**" line in dedup prompt | `lint.ts` (Batch 2 already added this) |
+
+**Why Layer 2 is no-op today (corrected post-merge, 2026-08-04):**
+DocTpoint's third comment re-measured the openai-compat SDK source
+and corrected his own earlier claim that `thinking` /
+`chat_template_kwargs` were "stripped". The SDK has TWO independent
+paths into the wire body:
+
+1. **Path 1 — zod schema** (`dist/index.mjs:466-483`): fields
+   declared in `openaiCompatibleLanguageModelChatOptions` (zod
+   shape, lines 322-344) flow through, emitted to wire per schema.
+   `reasoningEffort` (camelCase) → `reasoning_effort` (snake_case).
+   Reads from a hard-coded `"openaiCompatible"` key (works for all
+   provider ids).
+2. **Path 2 — passthrough** (`dist/index.mjs:531-540`): the SDK's
+   `filter()` keeps keys NOT in the zod shape (this is an
+   extra-field passthrough, NOT a strip) and spreads them into the
+   body. Reads from `providerOptions[this.providerOptionsName]` and
+   its camelCase form — there is no hard-coded `"openaiCompatible"`
+   here.
+
+`buildProviderOptions` returns `{ openaiCompatible: openaiOpts }`
+while `getProvider` passes `this.provider` (e.g. `deepseek` /
+`kimi` / `lmstudio` / `custom` / `ollama`). For any provider id
+other than literally `"openai-compatible"`, path 2 looks up a key
+that does not exist. **None of the 15 provider ids in `types.ts`
+is the literal string `"openai-compatible"`** — so the Layer-2
+extra fields (thinking, chat_template_kwargs) never reach the
+wire. The mechanism is correct, but the key doesn't match the
+provider id. Per-id key correction is recorded in
+[[project_v1_26_0_rescoped]] v1.26.x PATCH track (depends on Layer-3
+guard now in place).
+
+**Why no per-vendor matching:** per user guidance (2026-08-04):
+"做好通用、完善的fallback机制即可". The Layer-3 message-match covers
+any backend that 400s on a reasoning-related field name with the same
+substring; specific per-vendor behavior is empirically unknown and the
+cost of a false-positive strip (one extra HTTP call) is bounded.
+
+**Hard rule for future contributors:** if you add a new LLM business
+path that wants force-disable-thinking, use `enableThinking: false`
+on the `createMessage` call — Layer 1 + Layer 3 + Layer 4 cover all
+known backends. **Never write `thinking.type` or `chat_template_kwargs`
+into provider options on the openai-compat path today** — they're
+silently dropped because `buildProviderOptions` returns under the
+hardcoded `"openaiCompatible"` key while path 2 of the SDK reads
+`providerOptions[this.provider]`. The per-id key correction in
+v1.26.x PATCH unlocks Layer 2; until then, Layer 1 (`reasoningEffort:
+'none'`) is the only verified-working disable mechanism. See
+[[project_v1_26_0_batch_6_real_wire_thinking_disable]]
+for the full post-mortem.
+
+**Verification evidence (cited inline in code):**
+- `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:322-344` — zod
+  schema declares only `reasoningEffort`, `textVerbosity`,
+  `strictJsonSchema`, `user` for chat options
+- `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:531-540` — `filter`
+  is a passthrough that keeps keys NOT in the schema shape and
+  spreads them into the body (NOT a strip). The fields never reach
+  wire because `buildProviderOptions` returns them under
+  `"openaiCompatible"` while path 2 reads
+  `providerOptions[this.providerOptionsName]` — the per-id lookup
+  misses for every provider id we ship. See
+  `[[feedback_force_disable_thinking_openai_compat_noop]]` for the
+  full mechanism description.
+- `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:541` — emit path:
+  `reasoning_effort: compatibleOptions.reasoningEffort`
+- `@ai-sdk/openai@3.0.86/dist/index.mjs:693` — `reasoningEffort` zod
+  enum `['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']`
+- `@ai-sdk/openai@3.0.86/dist/index.mjs:943` — `'none'` on a
+  `supportsNonReasoningParameters` model skips the reasoning path
+  entirely
+- `@ai-sdk/anthropic@3.0.98/dist/index.mjs:928` — Anthropic SDK
+  zod accepts `thinking: { type: 'disabled' }`
+
+**Wire-body regression test:** `openai-compat-request-body.test.ts`
+asserts `reasoning_effort: 'none'` IS on the body (not just on the
+`providerOptions` argument handed to the SDK — that assertion was
+PR #410's blind spot).
+
+### ⚠️ Force-disable thinking — call-site wiring (v1.26.0 PR #411 F5-A)
+
+PR #411 review surfaced a **third attribution correction** (eucher,
+2026-08-05 05:07 UTC): `dedup-phase.ts:379, 434` used the constant
+`enableThinkingOverride = false` as both a value (the override IS
+false → spread nothing) and a flag (`false ? A : {}` always picks
+`{}`). The result: `enableThinking: false` never entered `llmArgs`,
+and Layers 1-3 of this fallback were unreachable from the dedup-phase
+call site. Three log lines reported otherwise (debug at `:303, :431`
+printed `disableThinking=force …` and `disableThinking=true`; warn at
+`:448` printed `enableThinking_sent=true`) — all derived from the same
+broken ternary.
+
+**Fix:** renamed to `FORCE_DISABLE_THINKING = true` (clearly a flag,
+not a value) and made the spread unconditional. Log lines now print
+truthful values (`disableThinking=force` / `enableThinking_sent=false`).
+Regression guard in `dedup-phase.test.ts` asserts `enableThinking:
+false` on every call to `createMessage.mock.calls[*]`.
+
+**E2e impact** on the 2141-page vault (deepseek-v4-flash, all other
+settings unchanged):
+
+| state | wall-time | what changed |
+|---|---|---|
+| v1.25.x baseline | 979s | thinking mode, no retries |
+| Batch 2 (PR #410) | 365s | retry/backoff live; Layers 1-3 still dead code |
+| **F5-A (PR #411)** | **151s** | Layers 1-3 now live end-to-end |
+
+**−85% vs baseline, −59% vs Batch 2.** The full `feedback_force_disable_thinking_dedup_wiring`
+post-mortem records this as the third correction in the
+979s→365s→151s chain. See also the previous two:
+`[[feedback_force_disable_thinking_openai_compat_noop]]` (factor 1:
+zod-strip / misaddressed) and `[[feedback_dedup_phase_halving_dead_code]]`
+(factor 2: halving counter never fires).
+
+### ⚠️ Per-call thinking policy — source-analyzer repair path (v1.26.0 PR #411 F5-B)
+
+eucher's same review also flagged that the
+`source-analyzer.ts:417` JSON-repair callback did not propagate the
+parent's `disableThinking` setting. **We did NOT patch this, by
+design**: DocTpoint's controlled measurement on LM Studio / gemma-4-12b
+(PR #411 review 2026-08-05 05:38 UTC) showed that disabling reasoning
+on the repair call produces structurally valid JSON with **wrong
+content** (concepts duplicated into entities; `concepts = null`;
+contradictions / related_pages / key_points dropped). Repair needs
+reasoning budget to understand broken-JSON semantics, not just
+string-level bracket fixing. Mirroring the parent call's flag would
+have introduced silent data corruption on the parse-failure retry
+path.
+
+The opposite direction confirms the per-call rule:
+`complementaryAppend` at a 600-token cap went from 3 of 3 truncated
+to 0 of 3 with reasoning off (Issue #403 — thinking budget burns
+the short cap). Different call, different policy.
+
+**Per-call policy:**
+
+| call site | `disableThinking` honored? | reason |
+|---|---|---|
+| parent analysis (`source-analyzer.ts:386`) | yes | short-token structured extraction |
+| JSON-repair (`source-analyzer.ts:417`) | **no — always allow reasoning** | needs reasoning budget to understand broken JSON |
+| short-cap `complementaryAppend` | yes | thinking budget burns the cap (Issue #403) |
+
+**Regression guard (inverted):** `source-analyzer-thinking.test.ts`
+asserts the repair callback does NOT pass `enableThinking: false`
+even when `disableThinking: true`. Without this guard, a future
+contributor adding a "uniformly propagate disableThinking" rule
+would re-introduce silent repair corruption.
+
+**Tracked as v1.26.x PATCH:** introduce a per-call `thinkingPolicy`
+enum so the user can express "no reasoning for short-budget calls,
+full reasoning for repair". Until that ships, the asymmetry is
+intentional, not a bug.
 
 ### ⚠️ Obsidian Plugin Submission Rules — `document` is forbidden in production
 

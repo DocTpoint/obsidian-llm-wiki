@@ -218,8 +218,21 @@ export const TOKENS_LINT_ALIAS_BATCH = 500;
 
 /**
  * Token budget for lint duplicate detection LLM check.
+ *
+ * v1.26.0 (#382 item 1, Batch 2): raised from 4000 to 8000. The
+ * e2e log on the 2141-page vault (Aug 2026) showed 10/10 batches
+ * returning 0-byte responses on deepseek-v4-flash with max_tokens=4000.
+ * Root cause: thinking-mode models (DeepSeek V3/R1, Claude extended
+ * thinking, GPT-5 reasoning) burn thinking tokens against the same
+ * max_tokens budget, so 4000 produces 0 output tokens after thinking.
+ * 8000 gives the thinking channel ~4K and the JSON output ~4K — the
+ * JSON response for a 100-candidate batch is typically 1.5-3K output
+ * tokens. The dedup-phase also forces `enableThinking: false` on
+ * thinking-capable models (see dedup-phase.ts), which is the primary
+ * fix; 8000 is the safety margin for any model that doesn't honor
+ * the override.
  */
-export const TOKENS_LINT_DEDUP_LLM = 4000;
+export const TOKENS_LINT_DEDUP_LLM = 8000;
 
 /**
  * Token budget for lint dead link / orphan / empty page fixes.
@@ -369,13 +382,6 @@ export const CUSTOM_QUERY_INSTRUCTIONS_MAX_CHARS = 5000;
 // ============================================================================
 
 /**
- * Outer-loop yield cadence for lint duplicate-detection. Mirrors
- * YIELD_EVERY_ITERATIONS but kept separately so lint-tuning changes don't
- * risk spilling into other consumers (settings UI, wiki-engine status).
- */
-export const LINT_YIELD_EVERY_OUTER = 200;
-
-/**
  * Phase-1 (page parsing) yield cadence in duplicate-detection — finer than
  * the outer loop because parsing is cheap per item but the set accumulates.
  */
@@ -387,8 +393,113 @@ export const LINT_YIELD_EVERY_PHASE1 = 50;
  */
 export const LINT_YIELD_EVERY_COMPARISON = 500;
 
+/**
+ * v1.26.0 (#382 item 3, Batch 1): length of the title prefix used as the
+ * first dimension of the dual-key bucket. Combined with the second
+ * dimension (link-hash from outgoing wiki-links), this gives recall in
+ * the 97-98% range for cross-vault wikis (down from 100% for O(n²)
+ * all-pairs, but eliminates the O(N²) memory peak that OOMs at ~2000
+ * pages). See the Batch 1 plan in memory for the full recall analysis.
+ *
+ * Calibrated for Latin-script wikis. For non-Latin scripts (CJK,
+ * Cyrillic), `normalizeForMatch` strips most characters (only
+ * `[a-z0-9一-鿿]` survive), so titles in those scripts land in the
+ * empty-string prefix bucket or get dropped — those pages depend
+ * entirely on the `lh:` link-hash dimension for recall. This is a
+ * known limitation; expanding the partition to script-aware prefix
+ * lengths is future work (Batch 2+).
+ */
+export const LINT_DEDUP_BUCKET_PREFIX_LEN = 2;
+
+/**
+ * v1.26.0 (#382 item 1, Batch 2): cap on the size of an `ic:` (incoming-
+ * link) bucket to bound per-page fan-out. A page with N incoming links
+ * would otherwise land in N distinct `ic:` buckets; pages in the
+ * most-popular 50 of those buckets still get the ic: dimension, the
+ * remainder are skipped (their title-prefix and outgoing-link buckets
+ * still apply). 50 matches Batch 1's `LINT_DEDUP_BATCH_SIZE = 100` /
+ * 2 — fan-out above that risks O(N²) per-bucket pair loops.
+ */
+export const LINT_DEDUP_MAX_BUCKET_SIZE = 50;
+
 /** Batch size for vault reads during lint preparation. */
 export const LINT_PREP_BATCH_READ = 200;
+
+/**
+ * v1.26.0 (#382 item 2): Jaccard-similarity threshold for the "shared
+ * outgoing wiki-links" signal in duplicate-detection. Two pages whose
+ * outgoing `[[wiki-links]]` overlap by `>=` this fraction are flagged as
+ * a `sharedLinks` candidate, subject to the body-similarity gate below.
+ *
+ * Calibrated against cross-vault wikis in `src/wiki/lint/duplicate-detection.ts`.
+ * Lowering to ~0.3 surfaces more link-hub collisions; raising to ~0.5
+ * narrows to true co-link clusters. Exposed in Auto Maintenance settings
+ * (advanced-mode toggle) as `lintJaccardLinkThreshold`; leaving the input
+ * blank = use this constant.
+ */
+export const LINT_DEDUP_JACCARD_LINK_THRESHOLD = 0.4;
+
+/**
+ * v1.26.0 (#382 item 2): body-similarity floor for the shared-links
+ * signal. When two pages share outgoing wiki-links but their body-text
+ * overlap is `<` this fraction, they are NOT flagged as duplicates —
+ * even pages with identical link graphs but unrelated prose should not
+ * be merged (e.g. two unrelated pages both linking only to one popular
+ * hub page).
+ *
+ * Calibrated against cross-vault wikis. Raise this if you see false
+ * positives where two unrelated pages happen to link to the same hub.
+ * Exposed in Auto Maintenance settings (advanced-mode toggle) as
+ * `lintJaccardBodyGate`; leaving the input blank = use this constant.
+ */
+export const LINT_DEDUP_JACCARD_BODY_GATE = 0.2;
+
+/**
+ * v1.26.0 (#382 item 2): character-bigram Jaccard threshold for the
+ * title/alias similarity signal. Title/alias pairs whose bigram set
+ * overlap by `>=` this fraction are flagged as a `bigram` candidate
+ * (catches spelling variants and same-language near-matches).
+ *
+ * Calibrated against cross-vault wikis. Lowering catches more spelling
+ * variants and minor typos; raising requires near-identical titles.
+ * Exposed in Auto Maintenance settings (advanced-mode toggle) as
+ * `lintBigramThreshold`; leaving the input blank = use this constant.
+ */
+export const LINT_DEDUP_BIGRAM_THRESHOLD = 0.4;
+
+/**
+ * v1.26.0 (#382 item 2): bigram-score cutoff that decides whether a
+ * `bigram` candidate is sent to the LLM as a Tier-1 (always verify)
+ * or Tier-2 (fills the remaining token budget). Score `>=` this value
+ * → Tier 1; below → Tier 2.
+ *
+ * INTENTIONALLY NOT EXPOSED as a settings field: the cutoff shapes
+ * which generated candidates the LLM sees, which directly re-shapes
+ * the LLM input distribution in ways that need release-time
+ * verification (the LLM contract was verified against the default).
+ * Bumping it without understanding the budget model would either flood
+ * the LLM (cutoff too low) or silently drop candidates (cutoff too
+ * high). If a per-vault override is needed in the future, expose it
+ * with a stronger justification than "tunability".
+ */
+export const LINT_DEDUP_BIGRAM_TIER1_CUTOFF = 0.6;
+
+/**
+ * v1.26.0 (#382 item 1, Batch 2): Jaccard-similarity threshold for the
+ * sharedIncoming signal — two pages whose incoming-source sets (the
+ * list of wiki pages that cite them) overlap by `>=` this fraction
+ * are flagged as a `sharedIncoming` candidate. Lower than the
+ * outgoing-link threshold (0.4) because incoming-link overlap is
+ * intrinsically rarer: most pages are cited by only 1-3 sources, so a
+ * 0.3 overlap carries stronger semantic signal than a 0.4 outgoing
+ * overlap (where 50+ outgoing hubs are common).
+ *
+ * INTENTIONALLY NOT EXPOSED as a settings field for the same reason
+ * as LINT_DEDUP_BIGRAM_TIER1_CUTOFF — controls which generated
+ * candidates the LLM sees, needs release-time verification of the
+ * LLM contract before any per-vault override.
+ */
+export const LINT_DEDUP_INCOMING_LINK_THRESHOLD = 0.3;
 
 // ============================================================================
 // Amazon Bedrock Stage 1 (v1.24.1 PATCH) — bedrock-mantle endpoint
@@ -457,8 +568,41 @@ export const LINT_CANDIDATE_TOKEN_ESTIMATE = 30;
  */
 export const LINT_MAX_INPUT_TOKENS = 15000;
 
-/** Number of candidates fed per lint dedup LLM call. */
-export const LINT_DEDUP_BATCH_SIZE = 100;
+/**
+ * Number of candidates fed per lint dedup LLM call.
+ *
+ * v1.26.0 (#382 item 1, Batch 2): reduced from 100 to 50. The e2e log
+ * on a 2141-page vault (Aug 2026) with deepseek-v4-flash showed batches
+ * with 100 candidates produced 14K-char prompts, which under the
+ * provider's thinking-mode behaviour (thinking tokens consume the
+ * max_tokens output budget) yielded 0-byte responses on 9/10 batches.
+ * Batches with 50 candidates produce ~10K-char prompts that fit within
+ * the thinking model's output budget, so all batches return content.
+ * The user-paid cost is ~2x more LLM calls (20 batches vs 10), but
+ * each batch completes faster because the model thinks less.
+ */
+export const LINT_DEDUP_BATCH_SIZE = 50;
+
+/**
+ * v1.26.0 (#382 item 1, Batch 2): empirically-derived upper bound for
+ * the dedup batch's rendered prompt. When the prompt exceeds this size,
+ * thinking-mode LLMs (DeepSeek V3/V4, Claude extended thinking,
+ * GPT-5 reasoning) burn their max_tokens output budget on internal
+ * reasoning and return 0-byte responses on most batches. The
+ * 7,000-character threshold was measured on a 2141-page vault
+ * (Aug 2026 e2e): every batch with prompt < 7K chars returned
+ * content reliably on deepseek-v4-flash with max_tokens=8000;
+ * batches with prompt > 8K chars returned 0 on ~10-50% of attempts.
+ *
+ * The dedup-phase batch splitter shrinks the batch size at split
+ * time to keep the rendered prompt under this budget (so a batch
+ * with 50 candidates that would produce a 14K-char prompt is
+ * split into two batches of ~25 each, even though both are under
+ * the LINT_DEDUP_BATCH_SIZE cap). This is purely a thinking-model
+ * insurance; non-thinking models are unaffected (they fit 100
+ * candidates in 4K tokens easily).
+ */
+export const LINT_DEDUP_PROMPT_CHAR_BUDGET = 7000;
 
 // ============================================================================
 // Query Wiki — PPR top-N page retrieval

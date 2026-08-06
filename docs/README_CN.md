@@ -4,13 +4,14 @@
 
 > 一个 Obsidian 插件，把你的笔记变成互联可查的知识库——[Karpathy LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 概念，直接集成在你已有的编辑器中。
 
-> **零嵌入图谱检索 • 原生 10 种语言 • 兼容所有 LLM 提供商**
+> **Obsidian 官方市场满分评分 • 零嵌入图谱检索 • 原生 11 种语言 • 兼容所有 LLM 提供商**
+> **本地优先 • 无后端 • GDPR 友好**
 
-![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
+![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-11-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
-[English](../README.md) | **简体中文** | [繁體中文](README_ZH-Hant.md) | [日本語](README_JA.md) | [한국어](README_KO.md) | [Deutsch](README_DE.md) | [Français](README_FR.md) | [Español](README_ES.md) | [Português](README_PT.md) | [Italiano](README_IT.md)
+[English](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/README.md) | **简体中文** | [繁體中文](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_ZH-Hant.md) | [日本語](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_JA.md) | [한국어](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_KO.md) | [Deutsch](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_DE.md) | [Français](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_FR.md) | [Español](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_ES.md) | [Português](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_PT.md) | [Italiano](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_IT.md) | [Русский](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/README_RU.md)
 
 [官网](https://llmwiki.greenerai.top/) | [Obsidian 插件市场](https://community.obsidian.md/plugins/karpathywiki) | [博客](https://llmwiki.greenerai.top/zh/blog/) | [反馈讨论](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
@@ -30,6 +31,7 @@
 - [🚀 快速开始](#-快速开始)
 - [✨ 核心特性](#-核心特性)
 - [🌐 生态](#-生态)
+- [🛠️ 工具](#-工具)
 - [🔍 检索工作原理](#-检索工作原理)
 - [🤖 模型推荐](#-模型推荐)
 - [❓ 常见问题](#-常见问题)
@@ -47,17 +49,13 @@
 
 ### 竞品对比
 
-| | Karpathy LLM Wiki (本插件) | nashsu / llm_wiki | SamurAIGPT / llm-wiki-agent | sdyckjq / llm-wiki-skill | atomicstrata / llm-wiki-compiler |
+| | **Karpathy LLM Wiki**（本插件） | nashsu / llm_wiki | SamurAIGPT / llm-wiki-agent | sdyckjq / llm-wiki-skill | atomicstrata / llm-wiki-compiler |
 |---|---|---|---|---|---|
-| **交付形态** | ✅ 一键 Obsidian 插件 | ❌ 独立 Tauri 桌面应用 | ❌ Claude Code skill | ❌ Claude Code / Codex skill | ❌ CLI + SDK + MCP 服务 |
-| **上手时间** | ✅ **5 分钟** — 社区插件市场 → 安装 → 选择 Provider → 摄入 | ❌ 30 分钟以上 — 编译/下载二进制、配置 CLI | ❌ 15 分钟 — 需要 Claude Code 订阅 + 安装技能 | ❌ 10 分钟 — 需要 Claude Code/Codex 订阅 + 配置 | ❌ 30 分钟以上 — pip install + SDK + MCP 配置 |
-| **安装路径** | ✅ Obsidian → 社区插件 → 搜索 → 安装 | ❌ 编译或下载独立二进制，再配置 CLI | ❌ 需要 Claude Code 订阅 + 安装指南 | ❌ 需要 Claude Code 或 Codex 订阅 + 配置步骤 | ❌ pip install + Python SDK + 本地服务 |
-| **架构复杂度** | ✅ **零依赖** — 无需向量数据库、无需嵌入模型、无需外部进程 | 🟡 自带 Python 运行时 + sigma.js + sqlite | 🟡 依赖 Claude Code 环境 — 非自包含 | 🟡 需要独立平台运行时 | ❌ 需要 Python、嵌入模型、向量数据库 |
-| **国际化 (界面 + Wiki 输出)** | ✅ 10 种语言（界面/Wiki 独立设置） | 🟡 2 种（英文/中文） | ❌ 仅英文 | ❌ 仅英文 | ❌ 仅英文 |
+| **交付与安装** | ✅ **5 分钟** — 一键 Obsidian 插件：社区插件市场 → 安装 → 选择 Provider → 摄入 | ❌ 30 分钟以上 — 编译/下载 Tauri 二进制、配置 CLI | ❌ 15 分钟 — 需要 Claude Code 订阅 + 安装技能 | ❌ 10 分钟 — 需要 Claude Code/Codex 订阅 + 配置 | ❌ 30 分钟以上 — pip install + Python SDK + 本地服务 |
+| **架构与依赖** | ✅ **零依赖** — 无需向量数据库、无需嵌入模型、无需外部进程（按设计采用 PPR 检索 `[[wiki-link]]` 图谱） | 🟡 自带 Python 运行时 + sigma.js + sqlite；嵌入模型可选，默认关闭 | 🟡 依赖 Claude Code 环境 — 非自包含；无嵌入 | 🟡 需要独立平台运行时；无嵌入 | ❌ 需要 Python + 嵌入模型 + 向量数据库（强制） |
+| **国际化（界面 + Wiki 输出）** | ✅ 11 种语言（界面/Wiki 独立设置） | 🟡 2 种（英文/中文） | ❌ 仅英文 | ❌ 仅英文 | ❌ 仅英文 |
 | **LLM 提供商** | ✅ 12+（含 Codex OAuth、Bedrock、LM Studio、Ollama、Anthropic 兼容、Kimi、GLM、MiniMax、DeepSeek） | 🟡 OpenAI 兼容 | 🟡 通过 Claude Code 订阅 | 🟡 通过 Claude Code / Codex 订阅 | 🟡 OpenAI 兼容 |
-| **检索算法** | ✅ Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 4 信号启发式（Adamic-Adar + 2 跳衰减） | ❌ 仅 Louvain 社区检测 | ❌ 仅 Louvain + k 跳预览 | ❌ 混合：BM25 + 语义 + wiki 链接 |
-| **查询管线（5 级级联）** | ✅ Lex → LLM 关键词 → 子串扫描 → LLM KB 回退 → PPR 扩展（首个充分信号即截断） | 🟡 仅 2 跳衰减 | ❌ 仅 Louvain 聚类 | ❌ k 跳预览（无 LLM 增强） | ❌ BM25 + 语义分块（无图） |
-| **需要嵌入模型** | ✅ 不需要（零嵌入成本，有意为之） | 🟡 可选，默认关闭 | ✅ 不需要 | ✅ 不需要 | ❌ **必须 — 强制要求** |
+| **检索与查询管线** | ✅ **5 级级联** — Lex → LLM 关键词 → 子串扫描 → LLM KB 回退 → PPR 扩展（首个充分信号即截断）。Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 仅 2 跳衰减（4 信号启发式：Adamic-Adar + 2 跳） | ❌ 仅 Louvain 社区检测 | ❌ 仅 k 跳预览（无 LLM 增强） | ❌ BM25 + 语义分块（无图谱） |
 | **图谱可视化** | ✅ Obsidian 原生图谱视图（内建，零额外体积） | ❌ 桌面应用中自定义 sigma.js + graphology | 🟡 vis.js graph.html（独立文件） | ❌ 自定义 sigma.js 离线 HTML | ❌ 只读浏览器查看器 |
 | **Wiki 诚实度** | ✅ 当没有 Wiki 源匹配查询时显示"阶段回退"提示 | ❌ 无等效功能 | ❌ 无等效功能 | ❌ 无等效功能 | ❌ 无等效功能 |
 | **已发布检索基准** | ✅ PPR @5 = 27.1% vs 纯 knn 基线 24.1%（该领域唯一公开基准） | ❌ 58% → 71% *仅在启用嵌入时*，非同类对比 | ❌ 未公开 | ❌ 未公开 | ❌ 未公开 |
@@ -78,7 +76,7 @@
 - **想要干净、自包含的解决方案。** 插件有零个外部依赖：没有嵌入模型、没有向量数据库、没有 pip 包、没有 Docker 容器。它是一个单一的 Obsidian 插件，读取你的笔记、与 LLM 对话、将 Wiki 页面写入你的 vault。一切都在 Obsidian 内部运行。
 - **想要一个基于*你的笔记*回答的可查询聊天**——而非互联网——每个答案都带有 `[[wiki-links]]` 回到你的知识图谱。
 - **关心数据主权**——使用 Ollama 或 LM Studio 完全本地运行，永不触网。
-- **使用或阅读 10 种支持语言中的任何一种**——界面和 Wiki 输出语言相互独立（你的 Wiki 可以是中文而界面是英文）。
+- **使用或阅读 11 种支持语言中的任何一种**——界面和 Wiki 输出语言相互独立（你的 Wiki 可以是中文而界面是英文）。
 - **通过写 `[[wiki-links]]` 来维护图谱**——你写的每个链接已经在丰富检索；无需单独的标签/嵌入/索引步骤。
 - **想要一键维护**——Lint 健康扫描 + 一键智能修复自动处理重复、断链和孤立页，无需手动整理。
 
@@ -134,6 +132,8 @@
 > 💡 **保持更新。** 新功能、修复和性能改进频繁发布。设置 → 第三方插件 → 检查更新，或开启自动插件更新。
 > 📖 详细教程（安装、PDF 配置、多 Provider 说明、升级指南）见 [GitHub Discussions → 指南](https://github.com/green-dalii/obsidian-llm-wiki/discussions/categories/guides)。
 
+> 🌟 **如果这个插件帮你省了配置时间，请在 [GitHub](https://github.com/green-dalii/obsidian-llm-wiki) 上点个 Star**，让更多人看到。
+
 ---
 
 ## ✨ 核心特性
@@ -148,7 +148,7 @@
 
 ### 📄 PDF 摄入 (v1.25.0+)
 
-- **🔌 Provider 准入** — Anthropic、OpenAI 和 Bedrock 原生支持 PDF。对于任何其他 OpenAI/Anthropic 兼容端点，在设置 → LLM 配置 → 高级中开启 **Force PDF Support** 让插件尝试调用。关于 Apple Silicon 上的本地 OCR、第三方提取工具（MinerU、Docling、Mathpix、Adobe）及完整 PDF 摄入教程，见下方的 [PDF OCR 路径](#-pdf-ocr-路径) 和 [docs/PDF-OCR-GUIDE.md](./PDF-OCR-GUIDE.md)。
+- **🔌 Provider 准入** — Anthropic、OpenAI 和 Bedrock 原生支持 PDF。对于任何其他 OpenAI/Anthropic 兼容端点，在设置 → LLM 配置 → 高级中开启 **Force PDF Support** 让插件尝试调用。关于 Apple Silicon 上的本地 OCR、第三方提取工具（MinerU、Docling、Mathpix、Adobe）及完整 PDF 摄入教程，见下方的 [PDF OCR 路径](#-pdf-ocr-路径) 和 [docs/PDF-OCR-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/PDF-OCR-GUIDE.md)。
 - **🗄️ 有界缓存** — `.obsidian/plugins/karpathywiki/pdf-cache/` 按内容哈希 + 模型 + 转换器版本为键存储转换后的 Markdown。三层防御治理：总计 100 MB / 1000 条 / 单条 10 MB 上限，LRU-by-mtime 淘汰。
 - **📝 可选 vault sidecar** — 设置 → Wiki 配置 → Wiki 文件夹 → *将 PDF Markdown 写入 Vault* 在源 PDF 旁写入 `<basename>.pdf.md`（默认关闭——仅缓存模式）。
 - **🛡️ 逐字转录提示** — 带 `[illegible]` / `[figure: ...]` 反幻觉标记的 OCR 风格转换；小型本地模型的 markdown 围栏包裹在写入缓存前自动清洗。
@@ -161,7 +161,7 @@
 2. **🖥️ Apple Silicon 本地 OCR** — [oMLX](https://github.com/jundot/omlx) 将 Microsoft Markitdown 集成为其内置的 PDF→Markdown 后端。在 oMLX 中启用 Markitdown，加载 [百度 Unlimited-OCR](https://huggingface.co/baidu/Unlimited-OCR)（3B / 570M 活跃参数，2026-06 开源）作为视觉模型，将插件指向 oMLX 作为自定义 OpenAI 兼容 Provider，开启 **Force PDF Support**，选择 oMLX 服务的多模态模型。PDF 全程不离开你的机器。
 3. **🛠️ 第三方提取工具（MinerU、Docling、Mathpix、Adobe）** — 在你的 PDF 上运行独立提取工具生成 `.md` 文件，然后通过插件的标准管线将其作为普通 Markdown 笔记摄入。对于科学论文、扫描文档、数学密集型 PDF 最为可靠。
 
-📖 **所有三条路径的完整设置教程**（云端 Provider、oMLX 硬件等级、MinerU 安装、缓存管理）→ [docs/PDF-OCR-GUIDE.md](./PDF-OCR-GUIDE.md)
+📖 **所有三条路径的完整设置教程**（云端 Provider、oMLX 硬件等级、MinerU 安装、缓存管理）→ [docs/PDF-OCR-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/PDF-OCR-GUIDE.md)
 
 ### 💬 查询与维护
 
@@ -187,9 +187,9 @@
 
 ### 🌐 语言
 
-- **🌍 10 种界面语言** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano。界面和 Wiki 输出语言相互独立——你的 Wiki 可以是中文而界面是英文。
-- **📚 10 种 Wiki 输出语言** — 同一集合；在设置 → Wiki 配置中选择。*自定义输入* 选项用于临时提示。
-- **🈶 269+ 翻译的 UI 字符串** — 每个标签、弹窗和通知。添加第 11 种语言由贡献者驱动（PR #159 模式）。
+- **🌍 11 种界面语言** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano, Русский。界面和 Wiki 输出语言相互独立——你的 Wiki 可以是中文而界面是英文。
+- **📚 11 种 Wiki 输出语言** — 同一集合；在设置 → Wiki 配置中选择。*自定义输入* 选项用于临时提示。
+- **🈶 269+ 翻译的 UI 字符串** — 每个标签、弹窗和通知。添加第 12 种语言由贡献者驱动（PR #159 模式）。
 
 ---
 
@@ -244,7 +244,7 @@
 | **ChatGPT Plan (Codex OAuth)** | Codex Responses API | 浏览器/设备代码登录；SecretStorage |
 | **本地：Ollama, LM Studio, OpenRouter, Anthropic 兼容** | 任何 OpenAI/Anthropic 协议模型 | 自定义 OpenAI 兼容 + Anthropic 兼容（Token Plan / Coding Plan）|
 
-本插件每次查询向 LLM 提供完整的 Wiki 上下文——因此 **长上下文模型胜出**。完整的分级表格（云端 + 本地）见 [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)，来自 [models.dev](https://models.dev/) 交叉核对以确保推荐持续有效。
+本插件每次查询向 LLM 提供完整的 Wiki 上下文——因此 **长上下文模型胜出**。完整的分级表格（云端 + 本地）见 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)，来自 [models.dev](https://models.dev/) 交叉核对以确保推荐持续有效。
 
 ### 什么更重要
 
@@ -259,7 +259,7 @@
 - **OpenAI** —— 单独计费的 OpenAI Platform API Key。
 - **ChatGPT Plan (Codex OAuth)** —— 实验性、独立的 Provider，在浏览器或设备代码登录后使用符合条件的 Codex 额度；可用性遵循 OpenAI Codex 身份验证和额度政策，而非计划名称。第三方 Codex 兼容功能，非 OpenAI 合作项目或通用 ChatGPT API。
 
-> 📖 **完整选择表格**（云端 + 本地 + PDF OCR + Codex OAuth + 量化 + 硬件等级）→ [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)
+> 📖 **完整选择表格**（云端 + 本地 + PDF OCR + Codex OAuth + 量化 + 硬件等级）→ [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
 
 ---
 
@@ -267,6 +267,7 @@
 
 本插件与你的其他 Obsidian 工具无缝协作——以下工具皆可直接对接 `[[wiki-link]]` 图谱，无需任何代码改动。
 
+- **📄 [MinerU 在线转换](https://mineru.net/OpenSourceTools/Extractor)** —— 上海 AI Lab OpenDataLab 团队推出的免费 PDF/Word/PPT/Excel/HTML/图片 → Markdown 转换器。上传文档、下载 `.md`、放入 vault 内 wiki 文件夹之外的任意位置，然后运行「摄入单个源」。是科学论文、扫描件、含公式/表格的复杂多模态 PDF 的最佳路径。需要严格隐私保护的用户可 [自部署 MinerU](https://github.com/opendatalab/mineru)；未来版本可能原生集成，详见 [#376](https://github.com/green-dalii/obsidian-llm-wiki/issues/376)。
 - **🕸️ Obsidian 原生关系图谱** —— 在任意 Wiki 页面上打开原生图谱视图；每个 `[[wiki-link]]` 成为节点，每条反向链接成为边。内置功能，零额外体积。
 - **✂️ [Obsidian Web Clipper](https://obsidian.md/clipper)** —— 官方浏览器扩展。将网页（文章、博客、Reddit 帖子、Hacker News、食谱、研究论文、YouTube 字幕（通过 Interpreter 提取））保存到 vault 内任意文件夹，然后运行插件的「从文件夹摄入」命令批量提取实体与概念。
 - **📊 [Dataview](https://github.com/blacksmithgu/obsidian-dataview)** —— 用 DQL（`LIST FROM "wiki/entities" WHERE contains(tags, "person")`）或 JS API 像查询数据库一样检索 Wiki。插件在每个页面写入标准 frontmatter（`tags:`、`type:`、`aliases:`），Dataview 查询开箱即用。
@@ -274,6 +275,18 @@
 - **🎞️ [Marp Slides](https://github.com/samuele-cozzi/obsidian-marp)** —— 通过 Marp frontmatter（`marp: true`）将任意 Obsidian 笔记转为幻灯片。Wiki 页面是纯 Markdown，可直接渲染为幻灯片，无需额外转换。
 - **🖼️ Canvas** —— Obsidian 原生无限画布。把 Wiki 卡片拖到 Canvas 上，无需离开 vault 即可拼装学习指南、思维导图或研究概览，所有内容均通过 `[[wiki-links]]` 互联。
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** —— 本地语音备忘录与会议录制（macOS 上使用 whisper.cpp，音频数据不出本机）的配套插件。生成带说话人标记的转录文件与自有 wiki 中心页面。与本插件相互独立——可在同一 vault 共存而无需耦合。
+
+---
+
+## 🛠️ 工具
+
+插件随仓库附带一个无头 CLI，可在磁盘上的 vault 上运行同一摄取流水线——无需 Obsidian、无需 Electron、无需界面。引擎、分析器、页面工厂、Schema 管理器与 LLM 客户端均直接从 `src/` 导入；只有宿主（`obsidian`、实时 vault、metadataCache）被替换为 shim。适用于 CI、脚本化运行、跨臂比较采样参数，以及在单一源上分析提取循环。
+
+```bash
+pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+```
+
+完整 flag 参考、环境要求与 shim 注意事项见 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md)。
 
 ---
 
@@ -297,7 +310,7 @@
 
 ### 能用我的语言使用吗？
 
-🌍 界面和 Wiki 输出均为 10 种语言。界面语言和 Wiki 语言相互独立。添加第 11 种语言由贡献者驱动（PR #159 模式）。
+🌍 界面和 Wiki 输出均为 11 种语言。界面语言和 Wiki 语言相互独立。添加第 12 种语言由贡献者驱动（PR #159 模式）。
 
 ### 这和 RAG 聊天机器人有何不同？
 
@@ -305,7 +318,7 @@
 
 ### 该选哪个 LLM？
 
-长上下文模型（≥200K tokens）效果最佳。[模型推荐](#-模型推荐) 一节涵盖了原则；完整分级表格见 [docs/MODEL-GUIDE.md](./MODEL-GUIDE.md)。
+长上下文模型（≥200K tokens）效果最佳。[模型推荐](#-模型推荐) 一节涵盖了原则；完整分级表格见 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)。
 
 ### 有公开的基准测试吗？
 

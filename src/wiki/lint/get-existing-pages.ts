@@ -1,5 +1,6 @@
 import { App } from 'obsidian';
 import { parseFrontmatter } from '../../core/frontmatter';
+import { isInFolderScope } from '../../core/folder-scope';
 
 export async function getExistingWikiPages(
   app: App,
@@ -9,7 +10,7 @@ export async function getExistingWikiPages(
     .getMarkdownFiles()
     .filter(
       f =>
-        f.path.startsWith(wikiFolder) &&
+        isInFolderScope(f.path, wikiFolder, false) &&
         !f.path.includes('index.md') &&
         !f.path.includes('log.md') &&
         !f.path.includes('/schema/') &&

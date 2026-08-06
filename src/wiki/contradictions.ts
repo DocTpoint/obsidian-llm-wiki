@@ -13,6 +13,7 @@ import {
   applySectionLabels,
   buildSystemPrompt,
 } from './system-prompts';
+import { isInFolderScope } from '../core/folder-scope';
 
 export class ContradictionManager {
   constructor(private ctx: EngineContext) {}
@@ -85,7 +86,7 @@ ${contradiction.source_page}
     const contradictionsDir = `${this.ctx.settings.wikiFolder}/contradictions`;
     const files = this.ctx.app.vault
       .getMarkdownFiles()
-      .filter(f => f.path.startsWith(contradictionsDir));
+      .filter(f => isInFolderScope(f.path, contradictionsDir, false));
 
     const results: Array<{
       path: string;

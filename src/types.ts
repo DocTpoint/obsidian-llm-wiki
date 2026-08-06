@@ -225,6 +225,21 @@ export interface LLMWikiSettings {
   autoSmartFix: boolean;
   autoIngestNotificationLevel: 'modal' | 'notice';
 
+  /**
+   * v1.26.0 (#382 item 2): whether the Advanced Settings panel (bottom of
+   * the Settings tab) reveals its advanced-user parameters. Currently that
+   * is the 3 lint dedup thresholds (lintJaccardLinkThreshold /
+   * lintJaccardBodyGate / lintBigramThreshold) + the first-run Welcome
+   * note toggle; future advanced-user settings land here too.
+   *
+   * Independent of `advancedSettingsMode` in the Advanced section — that
+   * gates LLM sampling parameters (temperature / penalty / thinking);
+   * this gates generic non-LLM advanced knobs. Closing the toggle clears
+   * the threshold overrides so a hidden setting never keeps a
+   * no-UI-affordance value.
+   */
+  showAdvancedSettings?: boolean;
+
   // v1.23.0: Phase 5.1.5 — first-run Welcome note. When enabled (default),
   // the plugin detects tier on every onload (no vault state change =
   // short-circuit) and creates <wikiFolder>/Welcome.md on Tier B transitions.
@@ -317,12 +332,76 @@ export interface LLMWikiSettings {
   // provider's default. Low values (e.g. 0.15) improve fidelity for extraction
   // and verbatim quotes; higher values (e.g. 0.7) make chat answers more fluid.
   extractionTemperature?: number;
+
+  /**
+   * Nucleus sampling for extraction. Its partner, not an independent knob: a
+   * provider preset sets the two together, so overriding only the temperature
+   * leaves a run on half of one preset and half of another.
+   */
+  extractionTopP?: number;
+
+  /**
+   * Fixed sampling seed. Unset leaves the provider free to pick one per
+   * request, so ingesting the same source twice gives two different wikis —
+   * normal behaviour, but it also means no comparison between two versions of
+   * the extraction loop can separate a change from the sampler.
+   *
+   * What it buys depends on the provider. Local servers honour it strictly:
+   * two runs of one source, hours apart, came back byte-identical. The
+   * `openai` provider drops it: that path builds the Responses model, which
+   * reports `seed` unsupported and leaves it out of the body — the best-effort
+   * seed OpenAI documents belongs to Chat Completions, which this path does
+   * not use. Anthropic has no such parameter at all, and the Codex adapter
+   * omits it deliberately. So this reaches local servers and other
+   * OpenAI-compatible endpoints, and nothing else.
+   */
+  samplingSeed?: number;
   chatTemperature?: number;
 
   // Issue #128 follow-up: repetition penalty. Leave undefined to omit the field.
   // Some local models (llama.cpp-based) benefit from a small penalty (e.g. 1.1)
   // to avoid repetition loops at low temperatures.
   repetitionPenalty?: number;
+
+  /**
+   * v1.26.0 (#382 item 2): Jaccard threshold for the shared-outgoing-
+   * wiki-links signal in lint duplicate-detection (0..1). Leave undefined
+   * to use the `LINT_DEDUP_JACCARD_LINK_THRESHOLD` constant in
+   * src/constants.ts. Lower = more link-overlap candidates flagged;
+   * raise to reduce false positives in hub-heavy vaults.
+   */
+  lintJaccardLinkThreshold?: number;
+
+  /**
+   * v1.26.0 (#382 item 2): body-similarity floor (0..1) below which two
+   * pages with shared wiki-links are still NOT flagged as duplicates.
+   * Leave undefined to use `LINT_DEDUP_JACCARD_BODY_GATE`. Raise if you
+   * see false positives where two unrelated pages happen to link to the
+   * same hub.
+   */
+  lintJaccardBodyGate?: number;
+
+  /**
+   * v1.26.0 (#382 item 2): character-bigram Jaccard threshold for
+   * title/alias similarity in lint duplicate-detection (0..1). Leave
+   * undefined to use `LINT_DEDUP_BIGRAM_THRESHOLD`. Lower = catch more
+   * spelling variants; raise to require near-identical titles.
+   */
+  lintBigramThreshold?: number;
+
+  /**
+   * v1.26.0 (#382 item 1, Batch 2): include `sources/` pages in lint
+   * duplicate-detection. Default `true` (sources participate in dedup
+   * via the sourceFingerprint signal, which requires body-hash equality
+   * to upgrade a pair to tier-1). Set to `false` to opt out if your
+   * source corpus generates false positives.
+   *
+   * Cross-type comparison (source↔entity / source↔concept) is
+   * explicitly NOT enabled by this flag — sources are episodic memory
+   * per #358 complementary memory model and cross-type would produce
+   * false positives.
+   */
+  lintDedupIncludeSources?: boolean;
 
   // Issue #75: cap max_tokens per LLM call. 0 = no cap.
   // Recommended for local models with small context windows.
@@ -574,6 +653,19 @@ export interface LLMClient {
     maxTokensPerCall?: number;  // Issue #75: cap for truncation retry
     enableThinking?: boolean;   // ROADMAP P3 #12: allow thinking for thinking-capable models
     temperature?: number;       // Issue #128: per-request sampling temperature
+    /**
+     * Nucleus sampling. Travels with `temperature` because a preset is a pair:
+     * sending one and leaving the other to the server compares two halves of
+     * two different presets, which is not a comparison of anything.
+     */
+    top_p?: number;
+    /**
+     * Fixed sampling seed. Unset — the default — leaves the provider free to
+     * pick a fresh one per request, which is normal generation behaviour but
+     * means no comparison between two versions of a prompt can tell a change
+     * from the sampler.
+     */
+    seed?: number;
     repetition_penalty?: number; // Issue #128 follow-up: llama.cpp extension
     chat_template_kwargs?: Record<string, unknown>; // Issue #99: template-based reasoning disable
     // v1.25.0 PR3 follow-up #8 (Bug D, e2e 2026-07-17): cancellation
@@ -600,6 +692,8 @@ export interface LLMClient {
     onChunk: (chunk: string) => void;
     enableThinking?: boolean;
     temperature?: number;
+    top_p?: number;
+    seed?: number;
     repetition_penalty?: number;
     /** Issue: streamed answers were truncated silently — surface finish_reason. */
     onFinish?: (meta: LLMFinishMeta) => void;
@@ -621,6 +715,7 @@ export const WIKI_LANGUAGES: Record<string, string> = {
   'es': 'Español',
   'pt': 'Português',
   'it': 'Italiano',
+  'ru': 'Русский',        // v1.26.0: Russian
 };
 
 // Valid frontmatter tag values per schema classification rules.
@@ -914,6 +1009,11 @@ export const DEFAULT_SETTINGS: LLMWikiSettings = {
   startupCheckNoticeLevel: 'visible',  // v1.23.0: show QuickFixes results Notice by default
   autoSmartFix: false,
   autoIngestNotificationLevel: 'notice',  // v1.22.2: default to Notice (no blocking Modal) for auto-ingest
+  // v1.26.0 (#382 item 2): default OFF — the Advanced Settings panel
+  // (bottom of the Settings tab) hides its advanced-user parameters until
+  // the showAdvancedSettings toggle is on. Independent of advancedSettingsMode
+  // (LLM sampling in the Advanced section).
+  showAdvancedSettings: false,
   createWelcomeNote: true,  // v1.23.0: Phase 5.1.5 — Tier-B first-run Welcome note (D8: 1 EN template + LLM dynamic translation)
 
   // Ingestion acceleration (default: 3 parallel for most providers)
@@ -946,6 +1046,22 @@ export const DEFAULT_SETTINGS: LLMWikiSettings = {
   // PDF conversion.
   forcePdfSupport: false,
   writePdfMarkdownToVault: false,
+  // v1.26.0 (#382 item 2): dedup threshold overrides — undefined = use the
+  // LINT_DEDUP_* constants in src/constants.ts. The UI renders them only
+  // when showAdvancedSettings is on (Advanced Settings panel, bottom of the
+  // Settings tab) and clears them when that toggle flips back off; at
+  // consumption the dedup-phase reads them unconditionally (like
+  // extractionTemperature/chatTemperature — the codebase does not gate
+  // advanced fields at use sites). JSON.stringify drops undefined keys,
+  // so first-install data.json does not contain these keys.
+  lintJaccardLinkThreshold: undefined,
+  lintJaccardBodyGate: undefined,
+  lintBigramThreshold: undefined,
+  // v1.26.0 (#382 item 1, Batch 2): sources participate in dedup by
+  // default. Undefined = true at use site (DEFAULT_SETTINGS does not
+  // own the default; the filter reads `settings.lintDedupIncludeSources
+  // !== false` so a missing key is treated as on).
+  lintDedupIncludeSources: undefined,
   // Issue #111: default to 'lower' for backwards compatibility.
   slugCase: 'lower',
   // v1.24.0 #251: persistent user-supplied instructions appended to the

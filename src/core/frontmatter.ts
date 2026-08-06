@@ -498,6 +498,13 @@ export function mergeFrontmatter(
   const updated = new Date().toISOString().split('T')[0];
 
   // Always emit a `tags:` line (bare when empty) to preserve prior behavior.
+  // Issue #356 follow-up: also pass through unknown top-level fields
+  // (`redirect_to:`, `parent_org:`, user-authored metadata) so the full-page
+  // rewrite path through `mergePage` (which re-serializes the frontmatter
+  // from this helper's output) preserves user-owned keys the same way the
+  // array-only helpers do. Without this, re-ingest on an existing entity
+  // rewrites the frontmatter block and strips every custom field.
+  const passthroughLines = extractPassthroughLines(existingContent);
   const frontmatter = serializeFrontmatter(
     {
       type: fm.type,
@@ -508,7 +515,7 @@ export function mergeFrontmatter(
       reviewed: fm.reviewed,
       aliases: Array.isArray(fm.aliases) ? fm.aliases : undefined,
     },
-    { tagStyle: 'block', emitEmptyTags: true }
+    { tagStyle: 'block', emitEmptyTags: true, passthroughLines }
   );
 
   return { frontmatter, body, wasMerged: true };
@@ -527,10 +534,35 @@ export function preserveFrontmatterReviewTag(originalContent: string, newContent
   return newContent;
 }
 
+/**
+ * Issue #388: the creation date the caller knows to be real, read from the
+ * file that already exists on disk. `created:` is documented as programmatic
+ * and NEVER LLM-generated (`schema-manager.ts:190`), but this function cannot
+ * see where its input string came from — on the page-creation and empty-page-
+ * fill paths that string is the model's own reply, so a `created:` value
+ * found in it is the model's invention, not history.
+ *
+ * The rule is therefore: the prior value arrives as an argument or not at all.
+ * A caller that has no prior file (page creation) passes nothing and gets
+ * today; a caller that does (fill, merge) passes what it read.
+ */
+export interface FrontmatterDateOptions {
+  /** `YYYY-MM-DD` from the existing file. Anything else is ignored. */
+  preserveCreated?: string;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function resolveCreated(options: FrontmatterDateOptions | undefined, today: string): string {
+  const candidate = options?.preserveCreated?.trim();
+  return candidate && ISO_DATE.test(candidate) ? candidate : today;
+}
+
 export function enforceFrontmatterConstraints(
   content: string,
   pageType: 'entity' | 'concept' | 'source',
-  settings?: LLMWikiSettings
+  settings?: LLMWikiSettings,
+  options?: FrontmatterDateOptions
 ): string {
   if (!content.startsWith('---')) return content;
 
@@ -541,8 +573,9 @@ export function enforceFrontmatterConstraints(
 
   if (/^reviewed:\s*true\s*$/m.test(fmText)) {
     const today = new Date().toISOString().split('T')[0];
+    const created = resolveCreated(options, today);
     return content
-      .replace(/^created:\s*\d{4}-\d{2}-\d{2}\s*$/m, `created: ${today}`)
+      .replace(/^created:\s*\d{4}-\d{2}-\d{2}\s*$/m, `created: ${created}`)
       .replace(/^updated:\s*\d{4}-\d{2}-\d{2}\s*$/m, `updated: ${today}`);
   }
 
@@ -556,14 +589,15 @@ export function enforceFrontmatterConstraints(
   let foundTags = false;
   let foundAliases = false;
   let collectedAliases: string[] = [];
-  let createdValue = '';
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
 
     if (line.startsWith('created:')) {
-      createdValue = line.substring(8).trim();
+      // Dropped on purpose — see FrontmatterDateOptions. Whatever stands here
+      // is only as trustworthy as the string this function was handed, and on
+      // the generation paths that string is the model's reply.
       continue;
     }
     if (line.startsWith('updated:')) {
@@ -648,7 +682,7 @@ export function enforceFrontmatterConstraints(
   const frontmatter = serializeFrontmatter(
     {
       type: foundType ? pageType : undefined,
-      created: createdValue || today,
+      created: resolveCreated(options, today),
       updated: today,
       tags: dedupedTags,
       aliases: (foundAliases || collectedAliases.length > 0) ? collectedAliases : undefined,

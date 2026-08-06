@@ -4,15 +4,24 @@ Copyright 2025-2026 Greener-Dalii
 This product includes software developed by the following contributors,
 listed in alphabetical order by GitHub handle:
 
-- DocTpoint — hub-retirement crystallization signal, knn baseline,
-  peer-link quality analysis, cold-start A/B evaluation, and ingest
-  reliability fixes
-- dmarchevsky — code contributions and review feedback
-- FrancoTampieri — code contributions
+- CCRRAY-DESIGN (Ray) — ChatGPT Plan (Codex OAuth) provider (PR #273)
+- Dima Marchevsky (dmarchevsky) — code contributions and review feedback
+- DocTpoint — ingest reliability fixes, #383 folder-boundary follow-up
+  analysis, source-slug = page-lemma deterministic merge (PR #357, #348),
+  vault-wide link retarget for `mergeDuplicates` (PR #392, #386),
+  and `created:` provenance fix (PR #396, #388)
+- eucher — headless ingest CLI implementation (PR #372,
+  `feat(tools): headless ingest CLI for running the engine under Node`),
+  CLI sampling/thinking controls, and plugin source resolution
+- Franco Tampieri (FrancoTampieri) — code contributions
 - Greener-Dalii (green-dalii) — project maintainer and primary author
-- Indexed-Apogrypha (Matthew Harper) — source-slug fingerprint,
+- Hashim1999164 — wiki-folder-scope prefix fix (PR #384)
+- joffroy59 — `MAX_BATCH_DELAY_MS` ceiling raise (10000 ms,
+  restored to main via cherry-pick in PR #323)
+- Matthew Harper (Indexed-Apogrypha) — source-slug fingerprint,
   pre-ingest requirements gate, Anthropic fallback fixes, and issue reports
-- YounianC (xiaochuanlu) — ingest status bar and Query Wiki side panel
+- Roman Kuzmin (rkuzmin) — LM Studio no-key ingest (PR #272, #339)
+- Younian (YounianC, xiaochuanlu) — ingest status bar and Query Wiki side panel
 
 This NOTICE file is provided for attribution purposes only and does not
 modify the terms of the Apache License, Version 2.0.

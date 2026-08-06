@@ -5,9 +5,9 @@ import { buildSystemPrompt } from '../system-prompts';
 import { parseFrontmatter, enforceFrontmatterConstraints, serializeFrontmatter } from '../../core/frontmatter';
 import { parseJsonResponse } from '../../core/json';
 import { cleanMarkdownResponse } from '../../core/markdown';
-import { escapeRegex } from './utils';
 import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
+import { retargetLinksToPage } from '../../core/link-retarget';
 
 export async function mergeDuplicatePages(
   ctx: EngineContext,
@@ -157,28 +157,33 @@ export async function mergeDuplicatePages(
       ? 'concept'
       : 'source';
 
-  const enforced = enforceFrontmatterConstraints(newContent, pageType, ctx.settings);
+  // Issue #388: `newContent` was serialized from `targetFm` a few lines up, but
+  // the caller is the one that read the target page — pass the date explicitly
+  // rather than relying on it surviving a round trip through the serializer.
+  const enforced = enforceFrontmatterConstraints(newContent, pageType, ctx.settings, {
+    preserveCreated: targetFm?.created,
+  });
   await ctx.createOrUpdateFile(targetPath, enforced);
 
-  // Rewrite wiki-links: all references to sourcePath -> targetPath
+  // Issue #386: retarget every link that resolves to the source page, vault-wide
+  // and in every link form, BEFORE the page is deleted. The previous rewrite
+  // visited only files inside the wiki folder and searched only for the
+  // wiki-relative form, so an ordinary user note linking `[[Foo]]` kept a link
+  // into nothing — and after the delete that reference is no longer findable.
   const wikiFolder = ctx.settings.wikiFolder;
   const sourceRel = sourcePath.replace(wikiFolder + '/', '').replace('.md', '');
   const targetRel = targetPath.replace(wikiFolder + '/', '').replace('.md', '');
-  const allWikiFiles = ctx.app.vault.getMarkdownFiles().filter(
-    f => f.path.startsWith(wikiFolder) && f.path !== sourcePath
-  );
-  for (const file of allWikiFiles) {
-    const content = await ctx.app.vault.read(file);
-    if (content.includes(`[[${sourceRel}]]`) || content.includes(`[[${sourceRel}|`)) {
-      const updated = content
-        .replace(new RegExp(`\\[\\[${escapeRegex(sourceRel)}\\]\\]`, 'g'), `[[${targetRel}]]`)
-        .replace(new RegExp(`\\[\\[${escapeRegex(sourceRel)}\\|`, 'g'), `[[${targetRel}|`);
-      if (updated !== content) {
-        await ctx.createOrUpdateFile(file.path, updated);
-      }
-    }
+  const retargeted = await retargetLinksToPage(ctx.app, sourcePath, targetPath);
+  if (retargeted.stale > 0) {
+    console.warn(
+      `mergeDuplicatePages: ${retargeted.stale} link(s) to ${sourceRel} could not be retargeted ` +
+      `(file changed since it was indexed) and will be dead after the merge`
+    );
   }
 
   await ctx.deleteFile(sourcePath);
-  return `merged ${sourceRel} → ${targetRel}`;
+  const linkNote = retargeted.linksRewritten > 0
+    ? ` (${retargeted.linksRewritten} link${retargeted.linksRewritten === 1 ? '' : 's'} retargeted in ${retargeted.filesChanged} file${retargeted.filesChanged === 1 ? '' : 's'})`
+    : '';
+  return `merged ${sourceRel} → ${targetRel}${linkNote}`;
 }
