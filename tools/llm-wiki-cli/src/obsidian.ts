@@ -95,30 +95,62 @@ export interface RequestUrlResponse {
 }
 
 /**
- * Obsidian's HTTP client, backed by Node's global fetch.
+ * Obsidian's HTTP client, backed by `node:http` / `node:https`.
  *
  * The plugin's `obsidianFetchBridge` hard-depends on this for every local
  * base URL, and it reads `status` / `headers` / `text` as eagerly-resolved
  * properties — not as methods — so the body is buffered here.
+ *
+ * Not Node's global `fetch`: that applies undici's default `headersTimeout`
+ * of 300 s. A non-streamed completion sends no response headers until the
+ * whole answer is ready, so any single LLM call that needs more than five
+ * minutes fails with a bare `fetch failed` — measured twice at 301 s with a
+ * 12B model on LM Studio and an 82 000-character extraction prompt. Obsidian's
+ * real `requestUrl` goes through Electron's `net` and has no such ceiling, so
+ * the shim would be stricter than the host it stands in for, on exactly the
+ * configuration this CLI exists to serve. `node:http` has no default timeout,
+ * which restores the host's behaviour without adding a dependency (undici's
+ * own API is not reachable from a plain Node install).
  */
 export async function requestUrl(param: RequestUrlParam): Promise<RequestUrlResponse> {
-  const response = await fetch(param.url, {
-    method: param.method ?? 'GET',
-    ...(param.headers ? { headers: param.headers } : {}),
-    ...(param.body !== undefined ? { body: param.body as BodyInit } : {}),
+  const url = new URL(param.url);
+  const { request } = await import(url.protocol === 'https:' ? 'node:https' : 'node:http');
+
+  const { status, headers, buffer } = await new Promise<{
+    status: number;
+    headers: Record<string, string>;
+    buffer: Buffer;
+  }>((resolve, reject) => {
+    const req = request(
+      url,
+      { method: param.method ?? 'GET', headers: param.headers ?? {} },
+      (res: import('node:http').IncomingMessage) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          const flat: Record<string, string> = {};
+          for (const [k, v] of Object.entries(res.headers)) {
+            if (v !== undefined) flat[k] = Array.isArray(v) ? v.join(', ') : v;
+          }
+          resolve({ status: res.statusCode ?? 0, headers: flat, buffer: Buffer.concat(chunks) });
+        });
+        res.on('error', reject);
+      },
+    );
+    req.on('error', reject);
+    if (param.body !== undefined) req.write(param.body);
+    req.end();
   });
 
-  const arrayBuffer = await response.arrayBuffer();
+  const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
   const text = new TextDecoder().decode(arrayBuffer);
-  const headers: Record<string, string> = {};
-  response.headers.forEach((value, key) => { headers[key] = value; });
 
-  if (param.throw !== false && response.status >= 400) {
-    throw new Error(`Request failed, status ${response.status}`);
+  if (param.throw !== false && status >= 400) {
+    throw new Error(`Request failed, status ${status}`);
   }
 
   return {
-    status: response.status,
+    status,
     headers,
     arrayBuffer,
     text,
