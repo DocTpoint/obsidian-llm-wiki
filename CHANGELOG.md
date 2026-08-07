@@ -40,6 +40,14 @@ Issue tracker had drifted from the v1.26.0 merge history (no `Closes #N` in PRs 
 - **#407** — `parseJsonResponse` parse failures indistinguishable from negative answers at 7-12 sites (high-blast: `path-resolution.ts:220` + `conversation-ingest.ts:332`). 3 repair modes proposed; awaiting DocTpoint reply.
 - **#414** — `repetitionPenalty` setting inert (split from #402). 2 repair paths under discussion.
 
+### Planned — Bedrock Stage 2 (SSO/Profile auth, 2026-08-07 decision)
+
+**Scope.** Adds AWS SSO / Profile login to the existing `bedrock-anthropic` / `bedrock-openai` providers via a **zero-AWS-SDK** path (cancels the prior "≥3 user requests" gate). Mechanism: hand-rolled IAM Identity Center OIDC device-code flow (reusing the Codex OAuth skeleton at `src/llm-sdk/openai-codex/`) → `GetRoleCredentials` → temp IAM creds → hand-written SigV4 signer → existing `bedrock-mantle` endpoint (`bedrockMantleMessagesUrl` / `bedrockMantleChatCompletionsUrl`). ~+10 KB bundle, zero new npm deps.
+
+**Why this replaces the rejected PR #263 approach.** #263 shipped `@ai-sdk/amazon-bedrock` + `@aws-sdk/credential-providers` for the same feature at **+1.2 MB** (bearer users pay it too — esbuild single-file CJS cannot lazy-load). The `bedrock-mantle` endpoint accepts AWS credentials (SigV4) per AWS docs and speaks standard OpenAI/Anthropic protocols over plain SSE — so SSO needs only the OIDC login flow + a hand-writable SigV4 signer (~300 LOC, `crypto.subtle`, AWS test vectors). No AWS SDK required.
+
+**Design record:** `~/.claude/.../memory/project_bedrock_stage2_codex_style_sigv4.md` (implementation checklist). Target window: v1.26.x PATCH or v1.27.0.
+
 ## [1.26.0] - 2026-08-05
 
 MINOR. Anchored at [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358) (complementary memory model). User-visible surface from this release: the headless ingest CLI, #383 boundary follow-up, dual-key bucketed dedup, cross-type dedup candidate expansion, dedup threshold advanced tunables, real wire-level force-disable thinking (4-layer fallback), parse-failure routing into `dedupFailures`, dead-code-as-docs governance, Russian i18n, and three DocTpoint PRs (`#357` source-lemma, `#386` vault-wide link retarget, `#388` `created:` provenance). The complementary-memory design items (per-type registration, typed edges, bidirectional frontmatter, identity ambiguity, Preview-Confirm, stable mutation interface) are scoped but not implemented in this release — they remain v1.26.x follow-on work and are tracked in `docs/v1.26.0-design.md` plus the issues listed there.
