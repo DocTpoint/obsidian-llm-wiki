@@ -333,7 +333,10 @@ export async function createNewPage(
  * `[[]]` wrapper); we add both to keep the wire format identical to
  * what `merge-page.ts:95` would have produced.
  */
-function appendSourceSlugToFrontmatter(content: string, sourceSlug: string): string {
+// Exported for direct unit-test coverage of the flow-style detection path
+// added for #399. Not part of the plugin's public API — call sites live in
+// createOrUpdatePage / createNewPage above.
+export function appendSourceSlugToFrontmatter(content: string, sourceSlug: string): string {
   if (!content.startsWith('---')) return content;
   const fmEnd = content.indexOf('\n---\n', 3);
   if (fmEnd === -1) return content;
@@ -342,37 +345,89 @@ function appendSourceSlugToFrontmatter(content: string, sourceSlug: string): str
   const sourceEntry = `[[sources/${sourceSlug}]]`;
 
   const lines = fmText.split('\n');
+
+  // First, handle inline flow-style `sources: ["[[...]]", ...]`. Prior to
+  // this fix, we only matched the block-style form `^sources:\s*$`, so a
+  // flow-style existing key would fall through to the "no sources yet"
+  // branch and get a NEW block-style key inserted — producing two
+  // top-level `sources:` keys, which is invalid YAML and breaks the
+  // Properties panel. See #399. Detect the flow-style form, extract its
+  // wikilink entries, add the new one if absent, then re-emit as
+  // block-style (canonical shape used elsewhere in the plugin).
+  const flowIdx = lines.findIndex(l => /^sources:\s*\[.*\]\s*$/.test(l));
+  if (flowIdx !== -1) {
+    const flowMatch = lines[flowIdx].match(/^sources:\s*\[(.*)\]\s*$/);
+    const entries: string[] = [];
+    if (flowMatch && flowMatch[1].trim().length > 0) {
+      const linkPattern = /\[\[([^\]]+)\]\]/g;
+      let m;
+      while ((m = linkPattern.exec(flowMatch[1])) !== null) {
+        entries.push(m[1]);
+      }
+    }
+    const targetLink = sourceEntry.slice(2, -2);
+    if (entries.includes(targetLink)) return content;
+    entries.push(targetLink);
+    // Double-quote wikilink values. Unquoted `- [[x]]` YAML-parses as a
+    // nested flow sequence (not a string), which breaks Obsidian's Properties
+    // panel + backlinks + graph edges. Match `yamlStringify()` in
+    // src/core/frontmatter.ts (line 104). See PR #405 review.
+    const blockLines = ['sources:', ...entries.map(e => `  - "[[${e}]]"`)];
+    lines.splice(flowIdx, 1, ...blockLines);
+    return `---\n${lines.join('\n')}\n---\n${body}`;
+  }
+
   const sourcesIdx = lines.findIndex(l => /^sources:\s*$/.test(l));
   if (sourcesIdx === -1) {
     // No existing `sources:` key — insert one. Anchor on `tags:` so the
     // block order (type / created / updated / sources / tags / aliases /
     // reviewed) matches the canonical layout produced by
     // `enforceFrontmatterConstraints` + `serializeFrontmatter`.
+    //
+    // Double-quote the wikilink value — bare `- [[x]]` YAML-parses as a
+    // nested flow sequence (not a string). See PR #405 review.
     const tagsIdx = lines.findIndex(l => /^tags:\s*$/.test(l));
     const insertAt = tagsIdx === -1 ? lines.length : tagsIdx;
-    lines.splice(insertAt, 0, `sources:\n  - ${sourceEntry}`);
+    lines.splice(insertAt, 0, `sources:\n  - "${sourceEntry}"`);
   } else {
-    // Existing `sources:` block — append the new entry if not already
-    // present. Scan only indented continuation lines (same semantics
-    // as `mergeFrontmatter`'s Set dedup, lines 484-490).
-    const existing = new Set<string>();
+    // Existing `sources:` block — collect continuation entries, append
+    // the new one if not already present, and re-emit the WHOLE block
+    // in canonical quoted form. This "block heals" behavior means a
+    // legacy v1.25.11-stamped file (with bare `- [[x]]` entries) gets
+    // normalized to `- "[[x]]"` the next time we stamp it, matching
+    // the healing behavior the flow→block branch already has. See PR
+    // #405 review note A from @DocTpoint.
+    //
+    // Continuation lines may be quoted (`- "[[x]]"` canonical) or
+    // bare (`- [[x]]` legacy) — strip surrounding quotes when reading,
+    // always emit quoted when writing.
+    const entries: string[] = [];
+    const seen = new Set<string>();
+    let contEnd = sourcesIdx + 1;
     for (let i = sourcesIdx + 1; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line.startsWith('- ')) break;
-      const entry = line.substring(2).trim();
+      contEnd = i + 1;
+      let entry = line.substring(2).trim();
+      if ((entry.startsWith('"') && entry.endsWith('"')) ||
+          (entry.startsWith("'") && entry.endsWith("'"))) {
+        entry = entry.slice(1, -1);
+      }
       if (entry.startsWith('[[') && entry.endsWith(']]')) {
-        existing.add(entry.slice(2, -2).trim());
+        const inner = entry.slice(2, -2).trim();
+        if (!seen.has(inner)) {
+          seen.add(inner);
+          entries.push(inner);
+        }
       }
     }
-    if (existing.has(sourceEntry.slice(2, -2))) return content;
-    // Find the first non-`sources:` continuation line — that's where we
-    // append. If no continuation lines exist yet, insert immediately
-    // after the `sources:` key.
-    let insertAt = sourcesIdx + 1;
-    while (insertAt < lines.length && lines[insertAt].trim().startsWith('- ')) {
-      insertAt++;
-    }
-    lines.splice(insertAt, 0, `  - ${sourceEntry}`);
+    const targetInner = sourceEntry.slice(2, -2);
+    if (seen.has(targetInner)) return content;
+    entries.push(targetInner);
+    // Splice out the old (bare + new) continuation lines and replace
+    // with the canonical quoted form for all entries.
+    const newContinuation = entries.map(e => `  - "[[${e}]]"`);
+    lines.splice(sourcesIdx + 1, contEnd - (sourcesIdx + 1), ...newContinuation);
   }
   return `---\n${lines.join('\n')}\n---\n${body}`;
 }

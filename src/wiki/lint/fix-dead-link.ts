@@ -70,7 +70,18 @@ export function buildStubContent(params: StubContentParams): string {
   const { title, stubType, referringPageRel } = params;
   const today = new Date().toISOString().split('T')[0];
   const defaultTag = stubType === 'entity' ? 'other' : 'term';
-  return `---\ntype: ${stubType}\ncreated: ${today}\nsources: ["[[${referringPageRel}]]"]\ntags: [${defaultTag}]\ngeneration_complete: false\n---\n# ${title}\n\n> Stub created by Fix Dead Links — referenced by [[${referringPageRel}]]. Will be filled by next ingest of an actual source that defines this entity.\n`;
+  // Emit `sources:` as block-style so the v1.25.11 provenance-stamp
+  // writer in create-page.ts's `appendSourceSlugToFrontmatter` (which
+  // only detects `^sources:\s*$`) merges into it instead of inserting
+  // a duplicate top-level `sources:` key. Duplicate keys are invalid
+  // YAML and break Obsidian's Properties render. See issue #399.
+  //
+  // Wikilink value MUST be double-quoted. Unquoted `- [[x]]` is parsed
+  // by YAML 1.2 as a nested flow sequence `[["x"]]` — not a string —
+  // which makes Obsidian's Properties panel drop the property type and
+  // the value becomes literal text (no link chip, no backlink, no graph
+  // edge). Match `yamlStringify()` in src/core/frontmatter.ts (line 104).
+  return `---\ntype: ${stubType}\ncreated: ${today}\nsources:\n  - "[[${referringPageRel}]]"\ntags: [${defaultTag}]\ngeneration_complete: false\n---\n# ${title}\n\n> Stub created by Fix Dead Links — referenced by [[${referringPageRel}]]. Will be filled by next ingest of an actual source that defines this entity.\n`;
 }
 
 /**
