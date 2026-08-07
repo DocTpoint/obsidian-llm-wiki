@@ -404,6 +404,17 @@ export async function runDedupPhase(
     let currentConcurrency = ctx.settings.pageGenerationConcurrency || 1;
     const userConcurrency = currentConcurrency;
 
+    // v1.26.x PATCH CR-1: in-scan halving counter hoisted ABOVE the
+    // chunk-iteration for-loop. Previously declared inside the loop body
+    // (after Promise.allSettled resolved), which reset both `consecutive
+    // ThrottleChunks` and the `HALVE_AFTER_CONSECUTIVE_CHUNKS` constant
+    // to their initial values at the start of every chunk — the counter
+    // could never reach 2 across chunks and the halving branch was
+    // dead code in practice. Fix: hoist above the loop alongside
+    // `currentConcurrency` so the counter accumulates across chunks.
+    let consecutiveThrottleChunks = 0;
+    const HALVE_AFTER_CONSECUTIVE_CHUNKS = 2;
+
     // v1.26.0 (#382 item 1, Batch 2): empty-response retry helper.
     //
     // Some providers (notably deepseek-v4-flash in thinking mode)
@@ -663,8 +674,9 @@ export async function runDedupPhase(
     //
     // Floor at 1. The user's settings value is unaffected
     // (currentConcurrency is a local that resets every run).
-    let consecutiveThrottleChunks = 0;
-    const HALVE_AFTER_CONSECUTIVE_CHUNKS = 2;
+    // CR-1: `consecutiveThrottleChunks` and `HALVE_AFTER_CONSECUTIVE_CHUNKS`
+    // were hoisted ABOVE this loop alongside `currentConcurrency` so the
+    // counter accumulates across chunks instead of resetting every chunk.
 
     // v1.26.0 (#382 item 1, Batch 2): in-scan concurrency halving.
     // When this chunk produced any retry events (i.e. soft-throttle
