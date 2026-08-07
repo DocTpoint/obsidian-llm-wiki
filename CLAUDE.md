@@ -461,12 +461,12 @@ Closes #94, #96, #99"
 
 Canonical maintainer: `green-dalii <654534332@qq.com>` (verified against GitHub user `green-dalii`). Some older commits were authored as `Greener-Dalii` (capitalized, used by GitHub UI on merge). All NEW commits — including `--amend` and squash — MUST use the lowercase canonical form.
 
-**Rules (canonical source: [[feedback_co_authored_by_format]]):**
+**Rules (canonical source: [[feedback_co_authored_by_format]], revised 2026-08-07):**
 
 1. **Commit author** MUST be the maintainer (`git config user.name "green-dalii" && git config user.email "654534332@qq.com"`)
-2. **Every commit MUST list the maintainer as `Co-authored-by`** + AI model trailer. AI trailer MUST be exactly `Claude Code <noreply@anthropic.com>` — **no model name, version, or context-window size** (these go stale and pollute git history).
-3. **NEVER** amend/squash away the `Co-authored-by: green-dalii` trailer — re-add it after every `--amend`.
-4. If you notice a missing co-author on a recent commit, **stop and fix it before continuing** — do not let the oversight propagate to the PR.
+2. **Maintainer commits DO NOT include any `Co-Authored-By:` AI trailer.** Only `green-dalii` is recorded. AI tools are session context, not project co-authors.
+3. **External contributors** (DocTpoint, eucher, borthwick, etc.) write their own `Co-Authored-By:` trailers as they see fit — we do not constrain, request, or amend their trailer choices when merging their PRs. Preserve their commit history verbatim.
+4. **When merging an external PR**, never `--amend` to add maintainer AI trailer or any other maintainer attribution. The merge commit itself is authored by `green-dalii`; that's sufficient.
 
 ## 🧪 Development Quality Closure (TDD + Planning)
 
