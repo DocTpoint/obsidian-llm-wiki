@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > than as a standalone patch; the patch slot stays unused. See the v1.26.0
 > entry below for the substantive notes.
 
+## [Unreleased]
+
+> **Status.** Work in progress for the next PATCH (target v1.26.1). Two items below are MERGED on `main` since v1.26.0 (tag 2026-08-06) but not yet in a tagged release. Version bump + tag pending maintainer approval. Composition: see [ROADMAP v1.26.x PATCH](./ROADMAP.md#v126x-patch-target-v1261--roi-ranked).
+
+### Fixed
+
+- **Duplicate `sources:` frontmatter key on stub-created concept pages (Issue #399, PR #405, commit `4c43cdfb`).** v1.25.11 regression in `appendSourceSlugToFrontmatter`; produced two top-level `sources:` keys (invalid YAML) on post-stub ingests, breaking Obsidian Properties render. Two-sided fix in `buildStubContent` + `appendSourceSlugToFrontmatter`. Corpus: 321 affected pages in @borthwick's vault. 5 new unit tests + 3 parser-shape guards (real `yaml` package assertion that `sources` is `string[]`).
+- **CLI: per-run bundle isolation prevents concurrent-run corruption (PR #408, commit `7f864f1`).** Two concurrent `ingest --help` runs raced esbuild's in-place bundle write (14 of 60 failed with `SyntaxError: Unexpected end of input` on `main` 2a42241). Fix: per-process bundle name + `process.kill(pid, 0)` liveness sweep at startup + post-import `rm` (Node keeps loaded module + inline sourcemap). 20 of 20 clean after fix. No config / API / env-var change.
+
+### Issue state (administrative)
+
+Issue tracker had drifted from the v1.26.0 merge history (no `Closes #N` in PRs #401 / #406 / #410 / #411 commit messages, so auto-close-on-merge never fired). Closed administratively on 2026-08-07:
+
+- **#382** [v1.26.0 hardening] — all 5 P0+P1 batches shipped in v1.26.0 via PRs #401 / #406 / #410 / #411.
+- **#328** [schema layer rethink] — Phase 1 closed by PR #331 (2026-07-22). Phase 2/3 deferred to v1.27.0+.
+- **#402** [providerOptions stripped] — `response_format` closed by `ca4a24d` (2026-07-29); `repetitionPenalty` split to #414.
+- **#399** — see Fixed section above.
+
+### Tracked in v1.26.x PATCH (no fix yet)
+
+- **#403** — `TOKENS_*` caps leak reasoning budget on reasoning-capable models. 1-commit fix pending DocTpoint calibration answers.
+- **#407** — `parseJsonResponse` parse failures indistinguishable from negative answers at 7-12 sites (high-blast: `path-resolution.ts:220` + `conversation-ingest.ts:332`). 3 repair modes proposed; awaiting DocTpoint reply.
+- **#414** — `repetitionPenalty` setting inert (split from #402). 2 repair paths under discussion.
+
 ## [1.26.0] - 2026-08-05
 
 MINOR. Anchored at [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358) (complementary memory model). User-visible surface from this release: the headless ingest CLI, #383 boundary follow-up, dual-key bucketed dedup, cross-type dedup candidate expansion, dedup threshold advanced tunables, real wire-level force-disable thinking (4-layer fallback), parse-failure routing into `dedupFailures`, dead-code-as-docs governance, Russian i18n, and three DocTpoint PRs (`#357` source-lemma, `#386` vault-wide link retarget, `#388` `created:` provenance). The complementary-memory design items (per-type registration, typed edges, bidirectional frontmatter, identity ambiguity, Preview-Confirm, stable mutation interface) are scoped but not implemented in this release — they remain v1.26.x follow-on work and are tracked in `docs/v1.26.0-design.md` plus the issues listed there.
