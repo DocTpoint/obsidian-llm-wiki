@@ -3,6 +3,7 @@ import {
   canonicalizeSectionHeaders,
   classifyHeader,
   preserveExistingSections,
+  reassertH1,
 } from '../../core/section-header-canonicalizer';
 
 describe('canonicalizeSectionHeaders (deterministic repair of LLM-garbled section headers)', () => {
@@ -215,5 +216,36 @@ describe('preserveExistingSections (re-assert schema sections the LLM dropped)',
     // Hallucinated Mentions gone — assembleFinalContent will add the real one.
     expect(out).not.toContain('## Erwähnungen in der Quelle');
     expect(out).not.toContain('- lost quote');
+  });
+});
+
+// #419 — the title line sits inside the rewrite window while no layer owns it.
+// `preserveExistingSections` guards `##` blocks only (its own test above pins
+// that), so a reply that starts at the first `##` silently drops the H1.
+describe('reassertH1 (the title is not the model\'s call)', () => {
+  it('prepends the page\'s own H1 when the rewrite dropped it', () => {
+    const existing = '# Silent Inflammation\n\nLead.\n\n## Beschreibung\nAlt';
+    const rewrite = '## Beschreibung\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe('# Silent Inflammation\n\n## Beschreibung\nNeu');
+  });
+
+  it('restores the previous title when the rewrite returned a different one', () => {
+    const existing = '# Sulforaphan\n\n## Beschreibung\nAlt';
+    const rewrite = '# Sulforaphan-Dosierung\n\n## Beschreibung\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe('# Sulforaphan\n\n## Beschreibung\nNeu');
+  });
+
+  it('is a no-op when the rewrite kept the title', () => {
+    const body = '# Sulforaphan\n\n## Beschreibung\nText';
+    expect(reassertH1(body, body)).toBe(body);
+  });
+
+  // The file name is a lossy slug of the title, so a synthesized `# <file name>`
+  // would flatten punctuation on every page that has a title the slug cannot
+  // reproduce. Nothing is invented: a page that never had an H1 keeps none.
+  it('invents no title when the page never had one', () => {
+    const existing = '## Beschreibung\nAlt';
+    const rewrite = '## Beschreibung\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(rewrite);
   });
 });

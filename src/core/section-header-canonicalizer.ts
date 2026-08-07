@@ -219,3 +219,40 @@ export function preserveExistingSections(
   if (restored.length === 0) return strippedRewrite;
   return `${strippedRewrite.replace(/\s+$/, '')}\n\n${restored.join('\n\n')}\n`;
 }
+
+/**
+ * Re-assert the page's H1 after an LLM body rewrite (#419).
+ *
+ * `preserveExistingSections` above guards `##` blocks only — its contract, and
+ * its tests, deliberately ignore the title line. On the merge and related-page
+ * paths the model is handed the whole body and asked to return the whole body,
+ * so the H1 is inside the rewrite window while no layer owns it: when the reply
+ * comes back starting at `## Beschreibung`, the title is simply gone.
+ *
+ * The restored title is the page's OWN previous H1, not one synthesized from the
+ * file name. A page's file name is a slug of its title and is lossy — of 1930
+ * pages carrying an H1 in a 2416-page vault, 677 (35%) have a title the file name
+ * cannot reproduce (`Harvard-T-H-Chan-School-of-Public-Health` vs `Harvard T.H.
+ * Chan School of Public Health`, `Lungu-et-al-2021` vs `Lungu et al. (2021)`).
+ * Rebuilding the H1 from the file name would repair the pages that lost one and
+ * quietly flatten the punctuation of every page that did not.
+ *
+ * For the same reason this never invents a title: a page that had no H1 before
+ * the rewrite keeps none. 486 pages in that vault have no H1, and minting them
+ * on the next merge is a mass mutation, not a repair.
+ *
+ * A rewrite that returns a DIFFERENT H1 is overwritten with the previous one.
+ * The page's identity is not the model's call — the same reasoning that makes
+ * `correctRelatedLinkPrefixes` re-type a link folder rather than trust the copy.
+ * Pure, no LLM, O(lines).
+ */
+export function reassertH1(existingBody: string, rewrite: string): string {
+  const previous = existingBody.match(/^# .*/m)?.[0];
+  if (previous === undefined) return rewrite;
+
+  const current = rewrite.match(/^# .*/m)?.[0];
+  if (current === previous) return rewrite;
+  if (current !== undefined) return rewrite.replace(current, previous);
+
+  return `${previous}\n\n${rewrite.replace(/^\s+/, '')}`;
+}
