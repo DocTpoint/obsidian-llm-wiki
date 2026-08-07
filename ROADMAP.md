@@ -38,6 +38,8 @@ See [CLAUDE.md §"📦 Development Workflow"](./CLAUDE.md) + [`.claude/skills/ob
 
 **Minimum recommended v1.26.1 ship** (3 short PRs, ~1 PR-equivalent effort): item 1 (#403 3-line cap fix) + item 2 (CR-1 dedup halving 2-line fix) + item 3 (PR #409 test additions). All three are well-defined; items 4-11 are design-track deferrals.
 
+**Bedrock Stage 2 — SSO/Profile auth (decision 2026-08-07; cancels the prior "≥3 user requests" gate).** Now scoped to **v1.26.x PATCH or v1.27.0** via a **zero-AWS-SDK** path: hand-rolled IAM Identity Center OIDC (reusing the Codex OAuth skeleton at `src/llm-sdk/openai-codex/`) → `GetRoleCredentials` → temp IAM creds → **hand-written SigV4** → existing `bedrock-mantle` endpoint. ~+10 KB, zero new npm deps (vs the rejected PR #263's +1.2 MB). Rationale: the `bedrock-mantle` endpoint accepts AWS credentials (SigV4) per AWS docs and speaks standard OpenAI/Anthropic protocols over plain SSE — no native ConverseStream event-stream signing needed. Design plan + implementation checklist: [[project_bedrock_stage2_codex_style_sigv4]]. PR #263 author notified with the new decision.
+
 ## After v1.26.0: v1.27.0 MINOR design track
 
 Items NOT in v1.26.0 P0+P1 scope but in #358 design orbit (target v1.27.0 MINOR):
