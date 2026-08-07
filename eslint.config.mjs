@@ -17,9 +17,14 @@ export default [
       "main.js",
       "node_modules/",
       // Test files are excluded from local lint to mirror the Obsidian
-      // Bot review pipeline — Bot inspects only `main.js` (the bundled
-      // production code path), which is built from `src/` excluding test
-      // files. Test-side lint warnings therefore do not block release.
+      // Bot review pipeline's focus on plugin production code. Note (2026-08-06,
+      // v1.26.0 pre-submission finding): the Bot actually scans the WHOLE repo
+      // `.ts` tree, not just `main.js` — it reported ~60 Warnings on
+      // `tools/llm-wiki-cli/` that local lint cannot see (this config lints only
+      // `src/` and the root tsconfig includes only `src/**`). The exclude list
+      // below keeps local lint focused on plugin code; tools/ warnings are
+      // accepted (structural to a Node CLI; see CLAUDE.md Bot compliance
+      // invariant). See [[feedback_obsidian_bot_tools_cli_warnings]].
       // Each entry below has a documented user direction:
       //   - src/**/__tests__/** — test files (Direction v1.25.4)
       //   - src/**/__support__/** — test polyfills (Direction v1.25.4)

@@ -300,6 +300,15 @@ graph TD
     QueryEngine -->|selection + answer| LLMClient
 ```
 
+### Core Design Patterns
+
+These four patterns appear throughout the engine. New contributors should recognize them before reading the code:
+
+- **Tier 1/2 duplicate detection** — Tier 1 candidates are always LLM-verified (high-precision, low-recall); Tier 2 fills the remaining token budget (lower-precision, higher-recall). Implemented in `src/wiki/lint/duplicate-detection.ts` (`classifyTiers`) and used by `dedup-phase.ts`.
+- **`Promise.allSettled` error isolation** — One failed batch in a parallel scan does not crash the entire batch. Standard pattern in `dedup-phase.ts`, `analysis-phase.ts`, and all parallel fix-runners.
+- **Pollution defense at write gate** — A centralised regex catches polluted `sources:`` frontmatter before any vault write. Single source of truth at `src/wiki/source-safety.ts` (or equivalent). Don't bypass it with inline checks.
+- **LLM semantic page selection** — Seed selection uses meaning-based matching (LLM or heuristic), not keyword match. Implemented in `query-engine.ts` seed selection.
+
 ## Pull Request Process
 
 1. Run `pnpm lint && pnpm test && npx tsc --noEmit && pnpm build` — all must pass

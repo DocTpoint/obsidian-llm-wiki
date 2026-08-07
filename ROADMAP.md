@@ -2,148 +2,41 @@
 
 > Feature planning and improvement proposals
 
-**Version:** v1.26.0 MINOR — ready for tag on main @ `ab0ecfb` (2026-08-05), release-prep in progress. v1.25.11 PATCH RELEASED. | **Updated:** 2026-08-05
+**Version:** v1.26.0 MINOR RELEASED 2026-08-06 (tag `1.26.0`). v1.26.x PATCH track active; v1.27.0 MINOR in design. v1.25.11 PATCH RELEASED. | **Updated:** 2026-08-07
 
 ## Current Status
 
-**v1.26.0 MINOR — READY FOR TAG on 2026-08-05; release-prep in progress.** Main @ `ab0ecfb` carries the full v1.26.0 user-visible surface (headless CLI `pnpm llm-wiki` + DocTpoint #357 source-lemma + DocTpoint #386 vault-wide link retarget + DocTpoint #388 `created:` provenance + #383 folder-boundary follow-up + PR #395 lint dedup thresholds + **Russian i18n (PR #397)**) **plus all 5 P0+P1 hardening batches**:
+**v1.26.0 MINOR SHIPPED 2026-08-06** (tag `1.26.0`). See [CHANGELOG.md v1.26.0 entry](./CHANGELOG.md#1260---2026-08-05) for the full release composition (117 commits / 110 files / +10,604 / −994 since v1.25.11, 2928 tests / 213 files passing). ROADMAP only carries **forward-looking planning** (current PATCH + next MINOR + research track); historical composition lives in CHANGELOG.
 
-**v1.26.0 P0+P1 final scope** (in execution order; user-revised 2026-08-02 — #317 and #326 deferred to v1.27.0+; **Batch 1 rev 2 simplified 2026-08-03** to 方案 1 dual-key bucket only, abandoning方案 4 spillover + 方案 7 hub bridge per ROI analysis; **2026-08-04 revision**: Batch 5 cancelled, two MINOR-blocking items added after PR #410 merge):
+**v1.26.0 P0+P1 final scope** (executed 2026-08-02 → 2026-08-05; all MERGED via PRs #401 / #406 / #410 / #411):
 
-| Bucket | Item | Issue | Type | Effort |
-|---|---|---|---|---|
-| **Batch 1** ✅ MERGED (PR #401) | **Dual-key bucketed dedup** (tp-prefix + lh-link-hash buckets) | #382 item 3 | P1 (prerequisite) | **0.8 week** |
-| **Batch 2** ✅ MERGED (PR #410) | Cross-type dedup candidate set expansion | #382 item 1 | P0 | 1.5-2 weeks |
-| **Batch 3** ✅ MERGED (PR #406) | P1-1/P1-2 wire-or-delete decision (delete recommended, see #382 item 4) | #382 item 4 | P1 | 0.2 week |
-| **Batch 4** ✅ DONE (governance) | dead-code-as-docs policy (CLAUDE.md + pre-release-gate check) | #382 item 5 | P1 (governance) | 0.3 week |
-| **Batch 5** ❌ CANCELLED (2026-08-04) | Settings-owned enum-as-section-value | ~~#358 item 8 / #328 §2~~ | ~~design~~ | n/a |
-| **Batch 6** (in progress) | Force-disable thinking: real wire fix for openai-compat path | new, from PR #410 post-merge review + #382 comment 2 (DocTpoint) | **P0** (hidden bug shipped in v1.26.0) | 0.2 week |
-| **Batch 7** (queued) | dedup-phase truncation vs legitimate-empty distinction (route null result into `dedupFailures`) | new, from #382 comment 1 (DocTpoint) | P1 (measurement gap before MINOR) | 0.1 week |
+| Bucket | Issue | Status | Note |
+|---|---|---|---|
+| Batch 1 dual-key bucketed dedup | #382 item 3 | ✅ MERGED (PR #401) | Plan: `~/.claude/projects/-Users-greener-project-obsidian-llm-wiki/memory/project_v1_26_0_batch_1_dedup_streaming.md` |
+| Batch 2 cross-type dedup + retry/halving | #382 item 1 | ✅ MERGED (PR #410) | 979s → 365s e2e on 2141-page vault (retry/backoff only; halving dead code, see CR-1) |
+| Batch 3 P1-1/P1-2 wire-or-delete | #382 item 4 | ✅ MERGED (PR #406) | Delete recommended; PR #406 deletes the dead-code helpers |
+| Batch 4 dead-code-as-docs policy | #382 item 5 | ✅ DONE (governance) | CLAUDE.md + pre-release-gate Phase 2g |
+| Batch 5 enum-as-section-value | #358 item 8 | ❌ CANCELLED (2026-08-04) | out of scope |
+| Batch 6 real-wire force-disable thinking | DocTpoint #382 comment 2 | ✅ MERGED (PR #411) | 4-layer fallback; 365s → 151s on the 2141-page vault (post-fallout correction; see [[feedback_force_disable_thinking_dedup_wiring]]) |
+| Batch 7 dedup parse-failure routing | DocTpoint #382 comment 1 | ✅ MERGED (PR #411) | `dedupFailures` discriminator; see [[feedback_dedup_phase_truncation_vs_empty_conflation]] |
 
-**Estimated total: ~3.3-3.8 weeks of focused work before v1.26.0 MINOR ships.**
+**Full composition** (117 commits / 110 files / +10,604 / −994 since v1.25.11, 2928 tests passing) lives in [CHANGELOG.md v1.26.0 entry](./CHANGELOG.md#1260---2026-08-05) and on the merged commit history (`git log ab0ecfb..1.26.0` — released tag). Do not duplicate the commit list in this file.
 
-**Batch 1 plan reference**: see `~/.claude/projects/-Users-greener-project-obsidian-llm-wiki/memory/project_v1_26_0_batch_1_dedup_streaming.md` (rev 2, 2026-08-03). 5 independent commits: (1) extract bucket constants → (2) `partitionPagesMultiBucket` pure helper → (3) integrate multi-bucket into `generateDuplicateCandidates` → (4) `checkCancelled` at bucket boundary in dedup-phase → (5) e2e recall + memory profile. Expected recall ≥ 95% (旧版 80-90%,方案 1 单独 97-98%); memory peak O(N² candidates) → O(B² per bucket).
+**Deferred to v1.27.0+** (per user decision 2026-08-02): #317, #326.
 
-**Deferred to v1.27.0+ (per user decision 2026-08-02)**:
+## Process notes (process standards live in CLAUDE.md)
 
-| Issue | Title | Lands in |
-|---|---|---|
-| #317 | Schema.md changes ignored | v1.27.0 (with Phase 2 per-type registration) |
-| #326 | Defer to canonical pages outside wikiFolder | v1.27.0 (with #358 item 3 bidirectional frontmatter) |
-
-**Composition already on main** (10 commits since v1.25.11 PATCH):
-
-- `7825325` chore(tools): expose `llm-wiki` CLI via bin, scripts.ingest, and executable bit (PR #387)
-- `c905ffd` Merge pull request #387 from `feat/cli-ux-v1.25.12`
-- `8cef09b` docs: sync v1.25.12 CLI test count and scope after pre-merge review
-- `1d12989` test(cli): close coverage gaps from code review
-- `e379ff3` fix(cli): friendly `--vault` ENOENT and fire deprecations before required flags
-- `ef28e56` fix(cli): accept `-h` alias at the ingest subcommand level
-- `b634953` fix(cli): trim `--model` and guard integer flags against precision loss
-- `aed3572` fix(cli): reject empty numeric flag values before coercion
-- `ecb7862` fix(cli): harden applyOverrides against prototype-key granularity
-- (PR #372 — `feat(tools): headless ingest CLI` — already on main via `feat/cli-ux-v1.25.12`'s base)
-- (PR #357 — `feat(ingest): guarantee a page for the source note's own subject` — DocTpoint — already on main via v1.25.11 release window)
-- `4229c5c` refactor(folder-scope): centralise picker exclusion rule, close unanchored-prefix leak
-- `3892916` refactor(auto-maintain): extract Phase 2 to module function, match Phase 3 shape
-- `b8b4d80` test(folder-scope-sites): rewrite 3 shell tests as real production-function coverage
-- `f098886` Merge pull request #389 from `fix/v1.26.0-wiki-folder-followup`
-- `1893b6e` refactor(constants): extract LINT_DEDUP_* threshold constants
-- `7048386` refactor(lint): thread threshold options through generateDuplicateCandidates + classifyTiers
-- `dd52e8e` feat(types): add lintJaccardLinkThreshold / lintJaccardBodyGate / lintBigramThreshold to Settings
-- `3e1b7da` feat(lint): thread settings overrides into dedup-phase caller
-- `84b3552` feat(ui): render 3 dedup threshold inputs in Advanced (custom mode) + i18n in 10 locales
-- `d9f3e9b` refactor(lint): collapse threshold defaulting into DEFAULT_DEDUP_THRESHOLDS + clamp to [0,1]
-- `12c55df` fix(i18n): correct semantically inverted body-gate description in all 10 locales
-- `7ad991a` refactor(ui): merge dedup threshold helper into renderNumberInput + integration test
-- `81d75fc` refactor(ui): create bottom "Advanced settings" panel + relocate power-user knobs out of daily-driver sections
-- `3110e98` Merge pull request #395 from `feat/v1.26.0-lint-thresholds`
-- `62701c9` fix(merge): retarget links vault-wide and in every form before the delete (PR #392, DocTpoint, Closes #386)
-- `cd734b9` fix(frontmatter): take created: from the caller, never from the content (DocTpoint, Closes #388)
-- `a253078` Merge pull request #396 from `green-dalii/fix/388-created-provenance` (DocTpoint's commit via rebase; see ROADMAP §Process note)
-- `9422dd8` docs: re-scope v1.26.0 MINOR — 5-batch P0+P1 work + Russian i18n before tag
-- `ba09997` feat(i18n): register Russian locale + full UI translation (667 keys)
-- `ebca969` feat(i18n): add Russian section labels for wiki output system prompts
-- `292873f` test(i18n): pin Russian locale wiring + README switcher count
-- `cc7ad5d` docs(i18n): add Russian to all 10 README dropdowns + full README_RU translation
-- `429d956` Merge pull request #397 from `green-dalii/feat/v1.26.0-russian-i18n`
-- `fb9fb34` refactor(lint): extract `LINT_DEDUP_*` threshold constants + thread through candidates
-- `059c1d0` feat(types): add `lintJaccard*` / `lintBigram*` / `lintDedupIncludeSources` to Settings
-- `e2e75eb` feat(lint): dedup-phase wire-up + classifyTiers signals + force-disable + retry/halving (Batch 2 + follow-up)
-- `e1ba6fb` feat(ui): dedup threshold inputs + relocate `lintDedupIncludeSources` + rate-limit helper
-- `97a135c` feat(i18n): dedup threshold + `llmRetryRecoveredToast` keys in 10 locales
-- `44fdab2` docs: ROADMAP v1.26.x PATCH track + CLAUDE.md tech-debt shift
-- `c15c743` Merge pull request #410 from `green-dalii/feat/v1.26.0-batch-2-cross-type-dedup`
-- `e2e75eb` feat(lint): dedup-phase wire-up + classifyTiers signals + force-disable + retry/halving (Batch 2 + follow-up) — *(already listed above; canonical attribution lives in PR #410)*
-- `03cd74e` fix(lint): route parse-failed dedup batches to dedupFailures (Batch 7)
-- `01e9ab3` feat(sdk): Layer-3 400-retry for reasoning-related fields (Batch 6)
-- `cf4dea7` feat(sdk): OpenAI Responses API force-disable → reasoningEffort: 'none'
-- `f9dcf94` feat(sdk): openai-compat force-disable → reasoningEffort: 'none'
-- `4542b39` test(sdk): wire-level assertions for reasoning disable (Batch 6 Layer 3)
-- `54e66cf` docs: dedup-phase force-disable thinking — 4-layer fallback (v1.26.0 Batch 6)
-- `8f81c56` test(lint): parse-failure enters dedupFailures + legitimate-empty regression guard
-- `33b1678` fix(sdk): Bug-1 — add shouldStrip guard to OpenAI SDK buildProviderOptions
-- `093f4e5` fix(sdk): Bug-2 — reorder streaming retry blocks (reasoning-strip first)
-- `97bd95b` fix(sdk): Bug-3 — move markStrip to AFTER retry success
-- `01a2a8f` fix(sdk): CR-2 — two-marker classifier (verb + field) for reasoning-field error match
-- `a739999` fix(sdk): CR-4 — Layer-3 retry on OpenAI SDK streaming path
-- `6e6388a` fix(lint): CR-3 — structured 'type' discriminator for parse-failure kind
-- `31ca43e` fix(sdk)+fix(lint): post-review attribution + Batch 7 narrow conflation
-- `99579c4` fix(lint): wire FORCE_DISABLE_THINKING into dedup-phase llmArgs (eucher PR #411)
-- `ca51b7b` docs(sdk): record per-call thinkingPolicy for source-analyzer repair path
-- `16c7f87` docs(claude+roadmap): PR #411 compact-prep — 4-layer fallback corrections + per-call thinkingPolicy + DeepSeek/Kimi/GLM measurement tracked
-- `5cb3f37` fix(sdk): CR-3 discriminator reachable in production (PR #411 review)
-- `2ffc003` refactor(sdk): ReasoningStripProber — Set<string> + drop dead invalidate()
-- `ab0ecfb` Merge pull request #411 from `green-dalii/feat/v1.26.0-batch-6-real-wire-thinking-disable`
-
-*Stats*: 2863 tests / 213 files at PR #395 merge → **2895 tests / 215 files** after DocTpoint PR #392 + PR #396 → **2904 tests / 215 files** after Russian i18n PR #397 → **2896 tests / 215 files** after PR #410 (Batch 2, 6 commits — slight net test delta because Batch 1 closed tests for the bucketed dedup path) → **2928 tests / 213 files** after PR #411 (Batch 6+7, 20 commits on top of main; +13 net test count from the new CR-3/CR-4/two-marker classifier/wire-body/per-call thinkingPolicy guards, −2 stale dead-code tests removed in PR #406). The PR #410 e2e on the 2141-page vault measured 979s → 365s wall-time (−63%); recall improved 7 → 12 pairs. After PR #411's 4-layer fallback went fully live (Layers 1-3, not just Layer 4 + retry), the same 2141-page vault measures 151s wall-time (−85% vs baseline, −59% vs Batch 2 alone).
-
-*Why MINOR not PATCH*: the CLI ships as a fresh user-visible tool (`pnpm llm-wiki` script, npm bin, subcommand dispatch, complete flag surface) — that is the canonical SemVer trigger for MINOR, not PATCH. The planned `v1.25.12` slot stays unused; the patch slot is not retroactively filled. Version numbers need not be consecutive.
-
-*Process note (2026-08-02)*: PR #396 was created as the rebased vehicle for DocTpoint's PR #393 to land on main after PR #392 (which #393 depended on). Maintainer-handled rebase + `gh pr update-branch --rebase` would have kept DocTpoint's PR #393 open for the merge credit; lesson recorded to memory. DocTpoint acknowledged + apologized on PR #393. Going forward: `gh pr update-branch --rebase` for any contributor PR that needs a base-branch bump.
-
-## Process discipline (LOCKED for v1.26.0 P0+P1 work)
-
-Per `[[feedback_pr_merge_workflow]]` and `[[feedback_pr_merge_credit_preservation]]`:
-
-- Every follow-on PR goes through `simplify` (4 angles) + `code-review` (max effort 8 angles, via parallel subagents since the skill is disabled in this environment) BEFORE push
-- Findings are reported to user, not auto-fixed; user approves
-- User explicit "merge it" required before any `gh pr merge`
-- For contributor PRs that need rebase after a base-branch move, use `gh pr update-branch --rebase` — NEVER locally fork + push + create a new PR
-- Independent commits (no amend), per CLAUDE.md Git Workflow
+See [CLAUDE.md §"🛡️ Six-Gate Quality Closure"](./CLAUDE.md) for Gate definitions, [[feedback_pr_merge_workflow]] for the per-PR workflow, and [[feedback_pr_merge_credit_preservation]] for the `gh pr update-branch --rebase` rule on contributor rebases. Do not duplicate process standards in this file.
 
 ## v1.26.0 release flow (after Batches 1-7 ship)
 
-1. Run `obsidian-plugin-release` skill Step 1 (Gate 1) on `main`
-2. Step 2 (Six-Gate evaluation)
-3. Step 3 (version bump + 10 README + CHANGELOG + ROADMAP + CLAUDE + CONTRIBUTING + memory)
-4. Step 4 (pre-release-gate + doc-review, parallel)
-5. Step 5 (commit + push + tag)
-6. Step 6 (release notes + publish)
-7. Step 7 (post-release — close Issues #317, #326, #382 partial, #358 partial, etc.)
+See [CLAUDE.md §"📦 Development Workflow"](./CLAUDE.md) + [`.claude/skills/obsidian-plugin-release/SKILL.md`](/Users/greener/.claude/skills/obsidian-plugin-release/SKILL.md) for the full 8-step release flow. The pre-release-gate + doc-review parallel run is in [`.claude/skills/pre-release-gate/SKILL.md`](/Users/greener/.claude/skills/pre-release-gate/SKILL.md) + [`.claude/skills/doc-review/SKILL.md`](/Users/greener/.claude/skills/doc-review/SKILL.md). ROADMAP does not duplicate the per-step checklist — only the items that are **planning decisions** (which version, which milestone, which item lands where) live here.
 
-## v1.26.x PATCH follow-up track (committed, post-v1.26.0 MINOR)
+## v1.26.x PATCH follow-up track (target v1.26.1)
 
-Items NOT in v1.26.0 MINOR but should ship as a PATCH (v1.26.x) before
-the v1.27.0 MINOR feature work. User decision 2026-08-04: tech debt
-discovered during Batch 2 dedup retry/halving work shifts from v1.27.0
-to a dedicated v1.26.x PATCH window (rather than mixing feature work
-with perf tech debt in the MINOR).
+**Full ROI-ranked work list** lives in `~/.claude/projects/-Users-greener-project-obsidian-llm-wiki/memory/project_v1_26_x_patch_scope.md` — **READ FIRST on resume for PATCH work.** Contains: items 1-11 ranked top-to-bottom, "already merged in v1.26.x PATCH" table (PR #405 #408), "currently OPEN with v1.26.x PATCH milestone" table (#403 #407 #414 #398), "out of v1.26.1 scope" rationale, 3 open design questions to DocTpoint.
 
-| Item | Source | Note |
-|---|---|---|
-| LLM empty-response retry extraction (`core/llm-retry.ts`) | v1.26.0 Batch 2 follow-up (dedup-phase.ts inline retry) | Reusable helper for analysis-phase / fix-runners / merge / ingest / headless CLI; the 5+ LLM business paths each need this. The `llmRetryRecoveredToast` i18n key (added in Batch 2) is the reusable Toast — pass `{count}` from the helper. **Depends on Batch 6** — the retry helper takes a `forceDisableThinking` option so callers that opt in get a real (verified) wire-level disable, not the openai-compat no-op that shipped in PR #410. |
-| Force-disable thinking evaluation for 5 JSON-decision call sites | v1.26.0 Batch 2 follow-up | `runAnalysisPhase` / `fix-dead-link` / `link-orphan` / `query-keywords` / `path-resolution` — all structured JSON decisions where thinking mode adds latency without measurable recall/precision improvement (Batch 2 e2e on dedup-phase: 979s → 365s — but the improvement was from retry/halving, not from "thinking off"; see Batch 6). **Depends on Batch 6** — without a working wire-level mechanism, this evaluation is no-op vs no-op. After Batch 6 it's a real per-site comparison. |
-| **`repetition_penalty` visible defect (DocTpoint #382 comment, 2026-08-04)** | AI-SDK migration + Layer 2 path | User-facing setting (`Custom Advanced → repetitionPenalty`) is silently dropped on the openai-compat path: the field is not in the AI SDK's zod schema (`openaiCompatibleLanguageModelChatOptions`, line 322-344 of dist/index.mjs), and the path-2 passthrough (`:531-540`) reads from `providerOptions[this.providerOptionsName]` not the hardcoded `"openaiCompatible"` key. So a user who sets a value gets no effect and no notice. The pre-AI-SDK `unsupportedFields` blocklist + `paramStripped` notice (gone with v1.23.0 P1-7 migration) used to cover this. DocTpoint: "a user who sets a value gets no effect and no notice… is a visible defect rather than a dormant option." **Proposed fix**: same Layer-3 mechanism as Batch 6 (per-baseURL "strip repetition_penalty" cache after a 400). Or: per-id key correction (move `repetition_penalty` from `openaiCompatible` to `this.provider`, restoring path-2 passthrough). |
-| **Per-id key correction for `thinking` / `chat_template_kwargs`** | DocTpoint #382 comment, 2026-08-04 | DocTpoint re-measured: path 2 of the openai-compat SDK (`dist/index.mjs:531-540`) IS a passthrough, not a strip. The reason `thinking` / `chat_template_kwargs` never reached wire is that `buildProviderOptions` returns `{ openaiCompatible: openaiOpts }` while `getProvider` passes `this.provider` (e.g. `deepseek` / `kimi` / `lmstudio` / `custom`) — the keys don't match for any provider id except literally `"openai-compatible"`. **Pre-condition (now met)**: Batch 6 Layer-3 400-retry is the delivery guard that @eucher's ca4a24d comment named as missing — without it, correcting the key delivers raw fields to every backend at once with nothing to absorb a 400. With Layer-3, per-id key becomes safe. **Proposed fix**: change `buildProviderOptions` to return `{ [this.provider]: openaiOpts }` for non-`openai-compatible` ids; `gemini` keeps `thinking` out (per #137 record). Out of Batch 6 scope (per DocTpoint's flagging-not-proposing stance). |
-| **PR #405** — fix(#399): duplicate `sources:` frontmatter key on stub-created concept pages (@borthwick) | community bug fix (v1.25.11 regression) | Parked here pending author follow-up on the unquoted block-style format. My YAML parse (`yaml` package, YAML 1.2 same spec as Obsidian's js-yaml): `sources:\n  - [[entities/SomeSource]]` parses to `[[["entities/SomeSource"]]]` (nested flow sequence), not `["[[entities/SomeSource]]"]` (string array). The plugin's canonical writer (`frontmatter.ts` `yamlStringify`) emits `- "[[x]]"` with quotes precisely to avoid this — the PR's two write sites (buildStubContent + appendSourceSlugToFrontmatter flow→block branch) both emit unquoted. Asked author to confirm Obsidian Properties panel renders correctly on a real vault before merge, and to add a regression test that parses with a YAML parser and asserts string-array shape. |
-| **PR #408** — fix(cli): give each run its own bundle (@eucher) | CLI concurrency bug fix | 14 of 60 concurrent `ingest --help` runs failed on `main` (2a42241) with `SyntaxError: Unexpected end of input` / `main is not a function` because esbuild writes the bundle in place. Fix uses per-process bundle filename + sweep stale bundles at startup (only removes bundles whose process is gone, via `process.kill(pid, 0)`) + `rm` after import (Node keeps loaded module + inline sourcemap). 20 of 20 runs clean after the fix. Single-file change in `tools/llm-wiki-cli/run-llm-wiki.mjs`, no plugin-side risk. |
-| **PR #409** — feat: name each LLM call by step, and time the steps inside a phase (@eucher) | LLM observability feat (additive) | Adds optional `task?: string` to `LLMClient.createMessage` (`src/types.ts:636`); times each call in `wrapWithAdvancedSettings`; accumulates per-task totals in new `src/core/llm-task-usage.ts` (in-process `Map<task, {calls, millis}>`, bounded by task-label count). WikiEngine prints `[LLM time by step]` beneath `[Phase breakdown]`; CLI prints its own table. 20+ existing call sites untouched (param is optional); no overlap with dedup-phase's inline retry — the wrapper intercepts every `createMessage`, so dedup's retry calls pick up `task` if assigned (currently `untagged` — opportunistic to add `task: 'dedup'` in the v1.26.x PATCH extraction). Provides the data layer for the "force-disable thinking 5 sites" item above. |
-| **CR-1: dedup-phase concurrency halving is dead code (code-review, 2026-08-05)** | pre-existing on main, Batch 2 commit `e2e75eb` | `src/wiki/lint/llm-phases/dedup-phase.ts` declares `let consecutiveThrottleChunks = 0` + `HALVE_AFTER_CONSECUTIVE_CHUNKS = 2` **inside** the `for (let i = 0; i < batches.length; )` loop body. The counter resets to 0 on every iteration BEFORE the `+= 1`, so it never reaches the threshold. Simulated 20-batch run with every chunk throttling: counter hits 1, halving fires **zero** times. The mechanism has been inert since v1.26.0 Batch 2 shipped. **Impact on attribution**: the 979s→365s e2e gain was previously recorded as "force-disable thinking + elevated halving threshold + 500ms attempt-2 backoff". Batch 6 already corrected factor 1 (force-disable was no-op). CR-1 corrects factor 2 (halving never fired). The 365s came from retry/backoff only. **Defer to post-release** (user decision 2026-08-05): the retry/backoff mechanism alone keeps dedup under 400s on the 2141-page vault; the dormant halving is a missed optimization, not an emergency. Shipping in PR #411 would mix Batch 2 / Batch 6 scope and could itself change the e2e wall-time — separate v1.26.x PATCH PR with the fix + CLAUDE.md / memory attribution correction is the correct scope. Fix: hoist the two declarations above the `for` loop next to `currentConcurrency`. The constant value (`2`) is correct; only the location matters. |
-| **Per-call `thinkingPolicy` enum (PR #411 F5-B, 2026-08-05)** | DocTpoint measurement + eucher surface finding | DocTpoint's controlled measurement on LM Studio / gemma-4-12b (PR #411 review 2026-08-05 05:38 UTC) showed that mirroring `disableThinking` onto JSON-repair produces structurally valid JSON with wrong content (concepts duplicated into entities; `concepts = null`; contradictions / related_pages / key_points dropped). Repair needs reasoning budget to understand broken-JSON semantics. The complementary `complementaryAppend` at 600-token cap (Issue #403) confirms: reasoning off there fixes 3-of-3 truncation. Per-call policy is the right granularity, not per-setting. **Proposed fix**: replace the boolean `disableThinking` with a per-call enum like `'always-on' | 'force-off' | 'per-call-decision'` (or finer). The dedup-phase sets `'force-off'` unconditionally; JSON-repair and other structured-bounded calls stay `'always-on'`; `complementaryAppend` stays `'force-off'`. Regression guard for the inverse (do NOT mirror) is already in `source-analyzer-thinking.test.ts`. |
-| **DeepSeek / Kimi / GLM `reasoning_effort: 'none'` real e2e measurement (PR #411 DocTpoint Item 3, 2026-08-05)** | Backend compat claims unverified | The Batch 6 commit comment lists "DeepSeek — accepts (official reasoning_effort field), Kimi k2.5/2.6 — accepts, GLM-4.6 — accepts" with no measurement. DocTpoint deleted the prior comment that named DeepSeek's `'low'` was silently mapped to `'high'` (the reason Batch 2 switched to `thinking.type` in the first place). Layer-3 400-retry catches the rejection case but NOT silent upward mapping. **Action**: run real e2e on deepseek-v4-flash / kimi / glm with `reasoning_effort: 'none'` and observe whether reasoning_tokens is 0 in the response and `response_content` matches the no-thinking baseline. If silent mapping is happening, this is a P0 silent-data-corruption risk (analogous to the F5-B repair-path finding). |
-| **PR #411 simplify review findings — deferred refactors (2026-08-05)** | simplify 4-angle review (Reuse / Simplification / Efficiency / Altitude) | Three HIGH-severity reuse/refactor findings deferred to keep #411 in scope (PR is already 21 commits / +1604 LOC; further refactors break per-PR discipline). **H1**: shared `BaseUrlKeyedCache<T>` primitive — `ReasoningStripProber` and `TokenKeyProber` are byte-identical per-baseURL `Map<string, T>` caches with identical `get/set/invalidate` (the latter now removed from ReasoningStripProber in PR #411 commit, see below). Extract one generic; both files shrink to ~30 LOC each. **H2**: extract `withReasoningStripRetry(opts)` helper — the Layer-3 retry block is written 4× across `openai-compat-sdk-client.ts:240-272, 607-650` and `openai-sdk-client.ts:217-245, 492-534` with byte-identical structure (Bug-3 ordering invariant becomes impossible to violate). Removes ~120 LOC + the divergent doc comments. **Altitude Q1/Q4**: per-call `thinkingPolicy` enum at LLMClient boundary (`'force-off' \| 'force-on' \| 'inherit-user'`) — replaces the third instance of `FORCE_DISABLE_THINKING = true` boolean at the dedup-phase call site; the docblock-only policy at `source-analyzer.ts:417` becomes a typed value at the call site (IntelliSense over buried comment). **Altitude Q3**: `parseJsonShape<T>` helper in `core/json.ts` — the third call site of "parsed but field-not-array" silent `[]` fallback; lift the shape-validation into a sibling of `parseJsonResponse`. **Ships in v1.26.x PATCH (priority order)**: H1 → H2 → thinkingPolicy enum → parseJsonShape. |
-| **PR #411 simplify review — fixed before merge (2026-08-05)** | inline fixes shipped in #411 | **M1 (CR-3 wiring)** — `detectRateLimitFailures` + dedup-phase consumer were passing `f.reason` (string) to `isRateLimitFailure`, which made the structured-form `type: 'parse-failure'` discriminator (added in commit `6e6388a`) **unreachable in production**. The CR-3 regression guarantee was on the test page; this fix puts it on the running plugin's call path too. Without it, a future edit to the parse-failure reason string that mentions "throttl" or "rate limit" would silently misclassify parse-failures as 429s. Fixed: pass the full item. New regression test in `__tests__/core/rate-limit.test.ts` exercises the discriminator through `detectRateLimitFailures`. **H3 (Map→Set)** — `ReasoningStripProber.cache` was `Map<string, true>` (key IS the signal — value always true). Converted to `Set<string>`, removed the dead `invalidate(baseUrl?)` overload (zero production callers — only tests used it). Aligns with the dead-code-as-docs half-life rule; `TokenKeyProber.invalidate` is the next candidate when there's a real caller. |
+**Minimum recommended v1.26.1 ship** (3 short PRs, ~1 PR-equivalent effort): item 1 (#403 3-line cap fix) + item 2 (CR-1 dedup halving 2-line fix) + item 3 (PR #409 test additions). All three are well-defined; items 4-11 are design-track deferrals.
 
 ## After v1.26.0: v1.27.0 MINOR design track
 
@@ -172,238 +65,3 @@ Items NOT in v1.26.0 P0+P1 scope but in #358 design orbit (target v1.27.0 MINOR)
 - Lint details in user README — partial completion via Advanced settings UI; full section TBD
 - OS-async observation window policy — formalize SecretStorage 5-version stabilization pattern
 
-## Milestone structure (2026-08-02 re-audit)
-
-**Milestone 7 (v1.26.0 MINOR)** open issues after re-scope:
-
-| Issue | Title | Lands in |
-|---|---|---|
-| #382 | v1.26.0 hardening | Batches 1-4 |
-| #358 | design anchor | tracked in release notes |
-| #330 | schema can't fix ingest path | design input for Batches 1-2 |
-| #328 | schema three-layer split | Phase 1 done; Phase 2 = v1.27.0 |
-| #285 | OKF Bundle export | v1.27.0 (#358 item 2) |
-| #220 | source-revision awareness | v1.27.0 (#358 item 3) |
-| #358 item 8 | enum-as-section-value | Batch 5 |
-
-**Moved OUT** to milestone 13 (v1.27.0+ research / future MINOR):
-
-| Issue | Title | Target |
-|---|---|---|
-| #306 | compact slug list dominates prompt 77% | v1.27.0+ research (DocTpoint self-corrected, r=0.008) |
-| #295 | scheduled ingest | v1.27.0+ research (conflicts with external orchestration philosophy) |
-| #184 | Obsidian Bases for wiki index | v1.27.0+ research (post-PPR integration) |
-| #317 | schema.md changes ignored | v1.27.0 (with Phase 2 per-type registration, user decision 2026-08-02) |
-| #326 | defer to canonical pages outside wikiFolder | v1.27.0 (with #358 item 3 bidirectional frontmatter, user decision 2026-08-02) |
-
-**Memory correction (2026-08-02)**: `project_v1_26_0_follow_on_compact_prep.md` claimed "two pre-existing #383-shape bugs filed separately (FileSuggestModal `wiki.md` leak + trailing slash on wikiFolder)". This was WRONG — neither bug has an open issue, neither was filed separately. PR #389 (which closed #383) addressed all `isAtOrInFolderScope`-related bugs in the codebase. These two phantom bugs are NOT in v1.26.0 scope. Lesson: verify memory against actual `gh issue list` output before treating compact-prep as authoritative.
-
-## Out of scope (explicit, v1.26.0)
-
-- ❌ Embedding / vector store / RAG retrieval — see [[feedback_no_rag_embedding_perf]]
-- ❌ Plugin → agent framework refactor (we expose interfaces, not an agent runtime)
-- ❌ Multi-vault isolation (cost > observed benefit)
-- ❌ Plugin-internal scheduler for consolidation (external orchestration is the right home)
-
-## i18n expansion
-
-Add `ru` (Русский) to `WIKI_LANGUAGES` + `src/texts/ru.ts` + `docs/README_RU.md` + 11-way language switcher across all READMEs. Driven by recent RU user growth + @eucher's 3 ingest/LLM PRs (RU speaker). No new functionality beyond text strings + 11-locale parity test update. — *(status: still pending; revisit at v1.26.0 release prep or as a follow-up PATCH.)*
-
-## Next: v1.25.10 PATCH follow-ups (post-publish, before v1.26.0 kickoff)
-- `9289bdd` fix(page-factory): stamp sources: provenance on freshly generated pages (Closes #365 partial)
-- `7588034` docs(readme): rewrite relative cross-file links as absolute https://github.com URLs (Closes #375)
-- `98f180c` feat(status): fine-grained stage labels in status bar (Closes #169)
-- `c191878` refactor(status): simplify cleanup of v1.25.11 PATCH (4 agents review)
-- `94c4c72` docs: v1.25.11 PATCH finalization — CHANGELOG + CLAUDE + CONTRIBUTING + ROADMAP
-- `a300d1d` fix(ui): restore turn indicator UX and settings infobox
-- `5b18655` docs(readme): optimize EN README banner + comparison table + Ecosystem MinerU
-- `e02a33d` refactor(status): simplify follow-up — 4 cleanups from 5-agent audit (F1+F7 reverted after user e2e)
-
-*Stats*: 44 files changed, +1498 / −329, **2744 tests passing** (204 files), +31 net since v1.25.10.
-
-*Docs polish in this PATCH*:
-- EN README banner restored ("Obsidian Review Perfect Score" + "Local-first • No backend • GDPR-Friendly" privacy line); comparison table 12 → 8 rows; star CTA added.
-- MinerU online conversion added as first item in Ecosystem section of all 10 READMEs.
-- PDF-OCR-GUIDE.md MinerU section rewritten (URL fix + `sources/` misconception correction + privacy self-host path + Issue #376 tracking reopened).
-
-*Simplify follow-up* (`e02a33d`): 5-agent audit (Reuse + Simplification + Efficiency + Altitude + code-review max-effort) applied 4 fixes (F2 4× frontmatter re-parse eliminated; F4 analysis-phase migrated to lintStageAnalyzing; F5 30 dead i18n entries deleted; F6 dead `fitIndicatorToContainer` alias removed). 2 indicator-related findings (F1, F7) reverted after user e2e showed `position: relative` change broke layout — deferred to v1.25.12.
-
-*What's NOT in this PATCH (deferred)*: #168 (status label granularity in Notice popups); #357 + #372 (still HOLD per CLAUDE.md, v1.26.0 design track).
-
-**v1.25.10 — RELEASED 2026-07-29.** Sequential PATCH on v1.25.9 carrying bug fixes only — 10-item scope locked 2026-07-28:
-
-*Composition (16 commits, oldest → newest)*:
-- `f9a680e` feat(slug): alias hardening — 3-char floor + cross-page uniqueness (later revised to 2-char floor)
-- `6736b06` fix(frontmatter): preserve unknown top-level fields on re-touch (#356)
-- `728f235` fix(ingest): enforce folder boundary so siblings sharing a prefix are not pulled in (#364, initial helper)
-- `dedec51` fix(mentions): data-layer `m.source_path || sourcePath` fallback (#363 part 1, later superseded)
-- `f3c61ab` fix(mentions): parser accepts empty-target bullets (#363 part 2)
-- `83dec0e` docs(schema): clarify that custom tag vocabulary is a hint, not an enforcement gate (#368)
-- `e3861b5` feat(merge): split merge / contradictory routes via frontmatter marker (DocTpoint §4)
-- `ece6007` perf(lint): partial P0-1 + complete P1-1 + P1-2 helpers (Issue #367)
-- `507e895` feat(slug): Turkish-aware case fold for comparison keys (Issue #366 phase 1)
-- `cbac760` refactor: apply simplify+audit findings — shared frontmatter helper, key rename, single-pass fold
-- `b3e0b79` refactor(slug): lower alias-hardening floor to 2 chars and centralise the constant
-- `17982b7` perf(lint): batch the Empty/Orphan/Duplicate fix-runners by pageGenerationConcurrency (Issue #367 P0-1 part 2)
-- `dbe9e13` perf(lint): batch runRetagViolations by pageGenerationConcurrency (Issue #367 P0-1 final)
-- `76f2475` log(lint): one-line batch-start log per fix-runner so the parallelism is visible in DevTools
-- `98afe42` refactor(ingest): consolidate #364 with DocTpoint's `folder-scope` helper (PR #370)
-- `292d42e` refactor(mentions): consolidate #363 with DocTpoint's `renderCitation` + round-trip interlock (PR #371)
-
-*DocTpoint consolidation (commits 15, 16)*: Two PRs from @DocTpoint (#370 for #364, #371 for #363) shipped stricter implementations than the local fixes. Both PRs adopt their `Co-authored-by: DocTpoint` trailer and the PRs are closed in favour of the merged result:
-- **#364** (commit 98afe42) — DocTpoint's `src/core/folder-scope.ts` mutation-tests the third case (`Notizen.md` beside the folder) that the local helper covered only by accident. Splits prefix-derivation from the descendant predicate into two unit-testable functions.
-- **#363** (commit 292d42e) — DocTpoint's `renderCitation(leftPath)` single-render-gate design fixes a side-effect the local two-commit split had: the data-layer fallback (`m.source_path || sourcePath`) silently rewrote the attribution of an empty-sourcePath mention to the current source's path. The render-layer fix preserves the empty value, so a later re-merge can fill it from the real source. Also covers the citation-less shape (`- "q"` with no `— [[...]]`) which the local regex did not, and adds a round-trip interlock test that fails under a formatter-only or parser-only ship.
-
-*Test count*: 2713 tests passing (202 files), +91 net since v1.25.9.
-
-**v1.25.9 — RELEASED 2026-07-25.** Re-publish PATCH:
-- **PR (this release)** (self): Re-publish v1.25.8 as v1.25.9. During the v1.25.8 release flow the GitHub release record was inadvertently deleted while Obsidian's automated community plugin review bot was mid-review, causing the bot to fail the v1.25.8 submission (review is one-shot and cannot be re-triggered for an already-attempted version). v1.25.9 carries the exact same code as v1.25.8 (no functional changes) and is the version Obsidian's bot will now review on resubmission. **Also includes** a fix for `versions.json` trailing-comma JSON syntax error introduced in commit `c572c27` (1.25.8 bump). 0/0 tests affected.
-
-**v1.25.8 — RELEASED 2026-07-25.** Hotfix PATCH scope:
-- **PR #353** (self): `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only on `hide()`). Fixes v1.25.7 PATCH regression where switching LLM Provider (e.g. Deepseek → MiniMax) made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header". Singleton `this.llmClient` rebuilt by `initializeLLMClient()` after `commitTempSettings` was still reading SecretStorage's previous provider's key (the in-memory typed key never got flushed). Two root causes inside `commitTempSettings`: (1) only `hide()` called `flushApiKey()` — Test Connection / Language Save paths skipped it. (2) `testLLMConnection`'s fire-and-forget `void this.saveSettings()` would have persisted the typed apiKey as plaintext on flush-failure even after our rollback; added an explicit `saveSettings()` after rollback. 7 new tests (+6 commit-flush regression cases against the real `LLMWikiSettingTab.commitTempSettings` / `flushApiKey` via `Object.create(prototype)` + 1 mock signature update). **Bot 0/0 preserved.** 2572 tests / 193 files.
-
-**2026-07-26 PATCH batch (merged between v1.25.9 and v1.25.10)** — main @ `7e22848`, 2605 tests / 195 files:
-- **PR #347** DocTpoint — source-ownership merge (closes #312, #288 silent-mentions pattern)
-- **PR #349** eucher — source-page tag vocabulary (stays inside closed enum)
-- **PR #350** eucher — translation-hint gated on source frontmatter language
-- **PR #352** eucher — silent-truncation finish-reason (closes #305 follow-on)
-
-## Next: v1.25.10 PATCH follow-ups (post-publish, before v1.26.0 kickoff)
-
-**Milestone:** [v1.25.10 PATCH #12](https://github.com/green-dalii/obsidian-llm-wiki/milestone/12). 4-item bug-fix-only scope locked 2026-07-29:
-
-*Composition*:
-
-| Issue | What | Effort |
-|---|---|---|
-| **#375** | README links non-functional in Obsidian community plugin browser — replace ~12 anchor links + 9 language switchers + ~10 doc/file refs in EN README + 9 locale mirrors with absolute GitHub URLs (`https://github.com/green-dalii/obsidian-llm-wiki/blob/main/...`). Heading anchors remain unchanged (GitHub GFM still generates `-why-this-plugin` etc.); only the navigation mechanism changes. i18n parity test extension for switcher URLs | ~2h |
-| **#365** | `createNewPage` (`src/wiki/page-factory/create-page.ts`) does not stamp `sources:` like `merge-page.ts` does — 18/177 pages lose provenance (8/177 completely silent). Fix: call `mergeFrontmatter(..., sources/${sourceSlug})` after the link corrector, matching merge path. Add 3-5 wiring tests | ~1.5h |
-| **#168** | `singleFileGranularity` + `batchGranularity` two-dropdown design (replacing auto-curve) — 38-day slip from v1.25.0 → v1.25.2 → v1.25.10. Implementation outline already in 2026-07-20 reply: `src/types.ts` + `src/ui/settings.ts` + 2 keys × 10 locales + `src/__tests__/types/settings.test.ts` | ~1h |
-| **#169 ETA** | Velocity-based ETA: `(start time + items completed) / elapsed × items remaining` with rolling window over recent batches. ~2h work, status-bar surface only (NOT live preview, NOT sound) | ~2h |
-
-**Total effort:** ~7h (one focused session).
-
-**Out of this PATCH:** #372 (eucher CLI) — scope split needed; CLI direction accepted, but per-comment concerns from DocTpoint require responder turnaround (see separate analysis in PR review).
-
-**Issue #356 follow-up (post-publish — MERGED 2026-07-30):** `mergeFrontmatter` passthrough fix shipped as PR #377 (now on `main @ b8ae391`). +4 tests (2713 → 2717 → 2718 then 2731 after v1.25.10 batch closes). No longer needs separate v1.25.11 PATCH slot.
-
-**v1.25.11 PATCH scope (re-locked 2026-07-30, branch `fix/v1.25.11-patch-follow-ups` from `main @ b8ae391`):**
-
-After Explore agent verified Phase locations and user review of the full plan, scope trimmed. **3 phases shipped, 1 deferred to next release**:
-
-| Phase | Item | Status | Commit |
-|---|---|---|---|
-| **Phase 1** | #365 sources: stamp | ✅ DONE | `9289bdd` — `mergeFrontmatter(content, 'sources/<slug>')` via IIFE splice at `create-page.ts:298`. Frontmatter-fence guard added after simplify review. |
-| **Phase 2** | #375 README absolute URLs | ✅ DONE | `7588034` — 10 READMEs rewritten + `readme-links.test.ts` (12 cases) |
-| **Phase 3** | #169 fine-grained stage labels | ✅ DONE | `98f180c` + simplify fix `c191878` — 14 i18n keys × 10 locales; `ingest-stages.ts` + `status-bar.ts` stage field + `wiki-engine.ts` PDF closure + 4 lint phase `updateStatusBar` updates |
-| **(Phase 4)** | #168 granularity | ⏸️ DEFERRED to next release — design discussion needed (a/b constants, log base, interaction with existing dropdowns) |
-
-Total: 4 commits on `fix/v1.25.11-patch-follow-ups`, 2739 tests (+26 net since v1.25.10 PATCH).
-
-PRs #357 (DocTpoint) + #372 (eucher) still HOLD; do NOT merge into v1.25.11.
-
-## Next: v1.26.0 MINOR (after v1.25.10 PATCH follow-ups ship)
-
-**Design anchor:** [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358). Co-author @DocTpoint. Design doc in `docs/v1.26.0-design.md` (drafting after #358 receives community feedback).
-
-**Philosophy: complementary memory model.** Source notes are episodic memory (preserve verbatim, lossy-never-intended, authorial voice). Wiki pages are semantic memory (consolidated, abstracted, graph-traversable). Neither replaces the other; the plugin exposes a complementary query surface, not maximum fidelity to source. Full rationale: #330 reply comment (2026-07-27) + CLAUDE.md §Complementary memory model invariant.
-
-**Committed scope (8 items)**:
-
-| Item | Anchor issue | Lands in |
-|---|---|---|
-| Per-type registration via Settings | #328 Phase 2 + FrancoTampieri (`engagements/`, `findings/`, `risks/`) | v1.26.0 MINOR |
-| User-extensible typed edges (frontmatter `relations:` block) | #285 + DocTpoint OKF extension | v1.26.0 MINOR |
-| Bidirectional frontmatter (`derived_from` on wiki, `wiki_pages` on source) | #220 + #330 §5 | v1.26.0 MINOR |
-| Identity ambiguity record (minimal, scope-limited) | #330 §7 | v1.26.0 MINOR |
-| #357 source-lemma deterministic merge | PR #357 (already draft, +504 LOC) | v1.26.0 MINOR |
-| Preview-Confirm gate (`ingestMode: 'interactive'`, opt-in, default 'auto') | #330 §2 + Karpathy "discusses" | v1.26.0 MINOR |
-| Stable mutation interface (initial API names: `getAmbiguityRecords` / `resolveAmbiguity` / `getRecentMerges` / `revisePage` — subject to design review) | #330 §8 (LLM-wiki CLI option) | v1.26.0 MINOR |
-| Settings-owned enum-as-section-value (CVSS-style controlled vocab) | #328 §2 FrancoTampieri gray-zone question | v1.26.0 MINOR |
-
-**Research track (v1.27.0+, not committed)**:
-
-| Item | Note |
-|---|---|
-| Computable schema (`rules.ts`) | depends on Phase 2 typed edges landing cleanly |
-| Query profile selector (4 modes: cross-reference / source-faithful / concept-only / sparse-annotation) | depends on rules.ts |
-| Periodic consolidation pass + stale-claim re-ask | depends on ambiguity records accumulating at scale |
-| External LLM-wiki CLI (sibling project, not in plugin) | per green-dalii's #330 reply on Obsidian CLI integration; uses the stable mutation interface above |
-
-**Out of scope (explicit)**:
-- ❌ Embedding / vector store / RAG retrieval — see [[feedback_no_rag_embedding_perf]]
-- ❌ Plugin → agent framework refactor (we expose interfaces, not an agent runtime)
-- ❌ Multi-vault isolation (cost > observed benefit)
-- ❌ Plugin-internal scheduler for consolidation (external orchestration is the right home)
-
-**Companion items folded into v1.25.10 PATCH**: P0-1 fix-runners parallelization, P1-1 analysis content-hash cache, P1-2 smart-skip controller (see [[project_v1.25.7_lint_perf_plan]] + [[project_v1.25.10_patch_scope]] §2). **🚫 Embedding/RAG/vector index for lint perf: 永久禁止** — see [[feedback_no_rag_embedding_perf]].
-
-**i18n expansion to 11 languages:** add `ru` (Русский) to `WIKI_LANGUAGES` + `src/texts/ru.ts` + `docs/README_RU.md` + 11-way language switcher across all READMEs. Driven by recent RU user growth + @eucher's 3 ingest/LLM PRs (RU speaker). No new functionality beyond text strings + 11-locale parity test update. — *(status: still pending; not part of v1.25.10 PATCH; revisit at v1.26.0 kickoff or as a follow-up PATCH.)*
-
-**Long-term roadmap items (status only):**
-
-| Item | Issue | Status |
-|---|---|---|
-| MinerU Markdown parser integration | (#376, planning) | ⏳ v1.26.0+ — design track. Already documented as third-party extractor in `docs/PDF-OCR-GUIDE.md`. User explicitly recommends [MinerU online playground](https://mineru.net/OpenSourceTools/Extractor) for general users |
-| Multi-wiki isolation | [#142](https://github.com/green-dalii/obsidian-llm-wiki/issues/142) | ⏳ v1.27.0+ research — technically feasible (per-vault config slices OR per-vault plugin install), no fundamental blocker; deferred for priority/scope, not capability. Workaround: separate Obsidian vault per topic with its own plugin install |
-| Explicit event type | [#112](https://github.com/green-dalii/obsidian-llm-wiki/issues/112) | ⏳ v1.27.0+ research — `arc:` / `sequence:` frontmatter is the lighter alternative (DocTpoint's proposal) |
-| Scheduled ingest | [#295](https://github.com/green-dalii/obsidian-llm-wiki/issues/295) | ⏳ v1.27.0+ research — conflicts with v1.26.0 "external orchestration" philosophy |
-| Obsidian Bases for index | [#184](https://github.com/green-dalii/obsidian-llm-wiki/issues/184) | ⏳ v1.26.0+ — post-PPR integration; smaller scope now (one `.base` file vs full markdown-to-table) |
-| Slug-list prompt-share | [#306](https://github.com/green-dalii/obsidian-llm-wiki/issues/306) | ⏳ v1.27.0+ perf opt — design in place (2-stage pipeline) but DocTpoint self-corrected hypothesis: dead-link share is **not** correlated with vault size (Pearson r = +0.008). Pure perf savings (77% → 5% prompt share), no quality fix needed |
-
-Historic compositions (v1.25.7 and earlier) live in [CHANGELOG.md](./CHANGELOG.md) — kept brief here.
-
----
-
-## Version Timeline
-| Version | Date | Headline |
-|---------|------|----------|
-| **1.25.11 PATCH** | 2026-07-31 | Sequential PATCH on v1.25.10 carrying bug fixes only: #365 sources provenance stamp (Plan A; `appendSourceSlugToFrontmatter` helper, byte-shape identical to `merge-page.ts:93`), #375 README absolute URLs (10 READMEs × language-switcher + PDF-OCR-GUIDE refs; image refs exempted), #169 fine-grained status-bar stage hints (15 keys × 10 locales: 7 ingest + 3 PDF + 5 lint SCAN; NOT ETA). Docs polish: EN banner restored ("Obsidian Review Perfect Score" + "Local-first • No backend • GDPR-Friendly"); comparison table 12→8 rows; star CTA; MinerU online conversion in Ecosystem (Issue #376 tracking reopened). Simplify follow-up: 5-agent audit applied 4 fixes (F2 4× frontmatter re-parse eliminated; F4 analysis-phase migrated to `lintStageAnalyzing`; F5 30 dead i18n entries deleted; F6 dead `fitIndicatorToContainer` alias removed); 2 indicator-related findings (F1+F7) reverted after user e2e. 8 commits, 44 files, +1498 / −329, 2744 tests |
-| **1.25.10 PATCH** | 2026-07-29 | Sequential PATCH on v1.25.9 carrying bug fixes only: #363 Mentions `[[|]]` parser + formatter (DocTpoint PR #371), #364 folder ingest boundary (DocTpoint PR #370), #356 frontmatter-strip, #366 Turkish-aware slug fold (phase 1), #367 lint-perf P0-1 fix-runner parallelisation (P1-1/P1-2 helpers ship dead-code, controller wire deferred to v1.26.0), #368 schema docs + settings UI hint, DocTpoint §4 merge/contradictory route split, alias hardening (3-char → 2-char floor). 16 commits, 78 files, +3499 / −315, 2713 tests |
-| **1.26.0 MINOR** | 2026-08-02 (merged to main; awaiting tag) | User-visible: headless ingest CLI (`pnpm llm-wiki` script + npm `llm-wiki` bin, `ingest` subcommand, full flag surface — originally planned as v1.25.12 PATCH, reclassified as MINOR per SemVer because the CLI is a fresh user-visible tool with a fresh flag surface); Tools H2 section in all 10 READMEs. Internal: `--thinking` → `--thinking-mode` (3-state enum) + `--max-rounds` → `--round-base` (both throw deprecation → v1.27.0 removal); parseCliOptions + parseNumber + 57 test cases pinning the parser contract; PR #357 source-lemma deterministic merge (DocTpoint, first item of #358 design scope); PR #389 follow-up to #383 — `isAtOrInFolderScope` + `isExcludedFromSourcePicker` primitives in `src/core/folder-scope.ts` (one rule, three picker sites; closes the unanchored-prefix leak class on the configDir half), 3 shell tests rewritten as real production-function coverage, `normalizeSourcesInFolder` extracted as a module function matching Phase 3's shape. Anchored at [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358). 11 files changed, +481 / −143, 2863 tests |
-| **1.25.9** | 2026-07-25 | PATCH: Re-publish v1.25.8 to recover from a release-engineering incident where the v1.25.8 GitHub release record was inadvertently deleted while Obsidian's automated community plugin review bot was mid-review. No code changes vs v1.25.8. Also fixes `versions.json` trailing-comma JSON syntax error introduced in v1.25.8 bump commit |
-| **1.25.8** | 2026-07-25 | PATCH Hotfix: `commitTempSettings()` now flushes Obsidian SecretStorage on every commit (not only `hide()`). Fixes v1.25.7 regression where provider switching made Test Connection succeed but Lint/Query/Ingest fail with 401 "Missing Authentication header". +7 tests (6 against real `LLMWikiSettingTab.commitTempSettings` via `Object.create(prototype)` + 1 mock signature update). Bot 0/0 preserved. 2572 tests / 193 files |
-| **1.25.7** | 2026-07-25 | PATCH: API key switching bug fix (regression since v1.25.3 #182, PR #346) + DocTpoint dedup perf PRs #344+#345. Cache-stable prompt layout (54s→1.2s repeat) + slim dedup + top-K candidate pre-filter (660K→372K prompt tokens, −44%). 19 new tests since v1.25.6. Bot 0/0 preserved. 2566 tests / 192 files |
-| **1.25.6** | 2026-07-24 | PATCH: Eliminated 14 `@typescript-eslint/no-unsafe-*` Bot warnings via `createRequire(__filename)` over bare `require('node:http')`. **Bot 0/0 first time.** 2535 tests |
-| **1.25.5** | 2026-07-24 | PATCH: P0 Bot compliance (Platform.isDesktop guard + getSettingDefinitions stub + eslint.config.mjs cleanup) — pathway toward 0/0 |
-| **1.25.4** | 2026-07-24 | PATCH: SecretStorage Win10 regression (#339 fix) + fast-uri CVE bump |
-| **1.25.3** | 2026-07-23 | feat(security): provider API key → Obsidian SecretStorage (#182). Closes #182 |
-| **1.25.2** | 2026-07-22 | Schema Phase 1 (Option A bug-fix #328) + Codex OAuth + ESLint 0.4.1 Route A |
-| **1.25.1** | 2026-07-20 | PATCH: silent Mentions loss on Related re-ingest fixed (#288 closes #287) + LLM rewrite drops schema sections prevented (#302 closes #292) + legacy pre-#244 Mentions shape healed on parse (#303 closes #289) + LM Studio no-key ingest (#272). Big-file splits: `wiki-engine.ts` 1799→1619 with 657 LOC of helpers into `engine-internals/` (Phase C-PR1), `settings.ts` 1439→370 with 1183 LOC across 8 settings-sections (Phase C-PR2), `main.ts` 1304→300 with 915 LOC across 6 main-commands via mixin pattern (Phase C-PR3). `DiskCache<T>` extracted with bounded growth + ledger optimization (Phase F). Node 24 + AI-SDK patches pinned via `.nvmrc` + `.npmrc` + dual-direction lockfile regen from single `node_modules` snapshot (Phase E). 11 commits, ~80 files, 2274 tests |
-| 1.25.0 | 2026-07-18 | MINOR: cache-only PDF Ingest (Level 1) — three-defense-layer bounded cache (100MB / 1000 / 10MB + LRU-by-mtime) + provider gate (anthropic/openai/bedrock-* native, others via `forcePdfSupport` universal escape hatch) + content-hash cache key with `converterVersion` + two new settings (`forcePdfSupport`, `writePdfMarkdownToVault`) + verbatim OCR-style PDF prompt. 2182 tests |
-| 1.24.1 | 2026-07-14 | PATCH: 5-stage PPR cascade (#281) + parseJsonResponse quiet path (#282, closes #255/#274) + redundant Basic Information removal (#283, closes #258) + Bedrock Stage 1 (#277) + LM Studio no-key (#269) + Tier C bypass (#271) + page-factory split (#276) + non-lossy Mentions re-ingest (#267). 2080 tests |
-| 1.24.0 | 2026-07-10 | MINOR: per-task models (#208) + Custom Query Instructions (#251) + 4 monolith splits (#248/#249/#250/#257) + source-note aliases (#185) + frontmatter write repair + merge triage (#216) + PPR graph warmup. 1825 tests |
-| 1.23.2 | 2026-07-05 | PATCH: #234/#221/#219 + DocTpoint #238/#241 + graph cache invalidation + Apache 2.0 + DCO. 1431 tests |
-| 1.23.1 | 2026-07-02 | Obsidian review hotfix — strictBindCallApply alignment + dead function removal + lockfile regen |
-| 1.23.0 | 2026-07-02 | Graph Engine PPR (Issue #198) + Vercel AI-SDK v6 migration + Sponsor section + v1.22.6 hotfix folded in |
-| **1.22.6** | 2026-06-29 | Hotfix — #204 wire onAutoIngestDone + Auto Smart Fix trigger dispatch + #207 broaden Responses API to -pro variants |
-| **1.22.5** | 2026-06-29 | Hotfix — Responses API path for reasoning model family (#207 follow-up) + provider body in Notice + withRetry on Responses path |
-| **1.22.4** | 2026-06-27 | Hotfix — GPT-5.x probe-then-cache (Closes #207) + provider error UX + lint knobs centralisation |
-| **1.22.3** | 2026-06-26 | Hotfix — language-agnostic log header + content-folder guard for `generation_complete` |
-| **1.22.2** | 2026-06-26 | Hotfix — auto-ingest modal→Notice (#204) + log i18n + periodic lint refined |
-| **1.22.1** | 2026-06-24 | Hotfix — fixDeadLink fabrication (#197) + startupCheck migration (#199) + CSS `:has()` + Query side panel (#196) + related-link corrector (#187) |
-| **1.22.0** | 2026-06-23 | Schema one-click apply (#97) + dynamic tag sync + zh-Hant + ingest status bar (#189, @YounianC) |
-| 1.21.1 | 2026-06-22 | Hotfix — #173 Symptom A NFC/NFD + esbuild 0.28.1 |
-| 1.21.0 | 2026-06-21 | Pre-ingest gate (#164) + Schema Phase 1 (#124) + History Panel (#122) + Italian (#159) |
-| 1.20.3 | 2026-06-20 | Hotfix — source-slug fingerprint (#155) + alias dedup (#154) + Stage-4 guard (#158) |
-| 1.20.2 | 2026-06-19 | Anthropic fallback system-role hotfix (PR #151 by @Indexed-Apogrypha, Closes #141/#147) |
-| 1.20.1 | 2026-06-18 | Anthropic prefill rejection hotfix (Closes #141/#147) |
-| 1.20.0 | 2026-06-18 | Provider-first thinking control + reasoning UI (Closes #141/#134/#143) |
-| 1.19.1 | 2026-06-17 | Gemini HTTP 400 hotfix (Closes #137) |
-| 1.19.0 | 2026-06-16 | Ingest quality & cost hardening — advanced LLM params, quote grounding, compact slugs |
-| 1.18.2 | 2026-06-12 | Custom extraction limits hard-enforced (Closes #120) + #114 tags preservation + #111 slug casing |
-| 1.18.1 | 2026-06-11 | Obsidian review compliance (document ban + prefer-active-doc) |
-| 1.18.0 | 2026-06-10 | Tag controlled vocabulary (Closes #85) v6/v7/v8 — chip input UX, end-to-end customTags pipeline |
-| 1.17.0 | 2026-06-08 | Long-document ingestion + source attribution (Closes #90) |
-| 1.16.3 | 2026-06-07 | v1.16.2 P0 hotfix completion |
-| 1.16.2 | 2026-06-07 | Lint cancel + thinking token bleeding + delete empty stubs |
-| 1.16.0 | 2026-06-04 | Sources normalization + Context Window + LMStudio |
-| 1.15.0 | 2026-06-01 | PR #87/#88 + aliases unification |
-| 1.13.0 | 2026-05-26 | ConflictResolver + 6 audited improvements |
-| 1.12.0 | 2026-05-20 | Extraction rearchitected, ~80% faster |
-| 1.10.0 | 2026-05-15 | Aliases + granularity expansion |
-| 1.9.0 | 2026-05-10 | Pollution defense + 14-issue batch |
-| 1.8.1 | 2026-05-05 | Rate limit + smart fix all + 53 tests |
-| 1.0.0 | initial | First Obsidian release |
-
-> **Out of scope for v1.26.0 MINOR:** Bedrock Stage 2 (bearer-only via `@ai-sdk/amazon-bedrock@^5`) — conditional on 3+ user issues for Claude Sonnet 4 / Llama 4 on Bedrock. Bedrock Stage 3 SSO — indefinite deferral.
