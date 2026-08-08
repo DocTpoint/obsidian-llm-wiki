@@ -35,14 +35,17 @@
     "@types/node": "16.18.126",
     "@typescript-eslint/eslint-plugin": "8.59.1",
     "@typescript-eslint/parser": "8.59.1",
+    "ajv": "^8.20.0",
     "esbuild": "0.28.1",
     "eslint": "10.2.1",
-    "eslint-plugin-obsidianmd": "0.4.1",
-    "jsdom": "^29.1.1",
+    "eslint-plugin-obsidianmd": "^0.4.1",
+    "fast-uri": "3.1.5",
+    "jsdom": "^30.0.1",
     "obsidian": "1.12.3",
     "tslib": "2.4.0",
     "typescript": "5.9.3",
-    "vitest": "4.1.6",
+    "vite": "^8.2.1",
+    "vitest": "4.1.10",
     "yaml": "^2.4.2"
   },
   "pnpm": {
@@ -50,8 +53,8 @@
       "esbuild"
     ],
     "overrides": {
-      "fast-uri": "3.1.4",
-      "brace-expansion": "5.0.7"
+      "fast-uri": "3.1.5",
+      "brace-expansion": "5.0.9"
     }
   },
   "dependencies": {
