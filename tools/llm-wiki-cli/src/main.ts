@@ -39,12 +39,14 @@ const INGEST_USAGE = `Usage:
   --dry-run       Run the full ingest but keep every write in memory.
   --force         Ignore the duplicate-content gate and re-ingest anyway.
   --extract-only  Stop after extraction; write no pages. Implies --dry-run.
-  --seed          Fix the sampling seed, so two runs of the same source are
-                  comparable. Without it the provider picks one per request.
-                  Local servers honour it strictly. Anthropic has no such
-                  parameter, and the openai provider drops it: that path builds
-                  the Responses model, which reports seed unsupported and omits
-                  it. Best-effort seed is a Chat Completions feature.
+  --seed          Fix the sampling seed. Without it the provider picks one per
+                  request. Some local servers honour it, not all: LM Studio
+                  accepts and type-validates the field and then ignores it
+                  (#423), so there only --temperature 0 makes two runs of one
+                  source comparable. Anthropic has no such parameter, and the
+                  openai provider drops it: that path builds the Responses
+                  model, which reports seed unsupported and omits it.
+                  Best-effort seed is a Chat Completions feature.
   --max-tokens-per-call  Cap max_tokens for every call. 0 removes the cap and
                   leaves whatever the call site asks for — for extraction that
                   is at least 16000, not "unlimited".

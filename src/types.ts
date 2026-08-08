@@ -346,9 +346,14 @@ export interface LLMWikiSettings {
    * normal behaviour, but it also means no comparison between two versions of
    * the extraction loop can separate a change from the sampler.
    *
-   * What it buys depends on the provider. Local servers honour it strictly:
-   * two runs of one source, hours apart, came back byte-identical. The
-   * `openai` provider drops it: that path builds the Responses model, which
+   * What it buys depends on the provider. Some local servers honour it, not
+   * all: on LM Studio with `google/gemma-4-12b` (MLX, 4bit) the field is
+   * accepted, type-validated and then ignored — five requests with `seed: 42`
+   * at `temperature: 1.0` returned five distinct outputs, and only
+   * `temperature: 0` produced a single one (#423). Nothing in that exchange
+   * tells the caller the run is not reproducible.
+   *
+   * The `openai` provider drops it: that path builds the Responses model, which
    * reports `seed` unsupported and leaves it out of the body — the best-effort
    * seed OpenAI documents belongs to Chat Completions, which this path does
    * not use. Anthropic has no such parameter at all, and the Codex adapter
