@@ -974,7 +974,16 @@ export class QueryView extends ItemView {
       const summary = lang === 'en'
         ? `${report.entitiesCreated} entities, ${report.conceptsCreated} concepts, ${report.createdPages.length} pages`
         : `${report.entitiesCreated} 实体, ${report.conceptsCreated} 概念, ${report.createdPages.length} 页`;
-      new Notice(`${texts.saveToWikiSuccess}\n${summary}`, NOTICE_NORMAL);
+      // Issue #398: surface `report.errorMessage` so a silent-success outcome
+      // (e.g. dedupCheck returned 'fully_redundant' — see conversation-ingest.ts:78-93)
+      // does not lie to the user with an unconditional "saved" notice. The
+      // i18n key carries the user's language; the underlying reason string
+      // is the LLM's own verdict (kept verbatim) so DevTools inspection lines
+      // up with the notice.
+      const noticeTail = report.errorMessage
+        ? `\n${texts.querySaveAlreadyExists}\n${report.errorMessage}`
+        : '';
+      new Notice(`${texts.saveToWikiSuccess}\n${summary}${noticeTail}`, NOTICE_NORMAL);
     } catch (error) {
       console.error('Save failed:', error);
       const errorMsg = error instanceof Error ? error.message : String(error);
