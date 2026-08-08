@@ -165,8 +165,18 @@ export const TOKENS_CONVERSATION_PAGE = 8000;
  * Token budget for entity dedup resolution (lightweight matching prompt).
  * Sized for short JSON output (action + path) with headroom for thinking-model
  * preamble that may consume part of the budget.
+ *
+ * v1.26.x PATCH #403: raised from 1000 → 3000. On reasoning-capable models
+ * the deliberation is billed against the same max_tokens budget as the
+ * answer; DocTpoint measurement (gemma-4-12b / LM Studio, 2.4 KB source ×
+ * 45 calls) saw successful runs deliberate 286–921 tokens under a 1000 cap,
+ * while 14/45 calls truncated and 13 of those returned empty content (read
+ * as a valid negative — silent data loss). 3000 gives uniform ~50–80%
+ * reasoning headroom while staying well below the call's context window.
+ * Per-call reasoning-aware multiplier is deferred to v1.27.0's per-call
+ * `thinkingPolicy` enum (scope item 6).
  */
-export const TOKENS_DEDUP_RESOLUTION = 1000;
+export const TOKENS_DEDUP_RESOLUTION = 3000;
 
 /**
  * v1.26.0 patch 16 (PR #357) — token budget for the source-lemma type
@@ -199,8 +209,13 @@ export const DEDUP_CANDIDATE_TOP_K = 30;
  * Chinese easily runs to 500-900 tokens; e2e observed heavy truncation
  * at 200 tokens with `{"strategy":` cut off mid-JSON. 2000 gives ample
  * headroom for both Tier-1 (compact) and Tier-2 (verbose) outputs.
+ *
+ * v1.26.x PATCH #403: raised from 2000 → 3000. DocTpoint measurement on
+ * gemma-4-12b / LM Studio showed triage calls deliberating 766–1650 tokens
+ * under a 2000 cap (32–44% miss rate across runs). 3000 gives uniform
+ * ~50–80% reasoning headroom. See TOKENS_DEDUP_RESOLUTION for full rationale.
  */
-export const TOKENS_MERGE_TRIAGE = 2000;
+export const TOKENS_MERGE_TRIAGE = 3000;
 
 /**
  * v1.24.0 #216 Tier-2 — max tokens for a single per-section append call.
@@ -208,18 +223,44 @@ export const TOKENS_MERGE_TRIAGE = 2000;
  * LLM is given (existingSectionContent + 1-N new facts) and must return
  * just the appended paragraphs. 600 tokens covers ~3 paragraphs of
  * markdown per section comfortably.
+ *
+ * v1.26.x PATCH #403: raised from 600 → 3000. DocTpoint measurement on
+ * gemma-4-12b / LM Studio saw 3/3 = 100% miss rate at the 600 cap (every
+ * call truncated and returned empty — short-cap call sites are most
+ * exposed to thinking-budget burn). 3000 gives uniform ~50–80% reasoning
+ * headroom. See TOKENS_DEDUP_RESOLUTION for full rationale.
  */
-export const TOKENS_COMPLEMENTARY_APPEND = 600;
+export const TOKENS_COMPLEMENTARY_APPEND = 3000;
 
 /**
  * Token budget for lint alias completion batch.
+ *
+ * v1.26.x PATCH #403: raised from 500 → 3000. Same reasoning-budget insurance
+ * pattern: short-JSON output + thinking-channel burn on reasoning models puts
+ * any sub-2000 cap at high risk of empty-content truncation. DocTpoint's
+ * measurement on `complementaryAppend` (600 → 3/3 = 100% miss) showed the
+ * short-cap call sites are the most exposed. 3000 gives uniform reasoning
+ * headroom. See TOKENS_DEDUP_RESOLUTION for full rationale.
  */
-export const TOKENS_LINT_ALIAS_BATCH = 500;
+export const TOKENS_LINT_ALIAS_BATCH = 3000;
 
 /**
  * Token budget for lint duplicate detection LLM check.
+ *
+ * v1.26.0 (#382 item 1, Batch 2): raised from 4000 to 8000. The
+ * e2e log on the 2141-page vault (Aug 2026) showed 10/10 batches
+ * returning 0-byte responses on deepseek-v4-flash with max_tokens=4000.
+ * Root cause: thinking-mode models (DeepSeek V3/R1, Claude extended
+ * thinking, GPT-5 reasoning) burn thinking tokens against the same
+ * max_tokens budget, so 4000 produces 0 output tokens after thinking.
+ * 8000 gives the thinking channel ~4K and the JSON output ~4K — the
+ * JSON response for a 100-candidate batch is typically 1.5-3K output
+ * tokens. The dedup-phase also forces `enableThinking: false` on
+ * thinking-capable models (see dedup-phase.ts), which is the primary
+ * fix; 8000 is the safety margin for any model that doesn't honor
+ * the override.
  */
-export const TOKENS_LINT_DEDUP_LLM = 4000;
+export const TOKENS_LINT_DEDUP_LLM = 8000;
 
 /**
  * Token budget for lint dead link / orphan / empty page fixes.
@@ -228,8 +269,13 @@ export const TOKENS_LINT_PAGE_FIX = 8000;
 
 /**
  * Token budget for lint orphan link fix (shorter prompt).
+ *
+ * v1.26.x PATCH #403: raised from 800 → 3000. Same reasoning-budget insurance
+ * pattern as TOKENS_LINT_ALIAS_BATCH above — short JSON `{strategy, path}`
+ * output on a reasoning-capable model burns the cap before content. 3000
+ * gives uniform reasoning headroom. See TOKENS_DEDUP_RESOLUTION for rationale.
  */
-export const TOKENS_LINT_ORPHAN_FIX = 800;
+export const TOKENS_LINT_ORPHAN_FIX = 3000;
 
 /**
  * Token budget for query step 0 (model detection, tiny call).
@@ -286,8 +332,13 @@ export const TOKENS_QUERY_SEED_SELECT = 2000;
  * the JSON output + any reasoning preamble for thinking models.
  *
  * Used by `generateQueryKeywords` in query-keywords.ts.
+ *
+ * v1.26.x PATCH #403: raised from 1000 → 3000. Same reasoning-budget
+ * insurance pattern — short JSON `{keywords: []}` output on a reasoning-
+ * capable model burns the cap before content. 3000 gives uniform reasoning
+ * headroom. See TOKENS_DEDUP_RESOLUTION for full rationale.
  */
-export const TOKENS_QUERY_KEYWORDS = 1000;
+export const TOKENS_QUERY_KEYWORDS = 3000;
 
 /**
  * Token budget for schema suggestion generation.
@@ -398,6 +449,17 @@ export const LINT_YIELD_EVERY_COMPARISON = 500;
  */
 export const LINT_DEDUP_BUCKET_PREFIX_LEN = 2;
 
+/**
+ * v1.26.0 (#382 item 1, Batch 2): cap on the size of an `ic:` (incoming-
+ * link) bucket to bound per-page fan-out. A page with N incoming links
+ * would otherwise land in N distinct `ic:` buckets; pages in the
+ * most-popular 50 of those buckets still get the ic: dimension, the
+ * remainder are skipped (their title-prefix and outgoing-link buckets
+ * still apply). 50 matches Batch 1's `LINT_DEDUP_BATCH_SIZE = 100` /
+ * 2 — fan-out above that risks O(N²) per-bucket pair loops.
+ */
+export const LINT_DEDUP_MAX_BUCKET_SIZE = 50;
+
 /** Batch size for vault reads during lint preparation. */
 export const LINT_PREP_BATCH_READ = 200;
 
@@ -459,6 +521,23 @@ export const LINT_DEDUP_BIGRAM_THRESHOLD = 0.4;
  * with a stronger justification than "tunability".
  */
 export const LINT_DEDUP_BIGRAM_TIER1_CUTOFF = 0.6;
+
+/**
+ * v1.26.0 (#382 item 1, Batch 2): Jaccard-similarity threshold for the
+ * sharedIncoming signal — two pages whose incoming-source sets (the
+ * list of wiki pages that cite them) overlap by `>=` this fraction
+ * are flagged as a `sharedIncoming` candidate. Lower than the
+ * outgoing-link threshold (0.4) because incoming-link overlap is
+ * intrinsically rarer: most pages are cited by only 1-3 sources, so a
+ * 0.3 overlap carries stronger semantic signal than a 0.4 outgoing
+ * overlap (where 50+ outgoing hubs are common).
+ *
+ * INTENTIONALLY NOT EXPOSED as a settings field for the same reason
+ * as LINT_DEDUP_BIGRAM_TIER1_CUTOFF — controls which generated
+ * candidates the LLM sees, needs release-time verification of the
+ * LLM contract before any per-vault override.
+ */
+export const LINT_DEDUP_INCOMING_LINK_THRESHOLD = 0.3;
 
 // ============================================================================
 // Amazon Bedrock Stage 1 (v1.24.1 PATCH) — bedrock-mantle endpoint
@@ -527,8 +606,41 @@ export const LINT_CANDIDATE_TOKEN_ESTIMATE = 30;
  */
 export const LINT_MAX_INPUT_TOKENS = 15000;
 
-/** Number of candidates fed per lint dedup LLM call. */
-export const LINT_DEDUP_BATCH_SIZE = 100;
+/**
+ * Number of candidates fed per lint dedup LLM call.
+ *
+ * v1.26.0 (#382 item 1, Batch 2): reduced from 100 to 50. The e2e log
+ * on a 2141-page vault (Aug 2026) with deepseek-v4-flash showed batches
+ * with 100 candidates produced 14K-char prompts, which under the
+ * provider's thinking-mode behaviour (thinking tokens consume the
+ * max_tokens output budget) yielded 0-byte responses on 9/10 batches.
+ * Batches with 50 candidates produce ~10K-char prompts that fit within
+ * the thinking model's output budget, so all batches return content.
+ * The user-paid cost is ~2x more LLM calls (20 batches vs 10), but
+ * each batch completes faster because the model thinks less.
+ */
+export const LINT_DEDUP_BATCH_SIZE = 50;
+
+/**
+ * v1.26.0 (#382 item 1, Batch 2): empirically-derived upper bound for
+ * the dedup batch's rendered prompt. When the prompt exceeds this size,
+ * thinking-mode LLMs (DeepSeek V3/V4, Claude extended thinking,
+ * GPT-5 reasoning) burn their max_tokens output budget on internal
+ * reasoning and return 0-byte responses on most batches. The
+ * 7,000-character threshold was measured on a 2141-page vault
+ * (Aug 2026 e2e): every batch with prompt < 7K chars returned
+ * content reliably on deepseek-v4-flash with max_tokens=8000;
+ * batches with prompt > 8K chars returned 0 on ~10-50% of attempts.
+ *
+ * The dedup-phase batch splitter shrinks the batch size at split
+ * time to keep the rendered prompt under this budget (so a batch
+ * with 50 candidates that would produce a 14K-char prompt is
+ * split into two batches of ~25 each, even though both are under
+ * the LINT_DEDUP_BATCH_SIZE cap). This is purely a thinking-model
+ * insurance; non-thinking models are unaffected (they fit 100
+ * candidates in 4K tokens easily).
+ */
+export const LINT_DEDUP_PROMPT_CHAR_BUDGET = 7000;
 
 // ============================================================================
 // Query Wiki — PPR top-N page retrieval

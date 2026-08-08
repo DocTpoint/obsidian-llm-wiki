@@ -70,6 +70,12 @@ export function renderAdvancedSection(tab: LLMWikiSettingTab, containerEl: HTMLE
             // writePdfMarkdownToVault lives in the bottom "Advanced settings"
             // panel (gated by showAdvancedSettings) and is NOT reset here —
             // that panel's own toggle reset handles it.
+            // v1.26.0 (#382 item 1, Batch 2): lintDedupIncludeSources reset
+            // lives in the bottom "Advanced settings" panel
+            // (advanced-settings-section.ts) where its toggle is now
+            // rendered. This LLM-Advanced reset block intentionally does
+            // NOT reset it.
+            // tempSettings.lintDedupIncludeSources = undefined;
           }
           tab.display();
         });
@@ -95,6 +101,15 @@ export function renderAdvancedSection(tab: LLMWikiSettingTab, containerEl: HTMLE
   renderNumberInput(tab, containerEl, 'extractionTemperatureName', 'extractionTemperatureDesc', 'extractionTemperature');
   renderNumberInput(tab, containerEl, 'chatTemperatureName', 'chatTemperatureDesc', 'chatTemperature');
   renderNumberInput(tab, containerEl, 'repetitionPenaltyName', 'repetitionPenaltyDesc', 'repetitionPenalty');
+
+  // v1.26.0 (#382 item 1, Batch 2): lintDedupIncludeSources toggle was
+  // rendered here in an earlier draft of this commit, but it belongs in
+  // the bottom "Advanced settings" panel (advanced-settings-section.ts),
+  // not in the LLM Advanced section. LLM sampling parameters and
+  // per-source-file dedup toggles are different scopes — keeping them
+  // in separate panels avoids the "Advanced" name collision. See CLAUDE.md
+  // "Tech debt: LLM Advanced vs bottom Advanced settings panel" for the
+  // structural naming-collision concern.
 
   // v1.25.0 PR3: PDF force-support toggle (universal escape hatch).
   // Renders for ANY non-native provider.

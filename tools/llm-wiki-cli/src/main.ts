@@ -594,7 +594,7 @@ async function runIngest(argv: string[]): Promise<void> {
     return;
   }
 
-  installObsidianGlobals();
+  await installObsidianGlobals();
 
   // A nonexistent vault is the most common first-run mistake; surface it as a
   // CLI message instead of the raw Node ENOENT stack. The "not a directory"

@@ -4,10 +4,10 @@
 
 > 一个 Obsidian 插件，把你的笔记变成互联可查的知识库——[Karpathy LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 概念，直接集成在你已有的编辑器中。
 
-> **Obsidian 官方市场满分评分 • 零嵌入图谱检索 • 原生 10 种语言 • 兼容所有 LLM 提供商**
+> **Obsidian 官方市场满分评分 • 零嵌入图谱检索 • 原生 11 种语言 • 兼容所有 LLM 提供商**
 > **本地优先 • 无后端 • GDPR 友好**
 
-![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
+![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-11-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
@@ -53,7 +53,7 @@
 |---|---|---|---|---|---|
 | **交付与安装** | ✅ **5 分钟** — 一键 Obsidian 插件：社区插件市场 → 安装 → 选择 Provider → 摄入 | ❌ 30 分钟以上 — 编译/下载 Tauri 二进制、配置 CLI | ❌ 15 分钟 — 需要 Claude Code 订阅 + 安装技能 | ❌ 10 分钟 — 需要 Claude Code/Codex 订阅 + 配置 | ❌ 30 分钟以上 — pip install + Python SDK + 本地服务 |
 | **架构与依赖** | ✅ **零依赖** — 无需向量数据库、无需嵌入模型、无需外部进程（按设计采用 PPR 检索 `[[wiki-link]]` 图谱） | 🟡 自带 Python 运行时 + sigma.js + sqlite；嵌入模型可选，默认关闭 | 🟡 依赖 Claude Code 环境 — 非自包含；无嵌入 | 🟡 需要独立平台运行时；无嵌入 | ❌ 需要 Python + 嵌入模型 + 向量数据库（强制） |
-| **国际化（界面 + Wiki 输出）** | ✅ 10 种语言（界面/Wiki 独立设置） | 🟡 2 种（英文/中文） | ❌ 仅英文 | ❌ 仅英文 | ❌ 仅英文 |
+| **国际化（界面 + Wiki 输出）** | ✅ 11 种语言（界面/Wiki 独立设置） | 🟡 2 种（英文/中文） | ❌ 仅英文 | ❌ 仅英文 | ❌ 仅英文 |
 | **LLM 提供商** | ✅ 12+（含 Codex OAuth、Bedrock、LM Studio、Ollama、Anthropic 兼容、Kimi、GLM、MiniMax、DeepSeek） | 🟡 OpenAI 兼容 | 🟡 通过 Claude Code 订阅 | 🟡 通过 Claude Code / Codex 订阅 | 🟡 OpenAI 兼容 |
 | **检索与查询管线** | ✅ **5 级级联** — Lex → LLM 关键词 → 子串扫描 → LLM KB 回退 → PPR 扩展（首个充分信号即截断）。Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 仅 2 跳衰减（4 信号启发式：Adamic-Adar + 2 跳） | ❌ 仅 Louvain 社区检测 | ❌ 仅 k 跳预览（无 LLM 增强） | ❌ BM25 + 语义分块（无图谱） |
 | **图谱可视化** | ✅ Obsidian 原生图谱视图（内建，零额外体积） | ❌ 桌面应用中自定义 sigma.js + graphology | 🟡 vis.js graph.html（独立文件） | ❌ 自定义 sigma.js 离线 HTML | ❌ 只读浏览器查看器 |
@@ -76,7 +76,7 @@
 - **想要干净、自包含的解决方案。** 插件有零个外部依赖：没有嵌入模型、没有向量数据库、没有 pip 包、没有 Docker 容器。它是一个单一的 Obsidian 插件，读取你的笔记、与 LLM 对话、将 Wiki 页面写入你的 vault。一切都在 Obsidian 内部运行。
 - **想要一个基于*你的笔记*回答的可查询聊天**——而非互联网——每个答案都带有 `[[wiki-links]]` 回到你的知识图谱。
 - **关心数据主权**——使用 Ollama 或 LM Studio 完全本地运行，永不触网。
-- **使用或阅读 10 种支持语言中的任何一种**——界面和 Wiki 输出语言相互独立（你的 Wiki 可以是中文而界面是英文）。
+- **使用或阅读 11 种支持语言中的任何一种**——界面和 Wiki 输出语言相互独立（你的 Wiki 可以是中文而界面是英文）。
 - **通过写 `[[wiki-links]]` 来维护图谱**——你写的每个链接已经在丰富检索；无需单独的标签/嵌入/索引步骤。
 - **想要一键维护**——Lint 健康扫描 + 一键智能修复自动处理重复、断链和孤立页，无需手动整理。
 
@@ -187,9 +187,9 @@
 
 ### 🌐 语言
 
-- **🌍 10 种界面语言** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano。界面和 Wiki 输出语言相互独立——你的 Wiki 可以是中文而界面是英文。
-- **📚 10 种 Wiki 输出语言** — 同一集合；在设置 → Wiki 配置中选择。*自定义输入* 选项用于临时提示。
-- **🈶 269+ 翻译的 UI 字符串** — 每个标签、弹窗和通知。添加第 11 种语言由贡献者驱动（PR #159 模式）。
+- **🌍 11 种界面语言** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano, Русский。界面和 Wiki 输出语言相互独立——你的 Wiki 可以是中文而界面是英文。
+- **📚 11 种 Wiki 输出语言** — 同一集合；在设置 → Wiki 配置中选择。*自定义输入* 选项用于临时提示。
+- **🈶 269+ 翻译的 UI 字符串** — 每个标签、弹窗和通知。添加第 12 种语言由贡献者驱动（PR #159 模式）。
 
 ---
 
@@ -310,7 +310,7 @@ pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
 
 ### 能用我的语言使用吗？
 
-🌍 界面和 Wiki 输出均为 10 种语言。界面语言和 Wiki 语言相互独立。添加第 11 种语言由贡献者驱动（PR #159 模式）。
+🌍 界面和 Wiki 输出均为 11 种语言。界面语言和 Wiki 语言相互独立。添加第 12 种语言由贡献者驱动（PR #159 模式）。
 
 ### 这和 RAG 聊天机器人有何不同？
 

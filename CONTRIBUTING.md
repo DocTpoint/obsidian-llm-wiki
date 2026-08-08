@@ -68,7 +68,14 @@ src/
 │   ├── openai-sdk-client.ts        # OpenAI via @ai-sdk/openai (Responses API for reasoning models)
 │   ├── anthropic-sdk-client.ts     # Anthropic via @ai-sdk/anthropic (baseURL support for Coding Plan / z.ai / GLM)
 │   ├── openai-compat-sdk-client.ts # OpenAI-compatible via @ai-sdk/openai-compatible (8 providers)
-│   └── token-key-probe.ts         # max_tokens ↔ max_completion_tokens runtime fallback (KISS, no regex)
+│   ├── openai-codex-sdk-client.ts  # ChatGPT Plan (Codex OAuth) — separate Codex Responses client (v1.25.2, OAuth device-code + loopback)
+│   ├── openai-codex/               # Codex OAuth private modules (adapter + token store)
+│   ├── reasoning-strip-probe.ts    # Per-baseURL 400-strip cache + two-marker (verb+field) classifier (v1.26.0 Batch 6)
+│   ├── token-key-probe.ts          # max_tokens ↔ max_completion_tokens runtime fallback (KISS, no regex)
+│   ├── sampling-args.ts            # Shared sampling-args builder for cross-SDK createMessage (v1.26.0)
+│   ├── provider-api-key-resolver.ts # resolveProviderApiKey + resolveInitialApiKey precedence (v1.25.7, #182)
+│   ├── provider-secret-store.ts    # Obsidian SecretStorage adapter (v1.25.3)
+│   └── finish-reason.ts            # Shared finish-reason extraction helper
 ├── core/                # Pure function modules (zero IO, fully testable)
 │   ├── i18n.ts                 # Type-safe i18n accessor
 │   ├── slug.ts                 # Slug computation + alias filtering
@@ -126,6 +133,8 @@ src/
 │   ├── contradicted-marker.ts  # `contradictions:` frontmatter marker (#312 §4, v1.25.10)
 │   ├── source-language.ts      # Source-frontmatter language directive builder (#350 follow-on, v1.25.10)
 │   ├── template-renderer.ts    # {{placeholder}} substitution with named keys (#244/v1.25.10)
+│   ├── source-lemma.ts         # Source-slug = page-lemma deterministic merge (#348, v1.26.0 PR #357 DocTpoint)
+│   ├── link-retarget.ts        # Vault-wide link retarget for mergeDuplicates (#386, v1.26.0 PR #392 DocTpoint)
 ├── wiki/                # Wiki engine modules
 │   ├── wiki-engine.ts   # Orchestrator (ingest, lint, log) — v1.25.1: 4 internal modules extracted
 │   ├── graph-cache.ts   # (v1.25.1) `_cachedGraph` + invalidate logic
@@ -156,24 +165,26 @@ src/
 │   ├── turn-indicator.ts # Right-edge vertical dot conversation nav (v1.23.2, #221)
 │   ├── lint/            # Lint subsystem
 │   │   ├── controller.ts         # Lint orchestration + 3 phase modules
-│   │   ├── fix-runners.ts        # Batch fix execution helpers
+│   │   ├── fix-runners.ts        # Batch fix execution helpers (pageGenerationConcurrency batching, v1.25.10 PATCH #367)
 │   │   ├── scanners.ts           # Scanners (dead links, orphans, aliases, quote grounding)
-│   │   ├── duplicate-detection.ts # Programmatic candidate generation
+│   │   ├── duplicate-detection.ts # Programmatic candidate generation — dual-key bucketed dedup (v1.26.0 Batch 1, PR #401)
+│   │   ├── lint-analysis-context.ts # Phase context shared by analysis + dedup phases (v1.26.0)
 │   │   ├── report-builder.ts     # Pure-function report markdown builder
 │   │   ├── types.ts              # LintContext, LintPhaseContext, findings
 │   │   ├── utils.ts              # Shared lint helpers
 │   │   ├── get-existing-pages.ts # Wiki page index reader
 │   │   ├── fix-dead-link.ts      # Dead-link correction
-│   │   ├── fill-empty-page.ts    # Empty-page expansion
+│   │   ├── fill-empty-page.ts    # Empty-page expansion (created: from caller, #388, v1.26.0 PR #396)
 │   │   ├── delete-empty-stubs.ts # Empty stub deletion
 │   │   ├── link-orphan.ts        # Orphan page linking
-│   │   ├── merge-duplicates.ts   # Duplicate page merge
+│   │   ├── merge-duplicates.ts   # Duplicate page merge (vault-wide link retarget, #386, v1.26.0 PR #392 DocTpoint)
 │   │   ├── fix-polluted-page.ts  # Polluted basename rename
 │   │   ├── llm-phases/
 │   │   │   ├── analysis-phase.ts    # Tier-1+Tier-2 merge analysis (#216, v1.24.0)
 │   │   │   ├── scoring-phase.ts     # PR #248
 │   │   │   ├── synthesis-phase.ts   # PR #248
-│   │   │   └── dedup-phase.ts       # lint dedup phase with #207 system-field injection (v1.24.0)
+│   │   │   ├── dedup-phase.ts       # Lint dedup phase — inline retry/backoff/halving + force-disable thinking (v1.26.0 Batches 2+6+7)
+│   │   │   └── contradiction-phase.ts # Contradiction detection phase (v1.26.0)
 │   │   └── phases/
 │   │       ├── preparation.ts    # Page read, link fix, sources normalize
 │   │       └── programmatic.ts   # Fast programmatic scanners
@@ -190,24 +201,46 @@ src/
 │   ├── auto-maintain.ts # File watcher, periodic lint, startup quick fixes
 │   └── analyze.ts       # Schema-analyze with cancel wiring
 ├── ui/                  # Settings + history-modal/ (14-file split, v1.24.0) + modals/ (7-file split, v1.24.0)
-│   ├── settings.ts      # LLMWikiSettingTab + tempSettings (v1.25.1: split into 8 settings-sections/ + helpers)
+│   ├── settings.ts      # LLMWikiSettingTab + tempSettings (v1.25.1: split into 10 settings-sections/ + helpers)
 │   ├── settings-helpers.ts        # Pure helpers (commitTempSettings logic, classification, etc.)
 │   ├── settings-per-task-helpers.ts # Per-task model dropdown rendering (v1.24.0)
+│   ├── settings-sections/  # Per-section renderers, v1.25.1 + v1.26.0
+│   │   ├── shared-inputs.ts            # Consolidated renderNumberInput (v1.26.0)
+│   │   ├── advanced-section.ts         # LLM Advanced (Custom mode: temperature, repetitionPenalty, forcePdfSupport)
+│   │   ├── advanced-settings-section.ts # Bottom "Advanced settings" panel — dedup thresholds + lintDedupIncludeSources (v1.26.0)
+│   │   ├── provider-section.ts
+│   │   ├── model-section.ts
+│   │   ├── language-section.ts
+│   │   ├── status-section.ts
+│   │   ├── test-connection-section.ts
+│   │   ├── auto-maintain-section.ts
+│   │   └── wiki-config-section.ts
 │   ├── history-modal/  # 13 files (v1.24.0 split)
 │   │   ├── HistoryModal-class.ts
 │   │   └── renderers/  # 13 pure-function modules (entry, ingest-details, fix-details, etc.)
 │   ├── modals/          # 7+ files: MultiFileSuggestModal, FolderSuggest, etc.
 │   ├── tag-chip-input.ts
 │   └── schema-diff-modal.ts
-├── texts/               # i18n (10 languages: EN/ZH/ZH-Hant/JA/KO/DE/FR/ES/PT/IT)
-└── __tests__/           # Unit tests (vitest, 2744 tests across 204 files; v1.25.11 PATCH RELEASED 2026-07-31, +31 net: +7 ingest-stages/status-bar #169 + 12 readme-links #375 + 5 create-page #365 + 2 frontmatter-fence guard + 5 misc from simplify follow-up e02a33d)
+├── texts/               # i18n (11 languages: EN/ZH/ZH-Hant/JA/KO/DE/FR/ES/PT/IT/RU; Russian added v1.26.0 PR #397)
+└── __tests__/           # Unit tests (vitest, 2928 tests across 213 files; v1.26.0 MINOR release-prep, +184 net since v1.25.11)
+
+tools/                  # CLI toolchain (out-of-tree, ships via package.json bin)
+└── llm-wiki-cli/       # Headless ingest CLI (v1.26.0, PRs #372 + #387)
+    ├── run-llm-wiki.mjs # Executable entry point (`pnpm llm-wiki`)
+    ├── README.md        # CLI flag reference
+    ├── tsconfig.json    # Separate tsconfig (@types/node@22)
+    └── src/
+        ├── main.ts          # dispatchCli + parseCliOptions + runIngest (v1.26.0, 671 LOC)
+        ├── node-globals.ts  # dynamic `node:module` + createRequire guard (Platform.isDesktop-style boundary)
+        ├── node-util.d.ts   # Ambient @types/node@22 module declarations
+        └── obsidian.ts      # Obsidian API shim used by the CLI (vault + app stubs)
 ```
 
 ## Internationalization
 
-- **UI**: 10 languages (EN/ZH/ZH-Hant/JA/KO/DE/FR/ES/PT/IT), text keys in `src/texts/`
-- **New text**: add the key to `en.ts` first, then translate to all 9 other languages (in lockstep). The i18n-parity test (`src/__tests__/root/i18n-parity.test.ts`) prevents silent EN fallback if a locale is missing keys.
-- **Wiki output**: 10 languages independent of UI, with custom input option
+- **UI**: 11 languages (EN/ZH/ZH-Hant/JA/KO/DE/FR/ES/PT/IT/RU; Russian added v1.26.0 PR #397), text keys in `src/texts/`
+- **New text**: add the key to `en.ts` first, then translate to all 10 other languages (in lockstep). The i18n-parity test (`src/__tests__/root/i18n-parity.test.ts`) prevents silent EN fallback if a locale is missing keys.
+- **Wiki output**: 11 languages independent of UI, with custom input option
 
 ## Testing
 
@@ -236,17 +269,18 @@ graph TD
     User -->|Cmd+P| main.ts
     main.ts -->|ingest| WikiEngine
     main.ts -->|query| QueryEngine
-    main.ts -->|lint| lint("lint/controller.ts + 4 LLM phase modules")
+    main.ts -->|lint| lint("lint/controller.ts + 5 LLM phase modules")
     main.ts -->|Test Connection| modelResolver["core/model-resolver.ts (#208)"]
 
     WikiEngine -->|analyze| SourceAnalyzer
     WikiEngine -->|CRUD + merge| PageFactory
     WikiEngine -->|write| Vault
+    WikiEngine -->|headless ingest| llmWikiCli["tools/llm-wiki-cli/ (v1.26.0 PR #387)"]
 
     QueryEngine -->|4-phase pipeline: read-index / select-seeds / load-pages / assemble-context| Vault
     QueryEngine -->|streaming + render| LLMClient
 
-    lint("lint/controller.ts") -->|LLM analysis/scoring/synthesis/dedup| llm-phases["lint/llm-phases/ (4 phase modules, PR #248 + v1.24.0)"]
+    lint("lint/controller.ts") -->|LLM analysis/scoring/synthesis/dedup/contradiction| llm-phases["lint/llm-phases/ (5 phase modules: analysis + scoring + synthesis + dedup + contradiction)"]
     lint("lint/controller.ts") -->|dead links| fix-dead-link["lint/fix-dead-link.ts"]
     lint("lint/controller.ts") -->|empty pages| fill-empty-page["lint/fill-empty-page.ts"]
     lint("lint/controller.ts") -->|orphans| link-orphan["lint/link-orphan.ts"]
@@ -266,12 +300,21 @@ graph TD
     QueryEngine -->|selection + answer| LLMClient
 ```
 
+### Core Design Patterns
+
+These four patterns appear throughout the engine. New contributors should recognize them before reading the code:
+
+- **Tier 1/2 duplicate detection** — Tier 1 candidates are always LLM-verified (high-precision, low-recall); Tier 2 fills the remaining token budget (lower-precision, higher-recall). Implemented in `src/wiki/lint/duplicate-detection.ts` (`classifyTiers`) and used by `dedup-phase.ts`.
+- **`Promise.allSettled` error isolation** — One failed batch in a parallel scan does not crash the entire batch. Standard pattern in `dedup-phase.ts`, `analysis-phase.ts`, and all parallel fix-runners.
+- **Pollution defense at write gate** — A centralised regex catches polluted `sources:`` frontmatter before any vault write. Single source of truth at `src/wiki/source-safety.ts` (or equivalent). Don't bypass it with inline checks.
+- **LLM semantic page selection** — Seed selection uses meaning-based matching (LLM or heuristic), not keyword match. Implemented in `query-engine.ts` seed selection.
+
 ## Pull Request Process
 
 1. Run `pnpm lint && pnpm test && npx tsc --noEmit && pnpm build` — all must pass
 2. Add or update unit tests for any changed pure logic
 3. Update CHANGELOG.md if the change is user-visible
-4. Update all 10 README language variants if the change affects user-facing features or workflow
+4. Update all 11 README language variants if the change affects user-facing features or workflow
 5. Update CLAUDE.md and memory files to reflect completed work
 6. Commit with English conventional commit message
 7. Open a PR against `main` branch

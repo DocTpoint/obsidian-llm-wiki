@@ -1,6 +1,6 @@
 {
   "name": "karpathywiki",
-  "version": "1.25.11",
+  "version": "1.26.0",
   "packageManager": "pnpm@10.14.0",
   "description": "Karpathy's LLM Wiki implementation - multi-page knowledge generation with conversational query",
   "main": "main.js",
@@ -42,7 +42,8 @@
     "obsidian": "1.12.3",
     "tslib": "2.4.0",
     "typescript": "5.9.3",
-    "vitest": "4.1.6"
+    "vitest": "4.1.6",
+    "yaml": "^2.4.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

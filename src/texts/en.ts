@@ -266,6 +266,7 @@ export const EN_TEXTS = {
     lintRetrying: 'Retrying ({attempt}/{max}) after error...',
     lintAnalyzingLLM: 'LLM analyzing Wiki health...',
     saveToWikiSuccess: 'Conversation saved to Wiki!',
+    querySaveAlreadyExists: 'Notice: nothing was written (knowledge already exists in Wiki):',
     saveSummary: '{entities} entities, {concepts} concepts, {pages} pages',
     aliasAdded: 'Added alias \'{alias}\' to page \'{page}\'',
 
@@ -694,6 +695,32 @@ export const EN_TEXTS = {
     reingestConfirmBody: 'The content of "{filename}" is already in the wiki. Re-ingest it anyway?',
     reingestConfirmYes: 'Re-ingest',
     reingestConfirmNo: 'Skip',
+    // v1.26.0 (#382 item 1, Batch 2): sources participate in dedup by
+    // default via the sourceFingerprint signal (body-hash equality). Off
+    // here to exclude source pages from lint duplicate-detection.
+    lintDedupIncludeSourcesName: 'Include sources in dedup',
+    lintDedupIncludeSourcesDesc: 'On by default. When on, sources with identical bodies are flagged as duplicates during lint. Turn off if your source corpus generates false positives.',
+    // v1.26.0 (#382 item 1, Batch 2): sub-heading for the dedup
+    // sub-group at the bottom of the "Advanced settings" panel.
+    lintDedupSectionHeading: 'Duplicate detection',
+    // v1.26.0 (#382 item 1, Batch 2): Notice Toast fired when the
+    // dedup-phase empty-response retry mechanism kicks in. Designed
+    // for cross-LLM-phase reuse — fix-runners, analysis-phase, etc.
+    // can use the same Toast key when they adopt the retry helper.
+    // The {count} placeholder is the number of batches that recovered
+    // via immediate + 2s-backoff retry.
+    // v1.26.0 (#382 item 1, Batch 2 follow-up): the Toast text must be
+    // reusable across ALL LLM business paths (dedup, analysis, fix-runners,
+    // conversation-ingest, merge, headless CLI). Generic phrasing — no
+    // reference to any specific phase. The {count} placeholder is the
+    // number of batches that recovered via retry.
+    //
+    // NOTE: We deliberately do NOT claim "task completed" in the Toast —
+    // the retry recovered this batch but other batches in the same
+    // scan may still be running. The Toast is informational ("here's
+    // what happened, look in the console for full detail"), not a
+    // status claim. Operators reading the console see the truth.
+    llmRetryRecoveredToast: 'LLM task: {count} batch(es) needed retry due to a transient provider response issue. See console for detail. If this recurs, consider lowering Page Generation Concurrency in Provider settings.',
     longSourceNotice: '📄 "{filename}" has {lines} lines ({size}). Long texts require iterative batch extraction — the LLM reads the full document in multiple passes. This may take several minutes. Please be patient.',
     longSourceNoticeShort: '📄 Large file detected ({lines} lines). Ingestion may take a while.',
 

@@ -4,10 +4,10 @@
 
 > Плагин для Obsidian, который превращает ваши заметки в связанную, запрашиваемую базу знаний — идея [Karpathy LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), встроенная в редактор, в котором вы уже пишете.
 
-> **Идеальная оценка обзора Obsidian • Графовый поиск без эмбеддингов • Родная поддержка 10 языков • Работает с любым провайдером**
+> **Идеальная оценка обзора Obsidian • Графовый поиск без эмбеддингов • Родная поддержка 11 языков • Работает с любым провайдером**
 > **Локально-ориентированный • Без бэкенда • Соответствует GDPR**
 
-![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
+![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-11-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii)
 
@@ -50,7 +50,7 @@
 |---|---|---|---|---|---|
 | **Доставка и установка** | ✅ **5 мин** — Плагин Obsidian в один клик: Community Plugins → Install → выбор провайдера → Ingest | ❌ 30 мин+ — Компиляция/загрузка Tauri-бинарника, настройка CLI | ❌ 15 мин — Подписка Claude Code + установка навыка | ❌ 10 мин — Подписка Claude Code/Codex + настройка навыка | ❌ 30 мин+ — pip install + Python SDK + локальный сервер |
 | **Архитектура и зависимости** | ✅ **Ноль зависимостей** — нет векторной БД, нет модели эмбеддингов, нет внешних процессов (PPR по графу `[[wiki-link]]`, по замыслу) | 🟡 Встраивает Python-рантайм + sigma.js + sqlite; опциональные эмбеддинги выкл по умолчанию | 🟡 Использует окружение Claude Code — не самодостаточный; без эмбеддингов | 🟡 Требует отдельный рантайм платформы; без эмбеддингов | ❌ Требует Python + модель эмбеддингов + векторную БД (обязательно) |
-| **i18n (UI + вывод Wiki)** | ✅ 10 языков (UI / вывод независимы) | 🟡 2 (EN / 中文) | ❌ Только английский | ❌ Только английский | ❌ Только английский |
+| **i18n (UI + вывод Wiki)** | ✅ 11 языков (UI / вывод независимы) | 🟡 2 (EN / 中文) | ❌ Только английский | ❌ Только английский | ❌ Только английский |
 | **Провайдеры LLM** | ✅ 12+ (вкл. Codex OAuth, Bedrock, LM Studio, Ollama, Anthropic-compatible, Kimi, GLM, MiniMax, DeepSeek) | 🟡 OpenAI-compatible | 🟡 Подписка через Claude Code | 🟡 Подписка через Claude Code / Codex | 🟡 OpenAI-compatible |
 | **Извлечение и конвейер запросов** | ✅ **5-ступенчатый каскад** — Lex → LLM-ключевые слова → substring-скан → LLM KB fallback → PPR-расширение (усечение на первом достаточном сигнале). Personalized PageRank (Haveliwala 2002) + Monte Carlo (Fogaras 2005) | 🟡 2-hop decay (4-сигнальная эвристика: Adamic-Adar + 2-hop) | ❌ Только обнаружение сообществ Louvain | ❌ Только k-hop предпросмотры (без LLM-усиления) | ❌ BM25 + семантика по чанкам (без графа) |
 | **Визуализация графа** | ✅ Нативный Graph View от Obsidian (встроенный, нулевой размер) | ❌ Кастомный sigma.js + graphology в десктоп-приложении | 🟡 vis.js graph.html (отдельный файл) | ❌ Кастомный sigma.js офлайн HTML | ❌ Read-only браузерный вьюер |
@@ -73,7 +73,7 @@
 - **Хотите что-то чистое и самодостаточное.** У плагина ровно ноль внешних зависимостей: нет модели эмбеддингов, нет векторной базы данных, нет pip-пакета, нет Docker-контейнера. Это один плагин Obsidian, который читает ваши заметки, общается с LLM и пишет страницы Wiki в ваше хранилище. Всё живёт внутри Obsidian.
 - **Хотите чат с возможностью запросов, который отвечает на основе *ваших* заметок** — не интернета — с каждым ответом, несущим `[[wiki-links]]` обратно в ваш граф знаний.
 - **Заботитесь о суверенитете данных** — полностью работает локально с Ollama или LM Studio, никогда не касаясь интернета.
-- **Пишете или читаете на любом из 10 поддерживаемых языков** — язык UI и язык вывода Wiki независимы (ваша Wiki может быть на китайском, а интерфейс — на английском).
+- **Пишете или читаете на любом из 11 поддерживаемых языков** — язык UI и язык вывода Wiki независимы (ваша Wiki может быть на китайском, а интерфейс — на английском).
 - **Поддерживаете граф, записывая `[[wiki-links]]`** — каждая написанная вами ссылка уже обогащает поиск; никакого отдельного шага разметки/эмбеддингов/индексирования.
 - **Хотите обслуживание в один клик** — Lint-сканирование здоровья + Smart Fix All поддерживают дубликаты, мёртвые ссылки и висячие страницы под контролем без ручной курации.
 
@@ -182,9 +182,9 @@
 
 ### 🌐 Язык
 
-- **🌍 10 языков UI** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano, Русский. UI и язык вывода Wiki независимы — ваша Wiki может быть на китайском, а интерфейс на английском.
-- **📚 10 языков вывода Wiki** — тот же набор; выберите в Настройки → Конфигурация Wiki. Опция *Пользовательский ввод* для специальных промптов.
-- **🈶 269+ переведённых строк UI** — каждая метка, модальное окно и уведомление. Добавление 11-го языка — через контрибьюторов (паттерн PR #159).
+- **🌍 11 языков UI** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano, Русский. UI и язык вывода Wiki независимы — ваша Wiki может быть на китайском, а интерфейс на английском.
+- **📚 11 языков вывода Wiki** — тот же набор; выберите в Настройки → Конфигурация Wiki. Опция *Пользовательский ввод* для специальных промптов.
+- **🈶 269+ переведённых строк UI** — каждая метка, модальное окно и уведомление. Добавление 12-го языка — через контрибьюторов (паттерн PR #159).
 
 ---
 
@@ -303,7 +303,7 @@ pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
 
 ### Могу ли я использовать плагин на своём языке?
 
-🌍 10 языков как для UI, так и для вывода Wiki. Язык UI и языка Wiki независимы. Добавление 11-го языка — через контрибьюторов (паттерн PR #159).
+🌍 11 языков как для UI, так и для вывода Wiki. Язык UI и языка Wiki независимы. Добавление 12-го языка — через контрибьюторов (паттерн PR #159).
 
 ### Чем это отличается от чатбота RAG?
 

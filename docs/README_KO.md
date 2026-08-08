@@ -7,7 +7,7 @@
 > **Obsidian 공식 마켓 만점 평가 • 제로 임베딩 그래프 검색 • 10개 언어 네이티브 지원 • 모든 LLM 공급업체 호환**
 > **로컬 우선 • 백엔드 없음 • GDPR 친화**
 
-![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-10-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
+![Version](https://img.shields.io/github/v/release/green-dalii/obsidian-llm-wiki?style=flat-square) ![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square) ![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple?style=flat-square) ![Languages](https://img.shields.io/badge/languages-11-informational?style=flat-square) ![Providers](https://img.shields.io/badge/providers-12%2B-cyan?style=flat-square) <br>
 ![Maintenance](https://img.shields.io/badge/maintenance-actively%20maintained-brightgreen?style=flat-square) ![Build Status](https://img.shields.io/github/actions/workflow/status/green-dalii/obsidian-llm-wiki/release.yml?style=flat-square) ![Author](https://img.shields.io/badge/author-Greener--Dalii-blue?style=flat-square) <br>
 ![GitHub Stars](https://img.shields.io/github/stars/green-dalii/obsidian-llm-wiki?style=flat-square) ![Downloads](https://img.shields.io/badge/dynamic/json?logo=obsidian&color=483699&label=downloads&query=$[karpathywiki].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json&style=flat-square) [![Release Obsidian plugin](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml/badge.svg)](https://github.com/green-dalii/obsidian-llm-wiki/actions/workflows/release.yml) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/green-dalii/obsidian-llm-wiki)
 
@@ -183,7 +183,7 @@
 
 - **🌍 10개 UI 언어** — English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español, Português, Italiano. UI와 Wiki 출력 언어는 독립적입니다 — Wiki는 중국어로, 인터페이스는 영어로 유지 가능합니다.
 - **📚 10개 Wiki 출력 언어** — 동일한 세트; 설정 → Wiki Configuration에서 선택. *Custom input* 옵션으로 임시 프롬프트 사용 가능.
-- **🈶 269개 이상의 번역된 UI 문자열** — 모든 라벨, 모달, Notice. 11번째 언어 추가는 기여자 주도입니다 (PR #159 패턴).
+- **🈶 269개 이상의 번역된 UI 문자열** — 모든 라벨, 모달, Notice. 12번째 언어 추가는 기여자 주도입니다 (PR #159 패턴).
 
 ---
 
@@ -304,7 +304,7 @@ Obsidian 커뮤니티 플러그인에서 설치 → 공급자 선택 → **Test 
 
 ### 내 언어로 사용할 수 있나요?
 
-🌍 UI와 Wiki 출력 모두 10개 언어 지원. UI와 Wiki 언어는 독립적입니다. 11번째 언어 추가는 기여자 주도입니다 (PR #159 패턴).
+🌍 UI와 Wiki 출력 모두 11개 언어 지원. UI와 Wiki 언어는 독립적입니다. 12번째 언어 추가는 기여자 주도입니다 (PR #159 패턴).
 
 ### RAG 챗봇과 어떻게 다른가요?
 

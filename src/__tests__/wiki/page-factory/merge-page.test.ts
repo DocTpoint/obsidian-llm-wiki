@@ -278,3 +278,29 @@ describe('mergePage — source owning the page lemma overrides triage=skip (#312
     expect(written).not.toContain('Merged text.');
   });
 });
+
+// #419 — end-to-end on this call site: triage routes to the full body merge,
+// the model returns a body starting at the first `##`, and the written page
+// must still carry its title.
+describe('mergePage — H1 survives a rewrite that omits it', () => {
+  it('writes the page\'s own title back when the merged body has none', async () => {
+    const withTitle = `---\ntitle: Caching\n---\n\n# Caching (HTTP), a title the file name cannot reproduce\n\n## Description\nOld text.\n`;
+    const ctx = makeCtx(makeClient([
+      JSON.stringify({ strategy: 'merge', reason: 'rewrite' }),
+      '## Description\nMerged body.',
+    ]));
+    const result = await mergePage(
+      ctx,
+      createMockEntity({ name: 'Caching' }),
+      'entity',
+      { path: 'new.md', basename: 'new.md' },
+      withTitle,
+      [],
+      'wiki/entities/caching.md',
+    );
+    expect(result).toBe('wiki/entities/caching.md');
+    const written = ctx.written.get('wiki/entities/caching.md')!;
+    expect(written).toContain('# Caching (HTTP), a title the file name cannot reproduce');
+    expect(written).toContain('Merged body.');
+  });
+});

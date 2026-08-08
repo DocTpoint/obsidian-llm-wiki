@@ -52,9 +52,16 @@ describe('fixDeadLink stub construction (#197 — honest placeholders)', () => {
         wikiFolder: 'wiki',
         referringPageRel: 'entities/SomeSource',
       });
-      // sources array points at the referring page — better than nothing, and
-      // the placeholder text explicitly notes this is not a real source yet.
-      expect(out).toContain('sources: ["[[entities/SomeSource]]"]');
+      // sources points at the referring page — better than nothing, and the
+      // placeholder text explicitly notes this is not a real source yet.
+      // Emitted as block-style so the v1.25.11 provenance-stamp writer in
+      // create-page.ts merges into it instead of appending a duplicate
+      // top-level `sources:` key. See issue #399.
+      //
+      // PR #405 review: wikilink value MUST be double-quoted. Bare
+      // `- [[value]]` YAML-parses as a nested flow sequence, not a string,
+      // breaking Obsidian's Properties panel + backlinks + graph edges.
+      expect(out).toContain('sources:\n  - "[[entities/SomeSource]]"');
     });
 
     it('produces a concept-shaped stub when stubType is concept', () => {

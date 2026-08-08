@@ -1,103 +1,20 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-08-03 (v1.26.0 MINOR re-scoped on main @ `429d956`, release deferred pending 5-batch P0+P1 work; Russian i18n MERGED via PR #397; Batch 1 rev 2 simplified to 方案 1 dual-key bucket per ROI analysis). v1.25.11 PATCH RELEASED. User decision (2026-08-02): include P0+P1 hardening before tag v1.26.0.
+**Last Updated:** 2026-08-07 (v1.26.0 MINOR SHIPPED 2026-08-06, v1.26.x PATCH track active; v1.27.0 MINOR in design. **Prior 2026-08-06**: Bot scan-scope finding documented in the Bot compliance invariant below — the review bot lints the whole repo `.ts` tree, not just `main.js`; `tools/` Node CLI carries ~56 structural warnings invisible to local lint — accepted, no re-tag, per 2026-08-06 decision.)
 
 ---
 
-## Current Phase: v1.26.0 MINOR RE-SCOPED on main (release deferred pending 5-batch P0+P1 work); v1.25.11 PATCH RELEASED
+## Current Phase: v1.26.x PATCH (target v1.26.1)
 
-**v1.26.0 P0+P1 final scope** (user-revised 2026-08-02, 5 batches; **Batch 1 rev 2 simplified 2026-08-03**):
+**Forward-looking planning** lives in [ROADMAP.md](./ROADMAP.md#v126x-patch-follow-up-track-target-v1261) and `~/.claude/projects/-Users-greener-project-obsidian-llm-wiki/memory/project_v1_26_x_patch_scope.md` (READ FIRST on resume for v1.26.x PATCH work). ROI-ranked: #403 (3-line fix, awaiting DocTpoint calibration) + CR-1 dedup halving (2-line fix) + PR #409 test additions (eucher) as minimum v1.26.1 ship.
 
-| Batch | Item | Issue | Type | Effort |
-|---|---|---|---|---|
-| **1** (in progress) | **Dual-key bucketed dedup** (tp-prefix + lh-link-hash buckets) | #382 item 3 | P1 (prerequisite) | **0.8 week** |
-| 2 | Cross-type dedup candidate set expansion | #382 item 1 | P0 | 1.5-2 weeks |
-| 3 | P1-1/P1-2 wire-or-delete decision (delete recommended) | #382 item 4 | P1 | 0.2 week |
-| 4 | dead-code-as-docs policy (CLAUDE.md + pre-release-gate check) | #382 item 5 | P1 (governance) | 0.3 week |
-| 5 | Settings-owned enum-as-section-value (CVSS-style controlled vocab) | #358 item 8 / #328 §2 | design | 0.5 week |
+**Historic v1.26.0 composition** (117 commits / 110 files / +10,604 / −994 since v1.25.11, 2928 tests / 213 files passing, all 5 P0+P1 batches MERGED) lives in [CHANGELOG.md v1.26.0 entry](./CHANGELOG.md#1260---2026-08-05). Do not duplicate the Batch table or commit log here — this file is for **process standards + invariants**, not version history.
 
-**Estimated total:** ~3.3-3.8 weeks focused work before v1.26.0 MINOR ships.
-
-**Deferred to v1.27.0+ (per user decision 2026-08-02):** #317 (schema.md changes ignored), #326 (defer to canonical pages outside wikiFolder), #306, #295, #184.
-
-**v1.26.0 MINOR scope (already on main, awaiting tag):** headless ingest CLI (`pnpm llm-wiki` script + npm bin) + #383 folder-boundary follow-up (PR #389) + DocTpoint source-lemma deterministic merge (PR #357) + lint dedup thresholds hardening (PR #395) + vault-wide link retarget for `mergeDuplicates` (PR #392, DocTpoint) + `created:` provenance fix (commit `cd734b9`, DocTpoint via PR #396). 10 commits on `main` since v1.25.11 PATCH, 2895 tests / 215 files passing.
+**v1.26.x PATCH items (post-release, pre-v1.27.0 kickoff):** see [[feedback_force_disable_thinking_openai_compat_noop]] + [[feedback_force_disable_thinking_dedup_wiring]] + [[feedback_dedup_phase_halving_dead_code]] + [[feedback_dedup_phase_truncation_vs_empty_conflation]] for the full list (CR-1 halving dead code location-only fix; per-id key correction for `thinking` / `chat_template_kwargs`; `repetition_penalty` visible defect fix via Layer-3 mechanism; LLM empty-response retry extraction to `core/llm-retry.ts`; per-call `thinkingPolicy` enum; `parseJsonShape<T>` helper; shared `BaseUrlKeyedCache<T>` primitive; DeepSeek/Kimi/GLM `reasoning_effort: 'none'` real e2e measurement).
 
 **Per-PR discipline (LOCKED after PR #393/#396 incident 2026-08-02):** for contributor PRs that need rebase after base-branch move, use `gh pr update-branch --rebase` — NEVER locally fork + push + create a new PR. See `[[feedback_pr_merge_credit_preservation]]`. DocTpoint acknowledged + apologized on PR #393.
 
-**v1.25.11 PATCH (2026-07-31, 8 commits, ~80 files, 2744 tests):**
-
-- Sources provenance stamp (#365 partial); README absolute URLs (#375); fine-grained status-bar stage hints (#169); simplify follow-up applied 4 fixes (F2+F4+F5+F6) with 2 indicator findings (F1, F7) reverted after user e2e feedback.
-
-**v1.25.10 PATCH** (RELEASED 2026-07-29, sequential on v1.25.9): ten-item scope (locked 2026-07-28, expanded from initial 5 after DocTpoint + Guru35 morning batches):
-- admission criterion in Task Requirements (closes DocTpoint §2 "rules stated twice in the same prompt")
-- cross-type dedup candidate visibility (closes §3, #328 Phase 2 pre-condition)
-- `merge` vs `contradictory` route split (closes §4, `src/wiki/page-factory/merge-page.ts:124`)
-- alias hardening (3-char floor + uniqueness, DocTpoint §3 measured 0 side effects)
-- #356 frontmatter-strip (data-loss bug fix)
-- #363 format + parser tolerance (`— [[|]]` parse fail-safe 4.7% frozen pages; DocTpoint contributes parser side)
-- #364 folder ingest boundary (data-safety 1-line)
-- #366 slug derivation unification (Turkish char folding; migration story option (d) — two-phase alias+opt-in repair)
-- #367 lint-perf — fold forward v1.25.7 deferred P0-1 fix-runners parallelization + P1-1 analysis content-hash cache + P1-2 smart-skip controller (strict scope lock: only these 3 sub-items; no embedding/RAG)
-- #368 schema docs clarification + settings UI hint (relabeled `bug` → `enhancement`; root cause is docs/semantic mismatch, NOT enforcement bug)
-
-**v1.26.0 MINOR** (in design, anchor [#358](https://github.com/green-dalii/obsidian-llm-wiki/issues/358)): 8-item committed scope + 4-item research track + 5 open design questions. DocTpoint co-author on `docs/v1.26.0-design.md` (granted Write role on personal repo 2026-07-27, label + issue close authority, push authority bounded by branch protection on `main`; see Architect-level contributors below for full role description).
-
-**Companion deferred from v1.25.7 PATCH** (folded INTO v1.25.10 PATCH 2026-07-28 as item #367 — strict scope lock, no scope over-inflation): P0-1 fix-runners parallelization, P1-1 analysis content-hash cache, P1-2 smart-skip controller. Detailed plan archived in [[project_v1.25.7_lint_perf_plan]]; v1.25.10 integration notes in [[project_v1.25.10_patch_scope]] §2. **🚫 Embedding/RAG/vector index for lint perf: 永久禁止** — see [[feedback_no_rag_embedding_perf]].
-
-**v1.25.1 PATCH (2026-07-20, 11 commits, ~80 files, 2274 tests):**
-
-- Eight silent-loss bug fixes on the Related-page + Lint + ingest paths (#288 closes #287 silent Mentions, #302 closes #292 schema-section drop, #303 closes #289 legacy Mentions parse, #272 LM Studio no-key).
-- Three big-file splits: `wiki-engine.ts` 1799 → 1617 (Phase C-PR1, 657 LOC of helpers → `engine-internals/`), `settings.ts` 1439 → 357 (Phase C-PR2, 1183 LOC across 8 settings-sections), `main.ts` 1304 → 300 via mixin pattern (Phase C-PR3, 915 LOC across 6 main-commands).
-- `DiskCache<T>` extracted from `PdfConversionCache` with bounded growth (100MB / 1000 / 10MB caps + LRU-by-mtime eviction + ledger optimization).
-- Node 24 + AI-SDK patches pinned via `.nvmrc` + `.npmrc`; dual-direction lockfile regen from single `node_modules` snapshot fixes Obsidian CI build-vs-`main.js` hash drift.
-
-**Post-v1.25.1 scope completed in v1.25.2:**
-
-1. ~~PR #304 rebase (DocTpoint — `updatedPages` split).~~ **MERGED 2026-07-20 (`3578a9d`).**
-2. ~~Phase A Obsidian bot compliance — `prefer-create-el` × 50 + `getSettingDefinitions` not implemented.~~ **COMPLETED 2026-07-21 (`c9fd4ce`).** eslint-plugin-obsidianmd 0.3.0→0.4.1 upgrade, flat config test override, `src/types/obsidian-dom.d.ts`, `src/__tests__/__support__/dom-helpers.ts`, 47 prefer-create-el production fixes, no-alert → ConfirmModal replacement.
-3. ✅ **Schema Phase 1 (Option A user-approved 2026-07-22)** — Eliminate the dual-source problem: tag lists move from `buildDefaultSchemaBody()` to runtime injection layer; `schemaHasTagVocab` defensive check removed. (Folder layout will move in Phase 2 alongside the per-type registration work — see Issue #328.) See [[feedback-schema-phase1-option-a-decision]] for full decision rationale + orthogonality proof against Phase 2/3. Owner override of the "wait 2 weeks for community feedback" public commitment (Issue #328) justified by (a) bug-fix nature, (b) ~3-4h PATCH-scope effort, (c) Phase 2/3 orthogonality. Implementation order (TDD): RED test → GREEN edit → refactor → Gate 1 → in-memory sanitize for legacy vaults. Backwards-compat: existing user schemas **not rewritten**; runtime improvement immediate.
-4. **DOCS: still pending** — 10 READMEs + CHANGELOG + versions.json v1.25.2 entry.
-5. ✅ **Lint perf P0-1 fix-runners parallelization** (v1.25.10 PATCH, commit `ece6007`/`17982b7`/`dbe9e13`/`76f2475`) — five fix-runners now slice by `pageGenerationConcurrency` + `Promise.allSettled`. P1-1 analysis cache + P1-2 smart-skip helpers ship as dead code; controller wire deferred to v1.26.0 MINOR (existing `length > 0` guards provide equivalent skip semantics today).
-
-**v1.25.0 scope decision (2026-07-15, user-confirmed post-pivot):**
-
-Cache-only architecture replaces the previously-planned sidecar (`<vault>/<basename>.pdf.md`) approach.
-
-- ✅ **PR2 redo (1-1.5 days)** — delete `pdf-ingest-orchestrator.ts`; refactor `wiki-engine.ingestPdfSource` to feed `convertPdfToMarkdown` result into `analyzeSource` via `contentOverride`; extend `PdfConversionCache` with `purgeExpired/enforceSizeLimit/prepareBatchIngest` (100MB / 1000-entry / 10MB-single caps + LRU-by-mtime eviction); add `converterVersion` to cache key; delete 5 dead i18n keys across 10 locales.
-- ✅ **PR3 (1 day)** — settings: `writePdfMarkdownToVault` + `forcePdfSupport` toggles; CHANGELOG; ROADMAP sync.
-  - Settings types + DEFAULT_SETTINGS + advanced-settings toggle UI
-  - 4 i18n keys × 10 locales for both PDF toggles
-  - sidecar write via direct vault.create/modify (no createOrUpdateFile cascade)
-  - normalizePath for cross-platform sidecar paths
-  - 3 new tests: default no-sidecar, write creates sidecar, write updates existing
-  - Code-review findings applied: simplified `ingestPdfSource` comment; normalizePath; avoided `createOrUpdateFile` for sidecar
-  - **PR3 follow-ups (2026-07-16)**:
-    - `forcePdfSupport` → **universal escape hatch** (any non-NATIVE provider); toggle only renders for non-NATIVE providers; provider switch to NATIVE auto-resets value; `FORCE_PDF_PROVIDER_IDS` constant deleted; LLM endpoint decides (errors surface via Notice)
-    - `writePdfMarkdownToVault` moved to **Wiki Configuration → Wiki Folder** (semantic: vault storage policy, not LLM config); always visible; not bound to Advanced mode
-    - `advancedSettingsMode` → default no longer resets `forcePdfSupport` (toggle lifecycle owned by its own UI)
-    - 3 new tests: ollama + forcePdfSupport=true attempts LLM; deepseek same; endpoint-rejects error propagates verbatim
-  - **PR3 follow-up #2 (2026-07-16)** — third-party model audit fixes:
-    - **P0 (cross-platform cache filename safety)**: physical filename = `sha256(logicalKey).slice(0, 16)` (Git short-hash style); logical key retains `sha256:model:converterVersion` semantics; converter hashes via new `hashCacheKey()` helper before `cache.get/set`. Fixes Windows `ERROR_INVALID_NAME` + POSIX unintended subpath when model contains `/` or `:`.
-    - **P1 (batch-start housekeeping)**: new `PdfConversionCache.prepareBatchIngest()` (TTL purge + size enforce) wired into `runBatchIngest()` via `preparePdfCacheForBatchIngest()`.
-    - **P1 (PDF-shaped LLM errors → localized Notice)**: `isPdfRelatedLlmError(message)` classifier routes obvious PDF-rejection errors to `reportSkip('unsupported-pdf')` instead of generic re-throw.
-    - **P1 (settings defaults test)**: new `src/__tests__/types/settings.test.ts` covers `forcePdfSupport=false` + `writePdfMarkdownToVault=false` defaults.
-    - **P2 (i18n user-perspective rewrite)**: `forcePdfSupportDesc` + `sourceRejectedPdfUnsupported` rewritten in 10 locales — drop developer jargon ("escape hatch", "endpoint", "LLM error"), speak user outcome (what they get when they flip the switch, what they see if it fails).
-  - **PR3 follow-up #3 (2026-07-16)** — third-party model audit fixes:
-    - **P2 (PDF error classifier tightened)**: `isPdfRelatedLlmError` now requires BOTH a rejection verb (`reject`/`not support`/`unsupported`/`invalid`/`not allowed`) AND a PDF/media marker (`pdf`/`application/pdf`/`file part`/`mediatype`) to route to `sourceRejectedPdfUnsupported`. Pre-fix classifier substring-matched on `'pdf'` alone, so transient 413 size-limit errors, internal `pdf_data` null-derefs, and other PDF-adjacent strings were misreported as "provider doesn't support PDF", misleading users into disabling `forcePdfSupport` for non-PDF issues.
-    - **P2 (classifier regression tests)**: 6 new tests in `src/__tests__/wiki/wiki-engine-pdf.test.ts` pin the contract — 2 happy-path (route to skip) + 4 false-positive guards (413/5xx/null-deref/generic-invalid → re-throw).
-  - **PR3 follow-up #5 (2026-07-17)** — user-reported UI bug:
-    - **Bug**: The persistent `Ingesting: <basename>` Notice (created by `main.ts:showProgressFor(... 'Ingesting: ...', 0)`) remained on screen until the next ingest whenever an interactive single-file ingest threw (network, vault IO, unexpected exception) — because the `.catch` block only showed a new error Notice and never hid the `progressNotice`. Affects `selectSourceToIngest` (file picker modal) and `ingestActiveFile` (ribbon icon).
-    - **Fix**: Both `.catch` blocks now call `this.dismissProgress()` after showing the error Notice. Successful / `reportSkip` paths already dismissed via `onIngestDoneDispatch` — only throw paths were missing.
-  - **Trust boundary**: the user is the authoritative source on what their endpoint supports. Pre-flight whitelist rejects violate user intent. The provider gate must attempt the call; LLM errors surface as localized Notices guiding the user to disable the toggle or check endpoint config.
-- ⏳ **PR4 (optional, by AkaSakana)** — Kimi Files API + other non-routine PDF providers (GLM, OpenRouter, etc.) — targets **v1.26.0 MINOR**. If AkaSakana ships as follow-up PR after v1.25.0 lands, we merge after review. If schedule slips, we port ourselves (1-day).
-- ⏳ **Final** — `pnpm build:dev` + HARD STOP + user e2e + push decision.
-
-**AkaSakana PR #286 feedback adopted (2026-07-15):**
-- ✅ Cache key includes `converterVersion` so prompt upgrades invalidate stale entries.
-- ✅ `forcePdfSupport` kept for BOTH `custom` and `anthropic-compatible`, default `false` (manual opt-in, NOT opt-out — many compatible endpoints don't reliably support PDF). (2026-07-15 user correction.)
-- ⏳ Kimi Files API (PR4, optional contribution): upload → extract → delete, error regex classifiers, transient-retry extension. AkaSakana owns the contribution; we transfer responsibility to TA via PR #286 reply.
-
-Full composition + execution plan: [ROADMAP.md](./ROADMAP.md)
+**Historical release compositions** (v1.24.1 / v1.25.0 / v1.25.1 / v1.25.2 / v1.25.4 / v1.25.5 / v1.25.6 / v1.25.7 / v1.25.8 / v1.25.9 / v1.25.10 / v1.25.11 / v1.26.0 closed work): see [CHANGELOG.md](./CHANGELOG.md), which is the canonical historical record. CLAUDE.md carries **process standards + current state** — not per-version composition. Full archive of PATCH work items 1-11 is in `~/.claude/projects/-Users-greener-project-obsidian-llm-wiki/memory/project_v1_26_x_patch_scope.md`.
 
 ### Codex OAuth provider architecture
 
@@ -109,9 +26,7 @@ Full composition + execution plan: [ROADMAP.md](./ROADMAP.md)
 - OAuth lifecycle commands belong in `main-commands/codex-auth-commands.ts`; shared model selection policy belongs in `core/openai-codex-model-policy.ts`. The Codex request adapter intentionally omits client-side `max_output_tokens` because the backend does not support that request field.
 - SecretStorage requires Obsidian 1.11.4, so `manifest.json`, badges, and user prerequisites must not advertise an older minimum. The plugin remains `isDesktopOnly: false` because device-code login is the mobile path.
 
-> **Historical release compositions** (v1.24.1 / v1.25.0 closed work): see [CHANGELOG.md](./CHANGELOG.md), which is the canonical historical record.
-
-### Withdrawn / non-issues (kept for archaeology)
+### ⚠️ Withdrawn / non-issues (kept for archaeology)
 
 - **Windows: `Connection test failed: TypeError: Failed to construct 'Headers'`** — withdrawn 2026-07-10 (user input error: non-ASCII chars in API key field; not a plugin/AI-SDK bug). AI-SDK 5.0.53 has a Windows guard but our `provider-utils@4.0.35` (bundled by `ai@^6.0.214`) does not include the fix; not worth patching given root cause is user-side.
 
@@ -261,6 +176,109 @@ If any dimension regresses between commit and release time, Gate 6
 - "The PR review will catch it" → The reviewer has less context than you
 - "ESLint passes, TypeScript errors are fine" → ESLint does NOT check type safety
 
+### 🚫 Dead-code-as-docs policy (v1.26.0 Batch 4, 2026-08-03)
+
+**Rule.** Dead code (exported symbols with zero production importers) has a **half-life of one release cycle**. Either wire it into the production path before the next MINOR ships, or delete it before the next MINOR ships. Do not ship dead code across two releases.
+
+**Why this rule exists:** two instances already on the record — v1.25.10 PATCH #367 P1-1 (`lint-analysis-cache.ts`) + P1-2 (`lint-smart-skip.ts`) shipped as dead code and survived until v1.26.0 Batch 3 PR #406 deletion; v1.25.0 PDF cache-only architecture shipped some helpers without callers post-pivot. Two is a pattern. Three would be a culture.
+
+**What "dead code" means:** exported function / class / type with **zero non-test importers in `src/`**. Test-only importers don't count as "wired". Excluded: types declared inline (vanish with sole consumer), stale tests shadowing canonical tests (separate "test hygiene" concern).
+
+**Enforcement:**
+- Per-PR review: simplify's Reuse angle + code-review max-effort flag dead code. Either fix in-scope or split into follow-up PR.
+- Per-release audit: `pre-release-gate` skill Phase 2g (added 2026-08-03, Batch 4) lists files introduced since last tag with zero production importers. Findings FAIL the gate; remediation = wire or delete.
+- **Hard rule for future contributors:** if you find yourself saying "let's ship it dead and wire it next release", you've already lost — file the wire-up as part of the same PR or wait.
+
+**Related:** [[feedback-dead-code-as-docs]] (memory), `pre-release-gate` Phase 2g.
+
+### ⚠️ Settings panel scope rule (v1.26.0 Batch 2 lesson)
+
+The plugin has TWO settings panels:
+
+1. **LLM Advanced section** — `src/ui/settings-sections/advanced-section.ts` (inside LLM Configuration). Gated by `advancedSettingsMode` ('default' | 'custom'). Holds: `temperature`, `repetitionPenalty`, `forcePdfSupport` ONLY.
+2. **Bottom "Advanced settings" panel** — `src/ui/settings-sections/advanced-settings-section.ts`. Gated by `showAdvancedSettings`. Holds: lint dedup thresholds, `maxConversationHistory`, `writePdfMarkdownToVault`, `slugCase`, `createWelcomeNote`, `lintDedupIncludeSources`, and all per-source-file/UI/storage toggles.
+
+**Hard rule:** when adding a setting toggle, decide FIRST which scope it belongs to (LLM sampling vs per-source-file/UI/storage behaviour). The LLM Advanced section is for `temperature`, `repetitionPenalty`, and provider-specific overrides ONLY. Everything else goes in the bottom "Advanced settings" panel.
+
+**Migration plan deferred to v1.27.0+**: rename `advancedSettingsMode` → `advancedLlmMode` (breaking schema change); restructure Settings tab layout; add `Settings tab section header` convention. Detail in [[feedback_settings_panel_naming_collision]] (post-mortem of the Batch 2 slip where `lintDedupIncludeSources` was initially rendered in the wrong panel).
+
+### ⚠️ LLM empty-response retry is inline in dedup-phase — must be extracted
+
+v1.26.0 Batch 2 added empty-response retry + transient concurrency halving directly inside `runDedupPhase`. The mechanism is provider-agnostic (200 + 0-byte body under burst load — e.g., deepseek-v4-flash thinking mode) and the user-facing Notice Toast uses a reusable i18n key (`llmRetryRecoveredToast`).
+
+**Why this is debt (not a feature):** The same retry pattern is needed by every LLM call site — `runAnalysisPhase` (confirmed affected on the 2141-page vault), `fix-runners`, `merge-duplicates`, `conversation-ingest`, `analyzeSource`, headless CLI `tools/llm-wiki-cli/`. Without extraction, every future LLM business path has to re-implement retry + backoff + concurrency halving + log + Notice (Six-Gate Gate 2 anti-pattern).
+
+**User decision 2026-08-04** (post e2e #8, 365s wall-time on the 2141-page vault, down from 979s baseline): tech debt moves from v1.27.0 (MINOR feature window) to **v1.26.x PATCH** (item 7 in [[project_v1_26_x_patch_scope]]) so the perf infrastructure ships BEFORE the next feature batch lands in v1.27.0. Avoids "feature work interleaved with perf infrastructure" in the MINOR window. Extract on second use, not first (current inline form is ~80 LOC). Full extraction plan ([[feedback_llm_retry_extraction]]) covers `src/core/llm-retry.ts` shape (`callLlmWithRetry<T>(client, args, opts)` with `LlmRetryOptions { maxAttempts, delayMs, inScanConcurrencyFloor, onRetry, onRecovered }`).
+
+### ⚠️ Force-disable thinking — 4-layer fallback (v1.26.0 Batch 6)
+
+PR #410 (Batch 2) shipped `enableThinkingOverride = false` for the
+dedup-phase using `thinking.type = 'disabled'` +
+`chat_template_kwargs.enable_thinking = false`. **The PR body claim
+"SDK-level thinking disable is safe across all 4 SDKs" was wrong on
+the openai-compat path** (deepseek-v4-flash, the user's actual
+backend). DocTpoint verified via fetch-interceptor (Issue #382
+comment 2, 2026-08-04) that neither field reaches the wire: the
+AI SDK's zod schema
+(`openaiCompatibleLanguageModelChatOptions`, line 322-344 of
+`@ai-sdk/openai-compatible@2.0.62/dist/index.mjs`) does not declare
+them, so the SDK's `filter()` at line 531-540 deletes them before
+the body is built. **The e2e 979s → 365s improvement came from the
+retry/halving mechanism (commit `e2e75eb`), NOT from thinking being
+disabled.**
+
+Batch 6 corrected this with a **4-layer fallback** (no per-vendor
+matching — fixed list, mirrors `[[token-key-probe.ts]]` design):
+
+| Layer | Mechanism | Where |
+|-------|-----------|-------|
+| 1 (Primary) | `reasoningEffort: 'none'` (camelCase) — passes zod filter, emits as `reasoning_effort: 'none'` on wire | `openai-compat-sdk-client.ts:267`, `openai-sdk-client.ts:221` |
+| 2 (Co-emit) | Same `reasoningEffort` in Anthropic SDK path — Anthropic uses `thinking: { type: 'disabled' }` (different field, zod-accepted) as its working switch | `anthropic-sdk-client.ts` |
+| 3 (400-retry) | On HTTP 400 mentioning `reasoning_effort` / `thinking` / `chat_template`, retry once with reasoningEffort stripped. Per-baseURL cache prevents infinite loops. | `reasoning-strip-probe.ts` + catch block in both SDK clients |
+| 4 (Prompt-level) | "**Do not reason step by step**" line in dedup prompt | `lint.ts` (Batch 2 already added this) |
+
+**Why Layer 2 is no-op today (corrected post-merge, 2026-08-04):** the SDK has TWO independent paths into the wire body — zod schema (Path 1, reads hard-coded `"openaiCompatible"` key) and passthrough (Path 2, reads `providerOptions[this.providerOptionsName]`). `buildProviderOptions` returns under `"openaiCompatible"` while `getProvider` passes `this.provider` (e.g. `deepseek` / `kimi` / `lmstudio` / `custom` / `ollama`); none of the 15 provider ids in `types.ts` is the literal string `"openai-compatible"` — so the Layer-2 extra fields never reach the wire. Per-id key correction is item 10 in [[project_v1_26_x_patch_scope]] (depends on Layer-3 guard now in place).
+
+**Hard rule for future contributors:** if you add a new LLM business path that wants force-disable-thinking, use `enableThinking: false` on the `createMessage` call — Layer 1 + Layer 3 + Layer 4 cover all known backends. **Never write `thinking.type` or `chat_template_kwargs` into provider options on the openai-compat path today** — they're silently dropped. Until item 10 (per-id key correction) lands in v1.26.x PATCH, Layer 1 (`reasoningEffort: 'none'`) is the only verified-working disable mechanism.
+
+**Wire-body regression test:** `openai-compat-request-body.test.ts` asserts `reasoning_effort: 'none'` IS on the body (not just on the `providerOptions` argument handed to the SDK — that assertion was PR #410's blind spot).
+
+**Full post-mortem + SDK line citations:** [[feedback_force_disable_thinking_openai_compat_noop]] (canonical reference; Path 1 vs Path 2 zod vs passthrough, per-SDK field shape, two-marker verb+field classifier, fetch-interceptor verification evidence).
+
+### ⚠️ Force-disable thinking — call-site wiring (v1.26.0 PR #411 F5-A)
+
+PR #411 review surfaced a **third attribution correction** (eucher, 2026-08-05 05:07 UTC): `dedup-phase.ts:379, 434` used the constant `enableThinkingOverride = false` as both a value (the override IS false → spread nothing) and a flag (`false ? A : {}` always picks `{}`). The result: `enableThinking: false` never entered `llmArgs`, and Layers 1-3 of this fallback were unreachable from the dedup-phase call site. Three log lines reported otherwise (debug at `:303, :431` printed `disableThinking=force …` and `disableThinking=true`; warn at `:448` printed `enableThinking_sent=true`) — all derived from the same broken ternary.
+
+**Fix:** renamed to `FORCE_DISABLE_THINKING = true` (clearly a flag, not a value) and made the spread unconditional. Log lines now print truthful values. Regression guard in `dedup-phase.test.ts` asserts `enableThinking: false` on every call to `createMessage.mock.calls[*]`.
+
+**E2e impact** on the 2141-page vault (deepseek-v4-flash, all other settings unchanged):
+
+| state | wall-time | what changed |
+|---|---|---|
+| v1.25.x baseline | 979s | thinking mode, no retries |
+| Batch 2 (PR #410) | 365s | retry/backoff live; Layers 1-3 still dead code |
+| **F5-A (PR #411)** | **151s** | Layers 1-3 now live end-to-end |
+
+**−85% vs baseline, −59% vs Batch 2.** The full [[feedback_force_disable_thinking_dedup_wiring]] post-mortem records this as the third correction in the 979s→365s→151s chain (factor 1: zod-strip per [[feedback_force_disable_thinking_openai_compat_noop]]; factor 2: halving counter never fires per [[feedback_dedup_phase_halving_dead_code]]).
+
+### ⚠️ Per-call thinking policy — source-analyzer repair path (v1.26.0 PR #411 F5-B)
+
+eucher's same review flagged that the `source-analyzer.ts:417` JSON-repair callback did not propagate the parent's `disableThinking` setting. **We did NOT patch this, by design**: DocTpoint's controlled measurement on LM Studio / gemma-4-12b (PR #411 review 2026-08-05 05:38 UTC) showed that disabling reasoning on the repair call produces structurally valid JSON with **wrong content** (concepts duplicated into entities; `concepts = null`; contradictions / related_pages / key_points dropped). Repair needs reasoning budget to understand broken-JSON semantics, not just string-level bracket fixing. Mirroring the parent call's flag would have introduced silent data corruption on the parse-failure retry path.
+
+The opposite direction confirms the per-call rule: `complementaryAppend` at a 600-token cap went from 3 of 3 truncated to 0 of 3 with reasoning off (Issue #403 — thinking budget burns the short cap). Different call, different policy.
+
+**Per-call policy:**
+
+| call site | `disableThinking` honored? | reason |
+|---|---|---|
+| parent analysis (`source-analyzer.ts:386`) | yes | short-token structured extraction |
+| JSON-repair (`source-analyzer.ts:417`) | **no — always allow reasoning** | needs reasoning budget to understand broken JSON |
+| short-cap `complementaryAppend` | yes | thinking budget burns the cap (Issue #403) |
+
+**Regression guard (inverted):** `source-analyzer-thinking.test.ts` asserts the repair callback does NOT pass `enableThinking: false` even when `disableThinking: true`. Without this guard, a future contributor adding a "uniformly propagate disableThinking" rule would re-introduce silent repair corruption.
+
+**Tracked as v1.26.x PATCH** (item 6): introduce a per-call `thinkingPolicy` enum so the user can express "no reasoning for short-budget calls, full reasoning for repair". Until that ships, the asymmetry is intentional, not a bug.
+
 ### ⚠️ Obsidian Plugin Submission Rules — `document` is forbidden in production
 
 **`document`** (the bare global) is **strictly forbidden** in production code. Obsidian is a multi-window application — `document` may refer to the wrong window. The only valid document reference is **`activeDocument`** (Obsidian's popout-window-aware wrapper).
@@ -375,10 +393,10 @@ For full release workflow (commit + push + tag + release notes), use the `obsidi
 
 ## 🔑 Key Design Decisions
 
-- **Tier 1/2 duplicate detection**: Tier 1 always verified (high-precision), Tier 2 fills token budget
-- **`Promise.allSettled` error isolation**: One failure doesn't crash the batch
-- **Pollution defense at write gate**: Centralized regex catches ALL sources
-- **LLM semantic page selection**: Meaning-based matching, not keyword
+- **Tier 1/2 duplicate detection**: Tier 1 always verified (high-precision), Tier 2 fills token budget — see [CONTRIBUTING.md architecture section](./CONTRIBUTING.md)
+- **`Promise.allSettled` error isolation**: One failure doesn't crash the batch — see CONTRIBUTING.md
+- **Pollution defense at write gate**: Centralized regex catches ALL sources — see CONTRIBUTING.md
+- **LLM semantic page selection**: Meaning-based matching, not keyword — see CONTRIBUTING.md
 - **Per-step LLM accounting — every call carries a `task` label**: `createMessage` takes an
   optional `task`, read in one place (`wrapWithAdvancedSettings`, the seam every call passes
   through) and accumulated in `core/llm-task-usage.ts`. A call site that omits it is filed under
@@ -386,7 +404,6 @@ For full release workflow (commit + push + tag + release notes), use the `obsidi
   would under-report the run it exists to explain. So `'untagged'` is a hole in that table, not a
   default to settle for: **a new `createMessage` call site picks a label**, named for the step
   rather than the module.
-
 - **SecretStorage / plaintext wipe ordering (Issue #339, v1.25.4 invariant)**: When migrating a value from plaintext into an external store (SecretStorage, keychain, OS credential manager), the plaintext MUST survive until the IO succeeds. The migration is two-phase: phase 1 = detect + stash plaintext on a transient field (no wipe), phase 2 = wipe plaintext ONLY after the IO write returns success. `flushApiKey`-style save helpers return `boolean` and the calling UI (`PluginSettingTab.hide()`, etc.) MUST skip the commit step on failure. Silent-skip on IO failure = "both stores empty" = user locked out, which is the exact failure mode #339 reported.
 - **Schema 三层分离 (Issue #328, Phase 1 active 2026-07-22 — Option A)**: As knowledge-conservation principle (anti-drift), each layer owns its half, **never overlap, can never conflict**:
   | Layer | Owned by | What it is |
@@ -408,7 +425,8 @@ For full release workflow (commit + push + tag + release notes), use the `obsidi
     - Type-safe require: `module.createRequire(__filename)` (Node 15+ official API) — use this for typed `node:http` etc. instead of bare `require()`.
     - `__filename` / `__dirname` need inline `eslint-disable no-undef` (not in Bot's no-restricted-disable list — legal per-line).
   - **Test bundle-shape contracts may be obsolete.** v1.25.5's `expect(bundle).toContain('require("node:http")')` became false after `createRequire` migration. Update assertions to the new pattern (`import("node:module")` + `createRequire` present).
-  - **Memory:** [[feedback_obsidian_bot_double_lint]] (the v1.25.4/5/6 three-attempt saga with full root-cause analysis).
+  - **Bot scans the whole repo `.ts` tree, not just `src/` (v1.26.0 pre-submission finding, 2026-08-06).** The pre-submission review reported ~60 Warnings on `tools/llm-wiki-cli/` (the headless Node CLI). Local `pnpm lint` = `eslint src/` and the root `tsconfig.json` (includes only `src/**`) are BOTH blind to `tools/` — so these warnings surface only from the Bot, never locally. `eslint-disable` is not an escape hatch: `obsidianmd/*` rules are no-disable (line 698), and the ~43 `console.log` warnings are a Bot-side heuristic check (not an eslint rule — the plugin ships no console rule), so comments cannot suppress them at all. Only 4 of ~60 warnings are fixable (type-safety: `JSON.parse(...) as ...` annotations + `globalThis.crypto.subtle` → `crypto.subtle`); the rest are structural to a Node CLI (static node builtin imports, console.log output interface, `globalThis` shim, `.obsidian` literal, `fetch`-backed `requestUrl`) and must be accepted or removed from the Bot's scan scope (separate repo).
+  - **Memory:** [[feedback_obsidian_bot_double_lint]] (the v1.25.4/5/6 three-attempt saga with full root-cause analysis) + [[feedback_obsidian_bot_tools_cli_warnings]] (the v1.26.0 tools/ blind-spot analysis).
 
 - **Complementary memory model (v1.26.0 design anchor — #358)**:
   - Source notes are **episodic memory**: sequential, lossy-never-intended, preserves authorial voice, hesitation, retraction. They serve the query "what did the source say, verbatim?".
@@ -419,12 +437,7 @@ For full release workflow (commit + push + tag + release notes), use the `obsidi
   - **Practical implications:** "self-improving over time" = periodic consolidation pass with LLM judgement on past decisions, NOT a smarter ingest path. The smallest kernel of the Karpathy cycle is Preview-Confirm gate + identity ambiguity record + stable mutation interface, NOT an agent framework refactor.
   - Full rationale: #330 reply comment + #358 tracking issue + [[project_v1_26_0_design]] (when created).
 
-- **Architect-level contributors (added 2026-07-27, corrected 2026-07-28, applies to v1.26.0+ design work)**:
-  - **Definition.** A contributor who has submitted ≥3 PRs touching core engine files with measurable impact AND authored ≥2 design-level issues that influenced the roadmap. Currently granted to: @DocTpoint (DocTpoint's authored count per his #358 reply: 63 issues + 27 PRs, 21 of them merged, first contribution 2026-05-19 — about 70 days; his 6 roadmap-shaping threads: #285 typed edges contributed to + #328 schema split contributed to + #330 ingest critique + #347 source-ownership + #357 source-lemma + #348 source-lemmma derived). **Note:** per F3 audit finding, **#285 and #328 were opened by green-dalii, not by DocTpoint** — DocTpoint contributed to the threads, not authored them.
-  - **Role on GitHub.** **Write** role on the personal repo (`green-dalii/obsidian-llm-wiki`). **Note** (2026-07-28 correction): there is no separately-assignable "Triage-only" role on a personal GitHub repo — the 5 available roles are Read / Triage / Write / Maintain / Admin, and **the Write role includes triage permissions** (push=true, triage=true, pull=true). The "no push to main" invariant is enforced **independently** by branch protection on `main`, not by role assignment. Collaborator role changes must be done via the GitHub UI (Settings → Collaborators → role dropdown) — the API only creates invitations and cannot modify an existing collaborator's role.
-  - **Why Write (not Maintain / Admin).** Pushing to main is gated by §Git Workflow red line (`GH013` rejection); merge authority is the maintainer's responsibility under §PR Merge Workflow. Write is the smallest scope that recognises "this contributor's issues have been driving the roadmap" without bypassing review gates; Maintain / Admin would add merge / release-tag authority we deliberately reserve for the maintainer.
-  - **What we expect.** Write-role holders co-write design docs (`docs/v1.Y.Z-design.md`) for the version they shape; review PRs that touch their design surface; flag regressions against their prior contributions. They do NOT speak for the project in user-facing channels or change release scope unilaterally.
-  - **What we don't expect.** Write is not a path to maintainer. Maintainer promotion is a separate decision triggered by sustained work + user approval, not by accumulating time in role.
+- **Architect-level contributors (v1.26.0+ design work, granted 2026-07-27, corrected 2026-07-28):** see `~/.claude/projects/-Users-greener-project-obsidian-llm-wiki/memory/project_architect_contributor_policy.md` for definition, role, scope, and the DocTpoint case study. Currently granted to @DocTpoint (Write role on personal repo; "no push to main" is enforced by branch protection, not by role assignment).
 
 ---
 
@@ -455,12 +468,12 @@ Closes #94, #96, #99"
 
 Canonical maintainer: `green-dalii <654534332@qq.com>` (verified against GitHub user `green-dalii`). Some older commits were authored as `Greener-Dalii` (capitalized, used by GitHub UI on merge). All NEW commits — including `--amend` and squash — MUST use the lowercase canonical form.
 
-**Rules (canonical source: [[feedback_co_authored_by_format]]):**
+**Rules (canonical source: [[feedback_co_authored_by_format]], revised 2026-08-07):**
 
 1. **Commit author** MUST be the maintainer (`git config user.name "green-dalii" && git config user.email "654534332@qq.com"`)
-2. **Every commit MUST list the maintainer as `Co-authored-by`** + AI model trailer. AI trailer MUST be exactly `Claude Code <noreply@anthropic.com>` — **no model name, version, or context-window size** (these go stale and pollute git history).
-3. **NEVER** amend/squash away the `Co-authored-by: green-dalii` trailer — re-add it after every `--amend`.
-4. If you notice a missing co-author on a recent commit, **stop and fix it before continuing** — do not let the oversight propagate to the PR.
+2. **Maintainer commits DO NOT include any `Co-Authored-By:` AI trailer.** Only `green-dalii` is recorded. AI tools are session context, not project co-authors.
+3. **External contributors** (DocTpoint, eucher, borthwick, etc.) write their own `Co-Authored-By:` trailers as they see fit — we do not constrain, request, or amend their trailer choices when merging their PRs. Preserve their commit history verbatim.
+4. **When merging an external PR**, never `--amend` to add maintainer AI trailer or any other maintainer attribution. The merge commit itself is authored by `green-dalii`; that's sufficient.
 
 ## 🧪 Development Quality Closure (TDD + Planning)
 
@@ -531,9 +544,9 @@ Use the `obsidian-plugin-release` skill for the full workflow (Steps 1-8). Gate 
 
 **Why**: The user is the domain expert on product vision. The AI has tooling capability but lacks product context. Propose, don't dispose. Full protocol: [[feedback_development_protocol]].
 
-## 🧪 TDD: Write Tests First
+## 🧪 TDD
 
-For any new function or behavior change: write a failing test first, then write the implementation, then refactor. When modifying untested core code, add at least one test for the path you're changing. Full standard with shell-test anti-pattern + 真实 vault 原则: [[feedback_tdd_standard]].
+See §"Development Quality Closure (TDD + Planning)" above. Full standard with shell-test anti-pattern + 真实 vault 原则: [[feedback_tdd_standard]].
 
 ---
 

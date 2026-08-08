@@ -3,11 +3,16 @@ import {
   MAX_TOKENS_BATCH,
   TOKENS_PAGE_GENERATION,
   TOKENS_APPEND_REVIEWED,
+  TOKENS_COMPLEMENTARY_APPEND,
   TOKENS_CONTRADICTION,
   TOKENS_CONVERSATION_EXTRACTION,
   TOKENS_CONVERSATION_PAGE,
   TOKENS_DEDUP_RESOLUTION,
+  TOKENS_LINT_ALIAS_BATCH,
   TOKENS_LINT_DEDUP_LLM,
+  TOKENS_LINT_ORPHAN_FIX,
+  TOKENS_MERGE_TRIAGE,
+  TOKENS_QUERY_KEYWORDS,
   TOKENS_QUERY_MODEL_DETECT,
   TOKENS_QUERY_PAGE_SELECT,
   TOKENS_QUERY_SAVE_DEDUP,
@@ -33,8 +38,12 @@ describe('Token budget constants (Issue #75)', () => {
     expect(MAX_TOKENS_BATCH).toBe(16000);
   });
 
-  it('TOKENS_DEDUP_RESOLUTION is 1000 (insurance for thinking models)', () => {
-    expect(TOKENS_DEDUP_RESOLUTION).toBe(1000);
+  // v1.26.x PATCH #403: 1000 → 3000 (reasoning-budget insurance for
+  // thinking-capable models). See the `'Reasoning-budget token caps
+  // (Issue #403)'` describe block below for the full rationale + the
+  // bump for TOKENS_MERGE_TRIAGE and TOKENS_COMPLEMENTARY_APPEND.
+  it('TOKENS_DEDUP_RESOLUTION is 3000 (reasoning-budget insurance)', () => {
+    expect(TOKENS_DEDUP_RESOLUTION).toBe(3000);
   });
 
   it('TOKENS_QUERY_SAVE_DEDUP is 2000 (insurance for thinking models, v1.24.1 PATCH Phase 5.5.0)', () => {
@@ -46,10 +55,21 @@ describe('Token budget constants (Issue #75)', () => {
     expect(TOKENS_CONVERSATION_PAGE).toBe(8000);
   });
 
-  it('lint and contradiction constants are 4000', () => {
+  it('lint dedup constant is 8000 (v1.26.0 Batch 2 — thinking-mode insurance)', () => {
+    // v1.26.0 (#382 item 1, Batch 2): raised from 4000 to 8000 to
+    // accommodate thinking-mode models (deepseek-v4-flash) that burn
+    // thinking tokens against the same max_tokens budget, producing
+    // 0-byte responses when the budget is too small. 8000 gives the
+    // thinking channel ~4K and the JSON output ~4K.
+    expect(TOKENS_LINT_DEDUP_LLM).toBe(8000);
+  });
+
+  it('contradiction + append-reviewed constants remain 4000 (thinking-mode insurance unrelated)', () => {
+    // These two paths don't have the same thinking-budget issue
+    // because their prompts are short (single pair / single review
+    // item) and the LLM call is already at minimum viable size.
     expect(TOKENS_APPEND_REVIEWED).toBe(4000);
     expect(TOKENS_CONTRADICTION).toBe(4000);
-    expect(TOKENS_LINT_DEDUP_LLM).toBe(4000);
   });
 
   it('query constants are 2000 (Phase 5.5.0 thinking-model insurance)', () => {
@@ -91,6 +111,45 @@ describe('Token budget constants (Issue #75)', () => {
 
   it('TOKENS_CONVERSATION_EXTRACTION is 5000', () => {
     expect(TOKENS_CONVERSATION_EXTRACTION).toBe(5000);
+  });
+});
+
+describe('Reasoning-budget token caps (Issue #403)', () => {
+  // Six call sites carry short-JSON output (`{strategy, path}`,
+  // `{keywords: []}`, `{kind: "entity"}`, etc.) and were sized for
+  // non-reasoning models. On reasoning-capable models the deliberation is
+  // billed against the same max_tokens budget as the answer — DocTpoint's
+  // measurement (gemma-4-12b, 4bit, LM Studio, 2.4 KB source × 45 calls):
+  // 14 truncated, 13 of those empty. `complementaryAppend` was 3/3 = 100%
+  // miss at its 600 cap. The three smallest caps (500/800/1000) below are
+  // the same call-site shape and inherit the same risk; this PR bumps them
+  // uniformly to 3000 for ~50–80% reasoning headroom while keeping the cap
+  // well below the call's context window.
+  //
+  // Per-call reasoning-aware multiplier is deferred to v1.27.0's per-call
+  // `thinkingPolicy` enum (item 6 in [[project_v1_26_x_patch_scope]]).
+  it('TOKENS_DEDUP_RESOLUTION is 3000 (reasoning-budget insurance)', () => {
+    expect(TOKENS_DEDUP_RESOLUTION).toBe(3000);
+  });
+
+  it('TOKENS_MERGE_TRIAGE is 3000 (reasoning-budget insurance)', () => {
+    expect(TOKENS_MERGE_TRIAGE).toBe(3000);
+  });
+
+  it('TOKENS_COMPLEMENTARY_APPEND is 3000 (reasoning-budget insurance)', () => {
+    expect(TOKENS_COMPLEMENTARY_APPEND).toBe(3000);
+  });
+
+  it('TOKENS_LINT_ALIAS_BATCH is 3000 (reasoning-budget insurance)', () => {
+    expect(TOKENS_LINT_ALIAS_BATCH).toBe(3000);
+  });
+
+  it('TOKENS_LINT_ORPHAN_FIX is 3000 (reasoning-budget insurance)', () => {
+    expect(TOKENS_LINT_ORPHAN_FIX).toBe(3000);
+  });
+
+  it('TOKENS_QUERY_KEYWORDS is 3000 (reasoning-budget insurance)', () => {
+    expect(TOKENS_QUERY_KEYWORDS).toBe(3000);
   });
 });
 

@@ -389,6 +389,20 @@ export interface LLMWikiSettings {
    */
   lintBigramThreshold?: number;
 
+  /**
+   * v1.26.0 (#382 item 1, Batch 2): include `sources/` pages in lint
+   * duplicate-detection. Default `true` (sources participate in dedup
+   * via the sourceFingerprint signal, which requires body-hash equality
+   * to upgrade a pair to tier-1). Set to `false` to opt out if your
+   * source corpus generates false positives.
+   *
+   * Cross-type comparison (source↔entity / source↔concept) is
+   * explicitly NOT enabled by this flag — sources are episodic memory
+   * per #358 complementary memory model and cross-type would produce
+   * false positives.
+   */
+  lintDedupIncludeSources?: boolean;
+
   // Issue #75: cap max_tokens per LLM call. 0 = no cap.
   // Recommended for local models with small context windows.
   maxTokensPerCall: number;
@@ -1051,6 +1065,11 @@ export const DEFAULT_SETTINGS: LLMWikiSettings = {
   lintJaccardLinkThreshold: undefined,
   lintJaccardBodyGate: undefined,
   lintBigramThreshold: undefined,
+  // v1.26.0 (#382 item 1, Batch 2): sources participate in dedup by
+  // default. Undefined = true at use site (DEFAULT_SETTINGS does not
+  // own the default; the filter reads `settings.lintDedupIncludeSources
+  // !== false` so a missing key is treated as on).
+  lintDedupIncludeSources: undefined,
   // Issue #111: default to 'lower' for backwards compatibility.
   slugCase: 'lower',
   // v1.24.0 #251: persistent user-supplied instructions appended to the
