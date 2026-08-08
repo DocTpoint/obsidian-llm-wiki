@@ -138,7 +138,7 @@ C'est tout. Le plugin ne modifie rien dans vos notes originales — il crée uni
 - **🏷️ Alias obligatoires** — chaque page est livrée avec au moins un alias (traduction, abréviation, variante) pour que la détection de doublons inter-langues fonctionne.
 - **🔄 Détection de doublons à plusieurs niveaux** — Niveau 1 (correspondance directe de nom : inter-langues, abréviations, titres de haute similarité) toujours vérifié ; Niveau 2 (liens partagés, similarité moyenne) remplit le budget de tokens restant.
 - **🧩 Fusion intelligente et état des contradictions** — les doublons sont fusionnés en préservant les alias ; les contradictions sont signalées avec attribution de source ; les pages `reviewed: true` sont protégées contre l'écrasement.
-- **🎨 Vocabulaire de tags personnalisable** — définissez vos propres listes de tags de type entité et concept dans Paramètres → Wiki → Vocabulaire de tags → *Personnalisé*. Le vocabulaire est un HINT D'INJECTION DE SCHÉMA pour le LLM, pas une porte d'écriture — les modèles petits/locaux peuvent toujours dériver, et Lint signale ces pages. (Application conçue pour v1.26.0+.)
+- **🎨 Vocabulaire de tags personnalisable** — définissez vos propres listes de tags de type entité et concept dans Paramètres → Wiki → Vocabulaire de tags → *Personnalisé*. Le vocabulaire est un HINT D'INJECTION DE SCHÉMA pour le LLM, pas une porte d'écriture — les modèles petits/locaux peuvent toujours dériver, et Lint signale ces pages. (Application conçue pour v1.27.0+.)
 
 ### 📄 Ingestion PDF (v1.25.0+)
 
@@ -348,7 +348,9 @@ Si LLM-Wiki est devenu une partie importante de votre flux de travail de connais
 
 Le sponsoring est entièrement facultatif. Le plugin reste sous licence Apache-2.0 et complet en fonctionnalités.
 
-Merci à [@jameses-cyber](https://github.com/jameses-cyber) et [@issaqua](https://github.com/issaqua) pour leur soutien au projet.
+Merci aux suivants pour leur soutien au projet:
+
+[@jameses-cyber](https://github.com/jameses-cyber), [@issaqua](https://github.com/issaqua), Dikson Choi
 
 ---
 

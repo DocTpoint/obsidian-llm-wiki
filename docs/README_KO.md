@@ -138,7 +138,7 @@
 - **🏷️ 필수 Alias** — 생성된 각 페이지에 최소 1개의 alias(번역, 약어, 변형)를 포함하여 교차 언어 중복 감지가 작동합니다.
 - **🔄 계층형 중복 감지** — Tier 1 (직접 이름 일치: 교차 언어, 약어, 높은 유사도 제목)은 항상 검증됩니다. Tier 2 (공유 링크, 중간 유사도)는 남은 토큰 예산을 채웁니다.
 - **🧩 스마트 병합 및 모순 상태** — 중복 병합 시 alias 보존; 모순은 출처와 함께 표시; `reviewed: true` 페이지는 덮어쓰기에서 보호됩니다.
-- **🎨 사용자 정의 태그 어휘** — 설정 → Wiki → Tag Vocabulary → *Custom*에서 자체 Entity/Concept 타입 태그 목록을 정의할 수 있습니다. 어휘는 LLM에 주입되는 스키마 힌트(schema injection hint)일 뿐, 쓰기 시점 강제 게이트가 아니며 — 소형/로컬 모델은 여전히 어휘 밖으로 새어나갈 수 있고, Lint가 이를 보고합니다. (강제 검증은 v1.26.0+에서 설계 중.)
+- **🎨 사용자 정의 태그 어휘** — 설정 → Wiki → Tag Vocabulary → *Custom*에서 자체 Entity/Concept 타입 태그 목록을 정의할 수 있습니다. 어휘는 LLM에 주입되는 스키마 힌트(schema injection hint)일 뿐, 쓰기 시점 강제 게이트가 아니며 — 소형/로컬 모델은 여전히 어휘 밖으로 새어나갈 수 있고, Lint가 이를 보고합니다. (강제 검증은 v1.27.0+에서 설계 중.)
 
 ### 📄 PDF 수집 (v1.25.0+)
 
@@ -354,7 +354,9 @@ LLM-Wiki가 여러분의 지식 워크플로에서 중요한 부분이 되었다
 
 후원은 전적으로 선택 사항입니다. 플러그인은 Apache-2.0 라이선스로 유지되며 기능이 완전한 상태를 유지합니다.
 
-프로젝트를 지원해 주신 [@jameses-cyber](https://github.com/jameses-cyber)와 [@issaqua](https://github.com/issaqua)님께 감사드립니다.
+프로젝트를 지원해 주신 분들께 감사드립니다：
+
+[@jameses-cyber](https://github.com/jameses-cyber)、[@issaqua](https://github.com/issaqua)、Dikson Choi
 
 ---
 

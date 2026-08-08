@@ -1,12 +1,12 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-08-07 (v1.26.0 MINOR SHIPPED 2026-08-06, v1.26.x PATCH track active; v1.27.0 MINOR in design. **Prior 2026-08-06**: Bot scan-scope finding documented in the Bot compliance invariant below — the review bot lints the whole repo `.ts` tree, not just `main.js`; `tools/` Node CLI carries ~56 structural warnings invisible to local lint — accepted, no re-tag, per 2026-08-06 decision.)
+**Last Updated:** 2026-08-08 (v1.26.1 PATCH RELEASED 2026-08-08; v1.27.0 MINOR in design. **Prior 2026-08-06**: Bot scan-scope finding documented in the Bot compliance invariant below — the review bot lints the whole repo `.ts` tree, not just `main.js`; `tools/` Node CLI carries ~56 structural warnings invisible to local lint — accepted, no re-tag, per 2026-08-06 decision.)
 
 ---
 
-## Current Phase: v1.26.x PATCH (target v1.26.1)
+## Current Phase: v1.26.1 RELEASED (2026-08-08); v1.27.0 MINOR in design
 
-**Forward-looking planning** lives in [ROADMAP.md](./ROADMAP.md#v126x-patch-follow-up-track-target-v1261) and `~/.claude/projects/-Users-greener-project-obsidian-llm-wiki/memory/project_v1_26_x_patch_scope.md` (READ FIRST on resume for v1.26.x PATCH work). ROI-ranked: #403 (3-line fix, awaiting DocTpoint calibration) + CR-1 dedup halving (2-line fix) + PR #409 test additions (eucher) as minimum v1.26.1 ship.
+**Forward-looking planning** lives in [ROADMAP.md](./ROADMAP.md#v1270-minor-design-track). v1.26.1 shipped 21 PRs (see [CHANGELOG.md v1.26.1 entry](./CHANGELOG.md#1261---2026-08-08)): #403 reasoning caps, CR-1 dedup halving, #419/#435 H1, #424 yaml devDep, #398 silent-save, #407 Stage 0, #423 `--seed`, #409 per-step LLM timing, #439 deps. Remaining v1.26.x follow-ups (#407 Stages 1+2, #414 `repetition_penalty`, #438 frontmatter data-loss) moved to the v1.27.0 window.
 
 **Historic v1.26.0 composition** (117 commits / 110 files / +10,604 / −994 since v1.25.11, 2928 tests / 213 files passing, all 5 P0+P1 batches MERGED) lives in [CHANGELOG.md v1.26.0 entry](./CHANGELOG.md#1260---2026-08-05). Do not duplicate the Batch table or commit log here — this file is for **process standards + invariants**, not version history.
 

@@ -138,7 +138,7 @@ Questo è tutto. Il plugin non modifica nulla nelle tue note originali — crea 
 - **🏷️ Alias obbligatori** — ogni pagina viene creata con almeno un alias (traduzione, abbreviazione, variante) così il rilevamento dei duplicati tra lingue funziona.
 - **🔄 Rilevamento duplicati a livelli** — Livello 1 (corrispondenza nome diretta: cross-lingua, abbreviazione, titoli ad alta similarità) sempre verificato; Livello 2 (link condivisi, similarità media) riempie il budget di token rimanente.
 - **🧩 Fusione intelligente e stato contraddizioni** — i duplicati vengono uniti preservando gli alias; le contraddizioni vengono segnalate con attribuzione della fonte; le pagine `reviewed: true` sono protette dalla sovrascrittura.
-- **🎨 Vocabolario tag personalizzabile** — definisci le tue liste di tag per tipo di entità e concetto in Impostazioni → Wiki → Vocabolario tag → *Personalizzato*. Il vocabolario è un HINT DI INIEZIONE DI SCHEMA per l'LLM, non un gate di scrittura — i modelli piccoli/locali possono comunque derivare, e Lint segnala quelle pagine. (L'applicazione è in fase di progettazione per v1.26.0+.)
+- **🎨 Vocabolario tag personalizzabile** — definisci le tue liste di tag per tipo di entità e concetto in Impostazioni → Wiki → Vocabolario tag → *Personalizzato*. Il vocabolario è un HINT DI INIEZIONE DI SCHEMA per l'LLM, non un gate di scrittura — i modelli piccoli/locali possono comunque derivare, e Lint segnala quelle pagine. (L'applicazione è in fase di progettazione per v1.27.0+.)
 
 ### 📄 Ingest PDF (v1.25.0+)
 
@@ -354,7 +354,9 @@ Se LLM-Wiki è diventato una parte significativa del tuo flusso di lavoro della 
 
 La sponsorizzazione è completamente facoltativa. Il plugin resta con licenza Apache-2.0 e completo nelle funzionalità.
 
-Grazie a [@jameses-cyber](https://github.com/jameses-cyber) e [@issaqua](https://github.com/issaqua) per aver sostenuto il progetto.
+Grazie ai seguenti per aver sostenuto il progetto:
+
+[@jameses-cyber](https://github.com/jameses-cyber), [@issaqua](https://github.com/issaqua), Dikson Choi
 
 ---
 

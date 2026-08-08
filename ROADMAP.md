@@ -2,11 +2,11 @@
 
 > Feature planning and improvement proposals
 
-**Version:** v1.26.0 MINOR RELEASED 2026-08-06 (tag `1.26.0`). v1.26.x PATCH track active; v1.27.0 MINOR in design. v1.25.11 PATCH RELEASED. | **Updated:** 2026-08-07
+**Version:** v1.26.1 PATCH RELEASED 2026-08-08 (tag `1.26.1`). v1.27.0 MINOR in design. v1.26.0 MINOR RELEASED 2026-08-06. | **Updated:** 2026-08-08
 
 ## Current Status
 
-**v1.26.0 MINOR SHIPPED 2026-08-06** (tag `1.26.0`). See [CHANGELOG.md v1.26.0 entry](./CHANGELOG.md#1260---2026-08-05) for the full release composition (117 commits / 110 files / +10,604 / −994 since v1.25.11, 2928 tests / 213 files passing). ROADMAP only carries **forward-looking planning** (current PATCH + next MINOR + research track); historical composition lives in CHANGELOG.
+**v1.26.1 PATCH SHIPPED 2026-08-08** (tag `1.26.1`). 21 PRs since v1.26.0: high-ROI bug fixes (#399 / #403 / #408 / #419 / #424 / #435 + CR-1 dedup halving + #398 silent-save), #407 Stage 0 parse-failure naming, per-step LLM timing (PR #409), 24 Dependabot alerts closed, plus H1 hardening and `--seed` / `thinking` doc corrections. See [CHANGELOG.md v1.26.1 entry](./CHANGELOG.md#1261---2026-08-08) for the full composition. ROADMAP only carries **forward-looking planning** (next MINOR + research track); historical composition lives in CHANGELOG.
 
 **v1.26.0 P0+P1 final scope** (executed 2026-08-02 → 2026-08-05; all MERGED via PRs #401 / #406 / #410 / #411):
 
@@ -32,15 +32,18 @@ See [CLAUDE.md §"🛡️ Six-Gate Quality Closure"](./CLAUDE.md) for Gate defin
 
 See [CLAUDE.md §"📦 Development Workflow"](./CLAUDE.md) + [`.claude/skills/obsidian-plugin-release/SKILL.md`](/Users/greener/.claude/skills/obsidian-plugin-release/SKILL.md) for the full 8-step release flow. The pre-release-gate + doc-review parallel run is in [`.claude/skills/pre-release-gate/SKILL.md`](/Users/greener/.claude/skills/pre-release-gate/SKILL.md) + [`.claude/skills/doc-review/SKILL.md`](/Users/greener/.claude/skills/doc-review/SKILL.md). ROADMAP does not duplicate the per-step checklist — only the items that are **planning decisions** (which version, which milestone, which item lands where) live here.
 
-## v1.26.x PATCH follow-up track (target v1.26.1)
+## v1.26.x PATCH follow-up track (CLOSED — v1.26.1 shipped 2026-08-08)
 
-**Full ROI-ranked work list** lives in `~/.claude/projects/-Users-greener-project-obsidian-llm-wiki/memory/project_v1_26_x_patch_scope.md` — **READ FIRST on resume for PATCH work.** Contains: items 1-11 ranked top-to-bottom, "already merged in v1.26.x PATCH" table (PR #405 #408), "currently OPEN with v1.26.x PATCH milestone" table (#403 #407 #414 #398), "out of v1.26.1 scope" rationale, 3 open design questions to DocTpoint.
+**v1.26.1 shipped with 21 PRs.** All v1.26.x PATCH items (1-14) landed: #403 caps, CR-1 halving, #419/#435 H1, #424 yaml devDep, #398 silent-save, #407 Stage 0, #423 seed, items 13/14, #439 deps, #409 timing. Full composition in [CHANGELOG.md v1.26.1 entry](./CHANGELOG.md#1261---2026-08-08).
 
-**Minimum recommended v1.26.1 ship** (3 short PRs, ~1 PR-equivalent effort): item 1 (#403 3-line cap fix) + item 2 (CR-1 dedup halving 2-line fix) + item 3 (PR #409 test additions). All three are well-defined; items 4-11 are design-track deferrals.
+**Remaining follow-ups (moved to v1.27.0 window):**
+- **#407 Stages 1+2** — port the 8 silent-failure call sites (`path-resolution.ts:220` + `conversation-ingest.ts:337` first), one PR per blast radius.
+- **#414** — `repetitionPenalty` → `repeat_penalty` per-backend spelling transform (LM Studio measured; DeepSeek / Kimi / GLM / Ollama / vLLM gap).
+- **#438** — frontmatter writer data-loss (awaiting vaclavdobsicek's PR; two defects split into A cosmetic / B data-loss).
 
-**Bedrock Stage 2 — SSO/Profile auth (decision 2026-08-07; cancels the prior "≥3 user requests" gate).** Now scoped to **v1.26.x PATCH or v1.27.0** via a **zero-AWS-SDK** path: hand-rolled IAM Identity Center OIDC (reusing the Codex OAuth skeleton at `src/llm-sdk/openai-codex/`) → `GetRoleCredentials` → temp IAM creds → **hand-written SigV4** → existing `bedrock-mantle` endpoint. ~+10 KB, zero new npm deps (vs the rejected PR #263's +1.2 MB). Rationale: the `bedrock-mantle` endpoint accepts AWS credentials (SigV4) per AWS docs and speaks standard OpenAI/Anthropic protocols over plain SSE — no native ConverseStream event-stream signing needed. Design plan + implementation checklist: [[project_bedrock_stage2_codex_style_sigv4]]. PR #263 author notified with the new decision.
+**Bedrock Stage 2 — SSO/Profile auth (decision 2026-08-07; cancels the prior "≥3 user requests" gate).** Now scoped to **v1.27.0** via a **zero-AWS-SDK** path: hand-rolled IAM Identity Center OIDC (reusing the Codex OAuth skeleton at `src/llm-sdk/openai-codex/`) → `GetRoleCredentials` → temp IAM creds → **hand-written SigV4** → existing `bedrock-mantle` endpoint. ~+10 KB, zero new npm deps (vs the rejected PR #263's +1.2 MB). Rationale: the `bedrock-mantle` endpoint accepts AWS credentials (SigV4) per AWS docs and speaks standard OpenAI/Anthropic protocols over plain SSE — no native ConverseStream event-stream signing needed. Design plan + implementation checklist: [[project_bedrock_stage2_codex_style_sigv4]].
 
-## After v1.26.0: v1.27.0 MINOR design track
+## v1.27.0 MINOR design track
 
 Items NOT in v1.26.0 P0+P1 scope but in #358 design orbit (target v1.27.0 MINOR):
 

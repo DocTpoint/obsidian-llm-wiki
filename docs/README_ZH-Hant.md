@@ -139,7 +139,7 @@
 - **🏷️ 強制頁面別名** — 每個頁面至少包含一個別名（翻譯、縮寫、變體名），讓跨語言重複檢測能夠運作。
 - **🔄 分級重複檢測** — Tier 1（直接名稱匹配：跨語言、縮寫、高相似度標題）全部驗證；Tier 2（共享鏈接、中等相似度）填補剩餘 token 預算。
 - **🧩 智慧合併與矛盾狀態** — 重複頁面合併時保留別名；矛盾標記來源歸屬；`reviewed: true` 頁面受保護不被覆蓋。
-- **🎨 自訂標籤詞彙** — 在設定 → Wiki → 標籤詞彙模式 → *自訂* 中定義自己的實體類型和概念類型標籤清單。詞彙表是注入 LLM 的提示（schema injection hint），不是寫入時的強制閘門——小型/本地模型仍可能漂移，Lint 會報告這些頁面以便修復。(Schema 強制校驗在 v1.26.0+ 設計中。)
+- **🎨 自訂標籤詞彙** — 在設定 → Wiki → 標籤詞彙模式 → *自訂* 中定義自己的實體類型和概念類型標籤清單。詞彙表是注入 LLM 的提示（schema injection hint），不是寫入時的強制閘門——小型/本地模型仍可能漂移，Lint 會報告這些頁面以便修復。(Schema 強制校驗在 v1.27.0+ 設計中。)
 
 ### 📄 PDF 擷取 (v1.25.0+)
 
@@ -353,7 +353,9 @@ pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
 
 贊助完全自願。外掛始終保持 Apache-2.0 授權且功能完整。
 
-感謝 [@jameses-cyber](https://github.com/jameses-cyber) 和 [@issaqua](https://github.com/issaqua) 對專案的支持。
+感謝以下贊助者對專案的支持：
+
+[@jameses-cyber](https://github.com/jameses-cyber)、[@issaqua](https://github.com/issaqua)、Dikson Choi
 
 ---
 
