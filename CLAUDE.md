@@ -379,6 +379,14 @@ For full release workflow (commit + push + tag + release notes), use the `obsidi
 - **`Promise.allSettled` error isolation**: One failure doesn't crash the batch
 - **Pollution defense at write gate**: Centralized regex catches ALL sources
 - **LLM semantic page selection**: Meaning-based matching, not keyword
+- **Per-step LLM accounting — every call carries a `task` label**: `createMessage` takes an
+  optional `task`, read in one place (`wrapWithAdvancedSettings`, the seam every call passes
+  through) and accumulated in `core/llm-task-usage.ts`. A call site that omits it is filed under
+  `'untagged'` rather than dropped — an unlabelled call still costs time, and a table that hid it
+  would under-report the run it exists to explain. So `'untagged'` is a hole in that table, not a
+  default to settle for: **a new `createMessage` call site picks a label**, named for the step
+  rather than the module.
+
 - **SecretStorage / plaintext wipe ordering (Issue #339, v1.25.4 invariant)**: When migrating a value from plaintext into an external store (SecretStorage, keychain, OS credential manager), the plaintext MUST survive until the IO succeeds. The migration is two-phase: phase 1 = detect + stash plaintext on a transient field (no wipe), phase 2 = wipe plaintext ONLY after the IO write returns success. `flushApiKey`-style save helpers return `boolean` and the calling UI (`PluginSettingTab.hide()`, etc.) MUST skip the commit step on failure. Silent-skip on IO failure = "both stores empty" = user locked out, which is the exact failure mode #339 reported.
 - **Schema 三层分离 (Issue #328, Phase 1 active 2026-07-22 — Option A)**: As knowledge-conservation principle (anti-drift), each layer owns its half, **never overlap, can never conflict**:
   | Layer | Owned by | What it is |
