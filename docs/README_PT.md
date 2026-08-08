@@ -138,7 +138,7 @@ Você escreve notas. Elas ficam em pastas. Encontrar o que se relaciona com o qu
 - **🏷️ Aliases Obrigatórios** — Cada página gerada inclui pelo menos um alias (tradução, abreviatura, variante) para que a deteção de duplicados entre idiomas funcione.
 - **🔄 Deteção de Duplicados por Camadas** — Camada 1 (correspondência direta de nome: entre idiomas, abreviatura, títulos de alta similaridade) sempre verificada; Camada 2 (links compartilhados, similaridade média) preenche o orçamento de tokens restante.
 - **🧩 Fusão Inteligente e Estado de Contradição** — Duplicados são mesclados preservando aliases; contradições são sinalizadas com atribuição de fonte; páginas `reviewed: true` são protegidas contra sobrescrita.
-- **🎨 Vocabulário de Tags Personalizável** — Defina suas próprias listas de tags de tipo de entidade e conceito em Configurações → Wiki → Vocabulário de Tags → *Personalizado*. O vocabulário é uma DICA DE INJEÇÃO DE ESQUEMA para a LLM, não uma barreira de escrita — modelos pequenos/locais ainda podem derivar, e o Lint relata essas páginas. (Imposição sendo projetada para v1.26.0+.)
+- **🎨 Vocabulário de Tags Personalizável** — Defina suas próprias listas de tags de tipo de entidade e conceito em Configurações → Wiki → Vocabulário de Tags → *Personalizado*. O vocabulário é uma DICA DE INJEÇÃO DE ESQUEMA para a LLM, não uma barreira de escrita — modelos pequenos/locais ainda podem derivar, e o Lint relata essas páginas. (Imposição sendo projetada para v1.27.0+.)
 
 ### 📄 Ingestão de PDF (v1.25.0+)
 
@@ -348,7 +348,9 @@ Se o LLM-Wiki se tornou uma parte significativa do seu fluxo de trabalho de conh
 
 O patrocínio é inteiramente opcional. O plugin mantém-se sob licença Apache-2.0 e completo em funcionalidades.
 
-Obrigado a [@jameses-cyber](https://github.com/jameses-cyber) e [@issaqua](https://github.com/issaqua) por apoiarem o projeto.
+Obrigado aos seguintes por apoiarem o projeto:
+
+[@jameses-cyber](https://github.com/jameses-cyber), [@issaqua](https://github.com/issaqua), Dikson Choi
 
 ---
 

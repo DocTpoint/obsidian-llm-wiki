@@ -135,6 +135,7 @@ src/
 │   ├── template-renderer.ts    # {{placeholder}} substitution with named keys (#244/v1.25.10)
 │   ├── source-lemma.ts         # Source-slug = page-lemma deterministic merge (#348, v1.26.0 PR #357 DocTpoint)
 │   ├── link-retarget.ts        # Vault-wide link retarget for mergeDuplicates (#386, v1.26.0 PR #392 DocTpoint)
+│   ├── llm-task-usage.ts       # Per-step LLM call + wall-time ledger (PR #409, v1.26.1 eucher)
 ├── wiki/                # Wiki engine modules
 │   ├── wiki-engine.ts   # Orchestrator (ingest, lint, log) — v1.25.1: 4 internal modules extracted
 │   ├── graph-cache.ts   # (v1.25.1) `_cachedGraph` + invalidate logic
@@ -222,7 +223,7 @@ src/
 │   ├── tag-chip-input.ts
 │   └── schema-diff-modal.ts
 ├── texts/               # i18n (11 languages: EN/ZH/ZH-Hant/JA/KO/DE/FR/ES/PT/IT/RU; Russian added v1.26.0 PR #397)
-└── __tests__/           # Unit tests (vitest, 2928 tests across 213 files; v1.26.0 MINOR release-prep, +184 net since v1.25.11)
+└── __tests__/           # Unit tests (vitest, 2992 tests across 218 files; v1.26.1 PATCH release-prep, +64 net since v1.26.0)
 
 tools/                  # CLI toolchain (out-of-tree, ships via package.json bin)
 └── llm-wiki-cli/       # Headless ingest CLI (v1.26.0, PRs #372 + #387)
