@@ -62,16 +62,77 @@ export interface ParseJsonOptions {
   throwOnEmpty?: boolean;
 }
 
-export async function parseJsonResponse(
+/**
+ * Issue #407 Stage 0 — why the parse outcome needs a type of its own.
+ *
+ * `parseJsonResponse` answers `null` for three unrelated conditions: the model
+ * returned nothing, the model returned bytes that hold no recoverable JSON, and
+ * the parser itself threw. The third was never visible to anyone — the catch at
+ * the bottom of this file logged it and returned `null` like the rest.
+ *
+ * Because `null` can mean any of those, `parsed?.field || fallback` is the
+ * cheapest thing to write at a call site, and it silently converts a failed
+ * call into a content decision: `path-resolution.ts:220` creates a page at the
+ * slug path as if the model had answered "no match", `conversation-ingest.ts:337`
+ * saves a conversation as `entirely_new` with the dedup check skipped, and
+ * `fix-dead-link.ts:180` walks into its stub branch as if the link were a
+ * genuine forward reference.
+ *
+ * A flag on the old signature would fix today's call sites and leave the next
+ * one to inherit the same default. This union removes the reading instead: with
+ * `ok` to discriminate on, `parsed?.field || fallback` does not compile.
+ *
+ * `parseJsonResult` decides nothing beyond classification and logs no verdict —
+ * both belong to the caller. `parseJsonResponse` below is now one such caller,
+ * kept byte-for-byte compatible: the same returns, the same throws, the same
+ * console lines. Stage 0 changes no behaviour anywhere on purpose, so this
+ * commit can be reviewed on identity alone.
+ */
+export type JsonParseFailure = {
+  ok: false;
+  /**
+   * `empty` — nothing arrived to parse (0 bytes, or whitespace / thinking
+   * blocks / code fences only). Usually a reasoning model that spent its
+   * budget before emitting JSON, and retriable.
+   *
+   * `malformed` — bytes arrived and no layer could recover JSON from them,
+   * repair callback included. Operators need to see this one.
+   *
+   * `exception` — the parser threw where it was not expected to. Never
+   * distinguishable before this type existed.
+   */
+  reason: 'empty' | 'malformed' | 'exception';
+  /** Length of the RAW response, before any normalization. */
+  rawLength: number;
+  /** The text after Layer-1 normalization; `''` for `empty`. */
+  normalized: string;
+  /** Set for `exception` only — the value that was thrown. */
+  error?: unknown;
+};
+
+export type JsonParseResult =
+  | { ok: true; value: Record<string, unknown> }
+  | JsonParseFailure;
+
+/**
+ * Classify an LLM response into parsed JSON or a named failure (#407 Stage 0).
+ *
+ * Same parsing layers, same order, same repair callback as `parseJsonResponse`
+ * — this IS that function's body, with the three `null` returns replaced by the
+ * reason that produced them. The `console.debug` breadcrumbs and the two
+ * repair-failure `console.error` lines stay here because they describe parse
+ * ATTEMPTS; the verdict lines moved out to the caller.
+ */
+export async function parseJsonResult(
   response: string,
   repairFn?: (malformedJson: string) => Promise<string>,
-  options?: ParseJsonOptions,
-): Promise<Record<string, unknown> | null> {
+): Promise<JsonParseResult> {
   console.debug('parseJsonResponse parsing started... response length:', response.length);
 
+  let normalized = '';
   try {
     // ===== Layer 1: Response Normalization =====
-    let normalized = response.trim();
+    normalized = response.trim();
 
     // Step 1.0: Strip reasoning/thinking blocks
     normalized = normalized.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '');
@@ -99,7 +160,7 @@ export async function parseJsonResponse(
       const withBrace = '{' + normalized;
       try {
         console.debug("first char not '{', prepended '{' and parsed successfully");
-        return JSON.parse(withBrace) as Record<string, unknown>;
+        return { ok: true, value: JSON.parse(withBrace) as Record<string, unknown> };
       } catch {
         console.debug("prepending '{' still failed, continuing");
       }
@@ -107,7 +168,7 @@ export async function parseJsonResponse(
 
     // Step 1.3: Trailing content detection
     try {
-      return JSON.parse(normalized) as Record<string, unknown>;
+      return { ok: true, value: JSON.parse(normalized) as Record<string, unknown> };
     } catch (directError) {
       const msg = directError instanceof SyntaxError ? directError.message : '';
       const afterMatch = msg.match(/after JSON at position (\d+)/);
@@ -117,7 +178,7 @@ export async function parseJsonResponse(
         console.debug('extra content after JSON detected (position %d)，prefix extracted (length %d)', endPos, prefix.length);
         try {
           console.debug('prefix parsed successfully');
-          return JSON.parse(prefix) as Record<string, unknown>;
+          return { ok: true, value: JSON.parse(prefix) as Record<string, unknown> };
         } catch {
           console.debug('prefix parse failed, continuing');
         }
@@ -131,7 +192,7 @@ export async function parseJsonResponse(
       if (balanced) {
         const fixed = fixCommonJsonIssues(balanced);
         try {
-          return JSON.parse(fixed) as Record<string, unknown>;
+          return { ok: true, value: JSON.parse(fixed) as Record<string, unknown> };
         } catch (braceError) {
           console.debug('brace-count extraction failed:', String(braceError).slice(0, 80));
         }
@@ -144,7 +205,7 @@ export async function parseJsonResponse(
               .replace(/\n?```$/, '')
               .trim();
             const final = fixCommonJsonIssues(cleanedLlm);
-            return JSON.parse(final) as Record<string, unknown>;
+            return { ok: true, value: JSON.parse(final) as Record<string, unknown> };
           } catch (llmError) {
             console.error('LLM repair also failed (brace-count):', String(llmError).slice(0, 80));
           }
@@ -158,7 +219,7 @@ export async function parseJsonResponse(
       const candidate = jsonMatch[0];
       const fixed = fixCommonJsonIssues(candidate);
       try {
-        return JSON.parse(fixed) as Record<string, unknown>;
+        return { ok: true, value: JSON.parse(fixed) as Record<string, unknown> };
       } catch (regexError) {
         console.debug('greedy regex extraction failed:', String(regexError).slice(0, 80));
       }
@@ -171,7 +232,7 @@ export async function parseJsonResponse(
             .replace(/\n?```$/, '')
             .trim();
           const final = fixCommonJsonIssues(cleanedLlm);
-          return JSON.parse(final) as Record<string, unknown>;
+          return { ok: true, value: JSON.parse(final) as Record<string, unknown> };
         } catch (llmError) {
           console.error('LLM repair also failed (greedy regex):', String(llmError).slice(0, 80));
         }
@@ -190,34 +251,65 @@ export async function parseJsonResponse(
     // post-code-fence-strip) rather than `response.length === 0` so
     // whitespace-only responses are also classified as empty.
     if (normalized === '') {
-      if (options?.silentOnEmpty) {
-        console.debug('parseJsonResponse: empty body (raw length %d) — silent path', response.length);
-      } else {
-        console.error('JSON parse completely failed (raw length %d) — empty response from LLM', response.length);
-      }
-      if (options?.throwOnEmpty) {
-        throw new EmptyResponseError(response.length);
-      }
-      return null;
+      return { ok: false, reason: 'empty', rawLength: response.length, normalized: '' };
     }
 
-    // Non-empty + unparseable: legacy noisy default (operators need signal).
-    console.error('JSON parse completely failed (length %d)', response.length);
-    console.error('first 200 chars after normalization:', normalized.substring(0, 200));
-    console.error('last 200 chars after normalization:', normalized.substring(Math.max(0, normalized.length - 200)));
-    return null;
+    // Non-empty + unparseable. `normalized` travels with the failure so the
+    // caller can reproduce the legacy 3-line operator signal verbatim.
+    return { ok: false, reason: 'malformed', rawLength: response.length, normalized };
 
   } catch (error) {
-    // v1.24.1 PATCH Phase 5.5.0 (quiet path): EmptyResponseError is a
-    // domain signal we deliberately throw — must propagate to caller
-    // (re-throw without logging). Only UNEXPECTED exceptions get the
-    // generic catch log.
-    if (error instanceof EmptyResponseError) {
-      throw error;
+    // Before #407 this branch logged and returned `null`, so an unexpected
+    // throw inside the parser was indistinguishable from a model that answered
+    // badly. `normalized` is whatever Layer 1 had reached when it threw.
+    return { ok: false, reason: 'exception', rawLength: response.length, normalized, error };
+  }
+}
+
+/**
+ * Legacy null-returning wrapper over `parseJsonResult` (#407 Stage 0).
+ *
+ * Every existing caller keeps its exact behaviour: the three failure reasons all
+ * collapse back to `null`, the empty-body branch keeps `silentOnEmpty` and
+ * `throwOnEmpty`, and the verdict console lines are emitted here — same text,
+ * same order, same stream as before the split.
+ *
+ * New call sites should use `parseJsonResult` instead: this signature cannot
+ * express why a call failed, which is the defect #407 is about.
+ */
+export async function parseJsonResponse(
+  response: string,
+  repairFn?: (malformedJson: string) => Promise<string>,
+  options?: ParseJsonOptions,
+): Promise<Record<string, unknown> | null> {
+  const result = await parseJsonResult(response, repairFn);
+  if (result.ok) return result.value;
+
+  if (result.reason === 'empty') {
+    if (options?.silentOnEmpty) {
+      console.debug('parseJsonResponse: empty body (raw length %d) — silent path', result.rawLength);
+    } else {
+      console.error('JSON parse completely failed (raw length %d) — empty response from LLM', result.rawLength);
     }
-    console.error('parseJsonResponse exception:', error);
+    if (options?.throwOnEmpty) {
+      throw new EmptyResponseError(result.rawLength);
+    }
     return null;
   }
+
+  if (result.reason === 'malformed') {
+    // Legacy noisy default: operators need the signal on unparseable content.
+    console.error('JSON parse completely failed (length %d)', result.rawLength);
+    console.error('first 200 chars after normalization:', result.normalized.substring(0, 200));
+    console.error(
+      'last 200 chars after normalization:',
+      result.normalized.substring(Math.max(0, result.normalized.length - 200)),
+    );
+    return null;
+  }
+
+  console.error('parseJsonResponse exception:', result.error);
+  return null;
 }
 
 /** Extract the first balanced {…} JSON object via brace counting. */
