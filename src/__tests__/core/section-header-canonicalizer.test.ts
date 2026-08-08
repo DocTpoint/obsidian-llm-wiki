@@ -270,4 +270,42 @@ describe('reassertH1 (the title is not the model\'s call)', () => {
       'Siehe # Sulforaphan-Dosierung im Anhang.\n# Sulforaphan\n\nNeu',
     );
   });
+
+  // #435 Item 1: a `# ` line inside a `---` block the model echoed around the
+  // body is a comment, not the title. Taking it would have restored the page's
+  // title into the comment and left the model's title standing below it.
+  it('ignores a `# ` comment inside a leading `---` block', () => {
+    const existing = '# Sulforaphan\n\n## Beschreibung\nAlt';
+    const rewrite = '---\n# user note\ntitle: X\n---\n# Sulforaphan-Dosierung\n\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(
+      '---\n# user note\ntitle: X\n---\n# Sulforaphan\n\nNeu',
+    );
+  });
+
+  // The likelier variant of the same mistake: `# ` opens a comment in most shell
+  // dialects, so any page carrying a bash example carries H1-looking lines.
+  it('ignores a `# ` comment inside a fenced code block', () => {
+    const existing = '# Sulforaphan\n\n## Beschreibung\nAlt';
+    const rewrite = '```bash\n# install the thing\n```\n\n# Sulforaphan-Dosierung\n\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(
+      '```bash\n# install the thing\n```\n\n# Sulforaphan\n\nNeu',
+    );
+  });
+
+  // Same misreading on the READ side: a shell comment must not be adopted as the
+  // page's previous title, or the function would mint one for a page that had
+  // none — the mass mutation the file-name path was rejected for.
+  it('invents no title from a `# ` comment in the existing body', () => {
+    const existing = '```bash\n# install the thing\n```\n\n## Beschreibung\nAlt';
+    const rewrite = '## Beschreibung\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(rewrite);
+  });
+
+  // A `---` further down is a thematic break, not frontmatter — the lines after
+  // it are ordinary body and can hold the H1.
+  it('finds an H1 that follows a mid-body thematic break', () => {
+    const existing = '# Sulforaphan\n\n## Beschreibung\nAlt';
+    const rewrite = 'Lead.\n\n---\n\n# Sulforaphan-Dosierung\n\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe('Lead.\n\n---\n\n# Sulforaphan\n\nNeu');
+  });
 });
