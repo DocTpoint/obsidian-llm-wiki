@@ -165,8 +165,18 @@ export const TOKENS_CONVERSATION_PAGE = 8000;
  * Token budget for entity dedup resolution (lightweight matching prompt).
  * Sized for short JSON output (action + path) with headroom for thinking-model
  * preamble that may consume part of the budget.
+ *
+ * v1.26.x PATCH #403: raised from 1000 → 3000. On reasoning-capable models
+ * the deliberation is billed against the same max_tokens budget as the
+ * answer; DocTpoint measurement (gemma-4-12b / LM Studio, 2.4 KB source ×
+ * 45 calls) saw successful runs deliberate 286–921 tokens under a 1000 cap,
+ * while 14/45 calls truncated and 13 of those returned empty content (read
+ * as a valid negative — silent data loss). 3000 gives uniform ~50–80%
+ * reasoning headroom while staying well below the call's context window.
+ * Per-call reasoning-aware multiplier is deferred to v1.27.0's per-call
+ * `thinkingPolicy` enum (scope item 6).
  */
-export const TOKENS_DEDUP_RESOLUTION = 1000;
+export const TOKENS_DEDUP_RESOLUTION = 3000;
 
 /**
  * v1.26.0 patch 16 (PR #357) — token budget for the source-lemma type
@@ -199,8 +209,13 @@ export const DEDUP_CANDIDATE_TOP_K = 30;
  * Chinese easily runs to 500-900 tokens; e2e observed heavy truncation
  * at 200 tokens with `{"strategy":` cut off mid-JSON. 2000 gives ample
  * headroom for both Tier-1 (compact) and Tier-2 (verbose) outputs.
+ *
+ * v1.26.x PATCH #403: raised from 2000 → 3000. DocTpoint measurement on
+ * gemma-4-12b / LM Studio showed triage calls deliberating 766–1650 tokens
+ * under a 2000 cap (32–44% miss rate across runs). 3000 gives uniform
+ * ~50–80% reasoning headroom. See TOKENS_DEDUP_RESOLUTION for full rationale.
  */
-export const TOKENS_MERGE_TRIAGE = 2000;
+export const TOKENS_MERGE_TRIAGE = 3000;
 
 /**
  * v1.24.0 #216 Tier-2 — max tokens for a single per-section append call.
@@ -208,13 +223,26 @@ export const TOKENS_MERGE_TRIAGE = 2000;
  * LLM is given (existingSectionContent + 1-N new facts) and must return
  * just the appended paragraphs. 600 tokens covers ~3 paragraphs of
  * markdown per section comfortably.
+ *
+ * v1.26.x PATCH #403: raised from 600 → 3000. DocTpoint measurement on
+ * gemma-4-12b / LM Studio saw 3/3 = 100% miss rate at the 600 cap (every
+ * call truncated and returned empty — short-cap call sites are most
+ * exposed to thinking-budget burn). 3000 gives uniform ~50–80% reasoning
+ * headroom. See TOKENS_DEDUP_RESOLUTION for full rationale.
  */
-export const TOKENS_COMPLEMENTARY_APPEND = 600;
+export const TOKENS_COMPLEMENTARY_APPEND = 3000;
 
 /**
  * Token budget for lint alias completion batch.
+ *
+ * v1.26.x PATCH #403: raised from 500 → 3000. Same reasoning-budget insurance
+ * pattern: short-JSON output + thinking-channel burn on reasoning models puts
+ * any sub-2000 cap at high risk of empty-content truncation. DocTpoint's
+ * measurement on `complementaryAppend` (600 → 3/3 = 100% miss) showed the
+ * short-cap call sites are the most exposed. 3000 gives uniform reasoning
+ * headroom. See TOKENS_DEDUP_RESOLUTION for full rationale.
  */
-export const TOKENS_LINT_ALIAS_BATCH = 500;
+export const TOKENS_LINT_ALIAS_BATCH = 3000;
 
 /**
  * Token budget for lint duplicate detection LLM check.
@@ -241,8 +269,13 @@ export const TOKENS_LINT_PAGE_FIX = 8000;
 
 /**
  * Token budget for lint orphan link fix (shorter prompt).
+ *
+ * v1.26.x PATCH #403: raised from 800 → 3000. Same reasoning-budget insurance
+ * pattern as TOKENS_LINT_ALIAS_BATCH above — short JSON `{strategy, path}`
+ * output on a reasoning-capable model burns the cap before content. 3000
+ * gives uniform reasoning headroom. See TOKENS_DEDUP_RESOLUTION for rationale.
  */
-export const TOKENS_LINT_ORPHAN_FIX = 800;
+export const TOKENS_LINT_ORPHAN_FIX = 3000;
 
 /**
  * Token budget for query step 0 (model detection, tiny call).
@@ -299,8 +332,13 @@ export const TOKENS_QUERY_SEED_SELECT = 2000;
  * the JSON output + any reasoning preamble for thinking models.
  *
  * Used by `generateQueryKeywords` in query-keywords.ts.
+ *
+ * v1.26.x PATCH #403: raised from 1000 → 3000. Same reasoning-budget
+ * insurance pattern — short JSON `{keywords: []}` output on a reasoning-
+ * capable model burns the cap before content. 3000 gives uniform reasoning
+ * headroom. See TOKENS_DEDUP_RESOLUTION for full rationale.
  */
-export const TOKENS_QUERY_KEYWORDS = 1000;
+export const TOKENS_QUERY_KEYWORDS = 3000;
 
 /**
  * Token budget for schema suggestion generation.
