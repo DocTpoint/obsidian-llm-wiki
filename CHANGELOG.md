@@ -34,6 +34,20 @@ Issue tracker had drifted from the v1.26.0 merge history (no `Closes #N` in PRs 
 - **#402** [providerOptions stripped] — `response_format` closed by `ca4a24d` (2026-07-29); `repetitionPenalty` split to #414.
 - **#399** — see Fixed section above.
 
+### Security
+
+- **24 Dependabot alerts closed via transitive devDep upgrade (Dependabot batch 2026-08-08).** All 24 alerts were in **transitive devDependencies** only — production runtime (`@ai-sdk/*`, `openai`, `anthropic`, etc.) was untouched. Bumped 4 root devDeps so the 4 vulnerable transitives resolve to safe versions:
+  - `fast-uri` `3.1.4` → **`3.1.5`** (added as direct devDep so pnpm hoists it; override updated) — closes 3 alerts (#1, #30, #31)
+  - `undici` `7.27.2` → **`8.10.0`** via `jsdom@^30.0.1` — closes **16 alerts** (#5-#11, #18-#27)
+  - `postcss` `8.5.15` → **`8.5.26`** via `vite@^8.2.1` (vitest peer re-resolved) — closes 3 alerts (#12, #34, #35)
+  - `vite` `8.0.13` → **`8.2.1`** via direct devDep — closes 2 alerts (#3, #4)
+  - Plus `ajv@^8.20.0` added to devDeps (pulls the safe `fast-uri`)
+  - Plus `eslint-plugin-obsidianmd@^0.4.1` + `vitest@^4.1.10` range-widened to latest
+
+  All 24 alerts now have `first_patched_version ≤ installed version` per Dependabot's metadata; GitHub auto-closes on next lockfile re-scan post-merge. Zero runtime impact (`fast-uri`/`undici`/`postcss`/`vite` never appear in `main.js` — verified by `grep -c` against the built bundle, 0 hits each). Gate 1 green on the new lockfile: lint 0/0, tsc 0, 2980 tests passing (217 files), build clean, css-lint 0 violations.
+
+  **Known CI-only carry-over:** npm-audit (registry-local advisory DB) flags an additional `brace-expansion@1.1.16` / `2.1.2` transitive reachability through `eslint-plugin-import` / `eslint-plugin-n` / `eslint-plugin-react` / `eslint-plugin-json-schema-validator`. GitHub Dependabot does NOT flag these (no open alert for `brace-expansion`). The npm `overrides` field syntax to cascade (`eslint-plugin-import > brace-expansion: 5.0.9`) is incompatible with pnpm's `parseCatalogProtocol` (`bareSpecifier.startsWith is not a function`) — flat overrides work in both, but flat overrides do not cascade into grand-children transitive deps on npm's side. pnpm's hoisting deduplicates everything to a single `5.0.9` via flat override. Resolving the npm-side carry-over requires either (a) migrating CI to pnpm, (b) using pnpm-only overrides via `pnpm.overrides` (subtly different field), or (c) replacing `eslint-plugin-import` / `eslint-plugin-n` / `eslint-plugin-react` with non-vulnerable alternatives. **Out of scope for v1.26.1** — the runtime bundle is unaffected, Dependabot considers it resolved.
+
 ### Fixed
 
 - **Six reasoning-budget-sensitive `TOKENS_*` caps raised to 3000 (Issue #403, PR #429).** Short-JSON output call sites (`{strategy, path}`, `{keywords: []}`, `{kind: "entity"}`) were sized for non-reasoning models; on reasoning-capable models the deliberation is billed against the same `max_tokens` budget as the answer, so the cap was burned before content. DocTpoint measurement on `gemma-4-12b / LM Studio / 2.4 KB source × 45 calls`: 14 truncated, 13 of those empty; `complementaryAppend` was 3/3 = 100% miss at its 600 cap. Bumped to 3000 uniformly: `TOKENS_DEDUP_RESOLUTION` 1000 → 3000, `TOKENS_MERGE_TRIAGE` 2000 → 3000, `TOKENS_COMPLEMENTARY_APPEND` 600 → 3000 (the three #403 primary sites), plus three same-pattern sites surfaced by the post-#403 audit pass: `TOKENS_LINT_ALIAS_BATCH` 500 → 3000, `TOKENS_LINT_ORPHAN_FIX` 800 → 3000, `TOKENS_QUERY_KEYWORDS` 1000 → 3000. ~50–80% reasoning headroom while keeping the cap well below the call's context window. Per-call reasoning-aware multiplier is deferred to v1.27.0's per-call `thinkingPolicy` enum (scope item 6).
