@@ -34,11 +34,29 @@ Issue tracker had drifted from the v1.26.0 merge history (no `Closes #N` in PRs 
 - **#402** [providerOptions stripped] — `response_format` closed by `ca4a24d` (2026-07-29); `repetitionPenalty` split to #414.
 - **#399** — see Fixed section above.
 
+### Fixed
+
+- **Six reasoning-budget-sensitive `TOKENS_*` caps raised to 3000 (Issue #403, PR #429).** Short-JSON output call sites (`{strategy, path}`, `{keywords: []}`, `{kind: "entity"}`) were sized for non-reasoning models; on reasoning-capable models the deliberation is billed against the same `max_tokens` budget as the answer, so the cap was burned before content. DocTpoint measurement on `gemma-4-12b / LM Studio / 2.4 KB source × 45 calls`: 14 truncated, 13 of those empty; `complementaryAppend` was 3/3 = 100% miss at its 600 cap. Bumped to 3000 uniformly: `TOKENS_DEDUP_RESOLUTION` 1000 → 3000, `TOKENS_MERGE_TRIAGE` 2000 → 3000, `TOKENS_COMPLEMENTARY_APPEND` 600 → 3000 (the three #403 primary sites), plus three same-pattern sites surfaced by the post-#403 audit pass: `TOKENS_LINT_ALIAS_BATCH` 500 → 3000, `TOKENS_LINT_ORPHAN_FIX` 800 → 3000, `TOKENS_QUERY_KEYWORDS` 1000 → 3000. ~50–80% reasoning headroom while keeping the cap well below the call's context window. Per-call reasoning-aware multiplier is deferred to v1.27.0's per-call `thinkingPolicy` enum (scope item 6).
+- **CHANGELOG v1.26.0 entry: `thinking` / `chat_template_kwargs` never reached the wire correction (Issue #420, PR #420).** Replaced the "SDK's `filter()` silently drops them" framing with the actual mechanism verified by DocTpoint: the SDK's `filter()` at `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:531-540` is a **passthrough** for undeclared keys (copies them verbatim), but it reads from `providerOptions[<provider id>]` (e.g. `lmstudio` / `deepseek`) while `buildProviderOptions` returns them under the hardcoded `openaiCompatible` key, which no shipped provider id matches — the fields were **misaddressed**, not filtered. `reasoningEffort: 'none'` is the only verified-working disable (it IS declared in the schema and emits as `reasoning_effort: 'none'` on the wire at `:541`).
+- **CHANGELOG + ROADMAP: Bedrock Stage 2 (SSO/Profile auth) planning entry recorded (Issue #425, PR #426).** Cancels the prior "≥3 user requests" gate. Implementation window v1.26.x PATCH / v1.27.0 via a zero-AWS-SDK path: hand-rolled IAM Identity Center OIDC (reusing the Codex OAuth skeleton) → `GetRoleCredentials` → temp IAM creds → hand-written SigV4 signer → existing `bedrock-mantle` endpoint. ~+10 KB bundle, zero new npm deps (vs the rejected PR #263's +1.2 MB). Issue #425 milestone: v1.27.0+ research. PR #263 author notified with the new decision ([comment 5218259440](https://github.com/green-dalii/obsidian-llm-wiki/pull/263#issuecomment-5218259440)).
+
+### Issue state (administrative)
+
+Issue tracker had drifted from the v1.26.0 merge history (no `Closes #N` in PRs #401 / #406 / #410 / #411 commit messages, so auto-close-on-merge never fired). Closed administratively on 2026-08-07:
+
+- **#382** [v1.26.0 hardening] — all 5 P0+P1 batches shipped in v1.26.0 via PRs #401 / #406 / #410 / #411.
+- **#328** [schema layer rethink] — Phase 1 closed by PR #331 (2026-07-22). Phase 2/3 deferred to v1.27.0+.
+- **#402** [providerOptions stripped] — `response_format` closed by `ca4a24d` (2026-07-29); `repetitionPenalty` split to #414.
+- **#399** — duplicate `sources:` frontmatter key (PR #405, commit `4c43cdfb`).
+
 ### Tracked in v1.26.x PATCH (no fix yet)
 
-- **#403** — `TOKENS_*` caps leak reasoning budget on reasoning-capable models. 1-commit fix pending DocTpoint calibration answers.
 - **#407** — `parseJsonResponse` parse failures indistinguishable from negative answers at 7-12 sites (high-blast: `path-resolution.ts:220` + `conversation-ingest.ts:332`). 3 repair modes proposed; awaiting DocTpoint reply.
-- **#414** — `repetitionPenalty` setting inert (split from #402). 2 repair paths under discussion.
+- **#414** — `repetitionPenalty` setting inert (split from #402). DocTpoint's per-backend measurement 2026-08-07 on LM Studio / gemma-4-12b confirmed: `repetition_penalty` is silently discarded on this backend; the correct spelling is `repeat_penalty` (llama.cpp style) for LM Studio / llama.cpp and `repetition_penalty` for vLLM / OpenRouter. Path = per-backend spelling transform. **Gap**: DeepSeek / Kimi / GLM / Ollama / vLLM unmeasured.
+
+### Awaiting DocTpoint
+
+- **PR #422** (`fix(#419): re-assert the page's own H1 after an LLM body rewrite`) — review found 2 CONFIRMED silent-corruption bugs in branch 3 of `reassertH1` (`String.replace` `$`-escape processing + first-occurrence substring replace). 1-line fix (match index + `slice`) + 2 tests requested in [comment 5223620379](https://github.com/green-dalii/obsidian-llm-wiki/pull/422#issuecomment-5223620379). No merge until pushed.
 
 ### Planned — Bedrock Stage 2 (SSO/Profile auth, 2026-08-07 decision)
 
