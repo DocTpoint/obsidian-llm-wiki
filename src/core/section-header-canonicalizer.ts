@@ -247,12 +247,20 @@ export function preserveExistingSections(
  * Pure, no LLM, O(lines).
  */
 export function reassertH1(existingBody: string, rewrite: string): string {
-  const previous = existingBody.match(/^# .*/m)?.[0];
+  const previous = /^# .*/m.exec(existingBody)?.[0];
   if (previous === undefined) return rewrite;
 
-  const current = rewrite.match(/^# .*/m)?.[0];
-  if (current === previous) return rewrite;
-  if (current !== undefined) return rewrite.replace(current, previous);
+  const current = /^# .*/m.exec(rewrite);
+  if (current === null) return `${previous}\n\n${rewrite.replace(/^\s+/, '')}`;
+  if (current[0] === previous) return rewrite;
 
-  return `${previous}\n\n${rewrite.replace(/^\s+/, '')}`;
+  // Splice at the match position instead of `replace(current[0], previous)`: a
+  // string replacement interprets `$` escapes in the title it inserts (`# Kosten
+  // $$500` would arrive as `# Kosten $500`, `$&` as the whole matched title), and
+  // it substitutes the first occurrence ANYWHERE in the body — a preceding line
+  // quoting the title mid-line takes the restore while the real H1 keeps the
+  // model's version.
+  const head = rewrite.slice(0, current.index);
+  const tail = rewrite.slice(current.index + current[0].length);
+  return `${head}${previous}${tail}`;
 }

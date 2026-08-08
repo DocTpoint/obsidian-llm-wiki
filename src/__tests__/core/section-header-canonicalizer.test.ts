@@ -248,4 +248,26 @@ describe('reassertH1 (the title is not the model\'s call)', () => {
     const rewrite = '## Beschreibung\nNeu';
     expect(reassertH1(existing, rewrite)).toBe(rewrite);
   });
+
+  // The restore is spliced in at the match position, not handed to
+  // `String.replace` as a replacement string — which would read `$$` as one `$`
+  // and `$&` as the title it just matched, mutating exactly the punctuation this
+  // function exists to keep.
+  it('restores a title containing `$` escapes verbatim', () => {
+    const existing = '# Kosten $$500 und $& im Titel\n\n## Beschreibung\nAlt';
+    const rewrite = '# Kosten\n\n## Beschreibung\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(
+      '# Kosten $$500 und $& im Titel\n\n## Beschreibung\nNeu',
+    );
+  });
+
+  // ...and at the match POSITION, so a line that merely quotes the title earlier
+  // in the body is not mistaken for the H1.
+  it('changes the H1 only, not an earlier line quoting it mid-line', () => {
+    const existing = '# Sulforaphan\n\n## Beschreibung\nAlt';
+    const rewrite = 'Siehe # Sulforaphan-Dosierung im Anhang.\n# Sulforaphan-Dosierung\n\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(
+      'Siehe # Sulforaphan-Dosierung im Anhang.\n# Sulforaphan\n\nNeu',
+    );
+  });
 });
