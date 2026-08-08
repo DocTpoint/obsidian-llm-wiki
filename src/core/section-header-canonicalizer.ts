@@ -247,12 +247,12 @@ export function preserveExistingSections(
  * Pure, no LLM, O(lines).
  */
 export function reassertH1(existingBody: string, rewrite: string): string {
-  const previous = /^# .*/m.exec(existingBody)?.[0];
+  const previous = findH1(existingBody)?.text;
   if (previous === undefined) return rewrite;
 
-  const current = /^# .*/m.exec(rewrite);
+  const current = findH1(rewrite);
   if (current === null) return `${previous}\n\n${rewrite.replace(/^\s+/, '')}`;
-  if (current[0] === previous) return rewrite;
+  if (current.text === previous) return rewrite;
 
   // Splice at the match position instead of `replace(current[0], previous)`: a
   // string replacement interprets `$` escapes in the title it inserts (`# Kosten
@@ -260,7 +260,64 @@ export function reassertH1(existingBody: string, rewrite: string): string {
   // it substitutes the first occurrence ANYWHERE in the body — a preceding line
   // quoting the title mid-line takes the restore while the real H1 keeps the
   // model's version.
-  const head = rewrite.slice(0, current.index);
-  const tail = rewrite.slice(current.index + current[0].length);
+  const head = rewrite.slice(0, current.start);
+  const tail = rewrite.slice(current.end);
   return `${head}${previous}${tail}`;
+}
+
+/**
+ * Locate a body's H1 — the line, and where it sits (#435).
+ *
+ * A line starting with `# ` is not automatically the title. It is a comment when
+ * it stands inside a fenced code block (`# clone the repo` in a bash example) or
+ * inside a `---` block the model echoed around the body, and `reassertH1` used
+ * to accept both: on the read side a shell comment could be adopted as the
+ * page's previous title, and on the write side it took the restore while the
+ * model's title survived above it — the opposite of the contract.
+ *
+ * A `---` line opens a skipped block only in frontmatter position, i.e. as the
+ * body's first content line; further down it is a thematic break and the lines
+ * after it are ordinary body. Fences are closed by their own opening marker, so
+ * a ``` inside a ~~~ block does not end it.
+ *
+ * Pure, single pass, O(lines).
+ */
+function findH1(body: string): { text: string; start: number; end: number } | null {
+  let offset = 0;
+  let fence: string | null = null;
+  let inFrontmatter = false;
+  let seenContent = false;
+
+  for (const line of body.split('\n')) {
+    const start = offset;
+    offset += line.length + 1; // +1 for the '\n' that split() consumed
+    const trimmed = line.trim();
+
+    if (inFrontmatter) {
+      if (trimmed === '---') inFrontmatter = false;
+      continue;
+    }
+    if (fence !== null) {
+      if (trimmed.startsWith(fence)) fence = null;
+      continue;
+    }
+    if (trimmed === '') continue;
+
+    if (!seenContent && trimmed === '---') {
+      seenContent = true;
+      inFrontmatter = true;
+      continue;
+    }
+    seenContent = true;
+
+    const opener = /^(```|~~~)/.exec(trimmed);
+    if (opener) {
+      fence = opener[1];
+      continue;
+    }
+
+    if (line.startsWith('# ')) return { text: line, start, end: start + line.length };
+  }
+
+  return null;
 }

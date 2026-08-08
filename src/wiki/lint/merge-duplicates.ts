@@ -4,6 +4,7 @@ import { TOKENS_LINT_PAGE_FIX, WIKI_SUBFOLDERS } from '../../constants';
 import { buildSystemPrompt } from '../system-prompts';
 import { parseFrontmatter, enforceFrontmatterConstraints, serializeFrontmatter } from '../../core/frontmatter';
 import { parseJsonResponse } from '../../core/json';
+import { reassertH1 } from '../../core/section-header-canonicalizer';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
@@ -107,7 +108,13 @@ export async function mergeDuplicatePages(
           console.error(`mergeDuplicatePages: JSON parse failed for ${sourcePath} → ${targetPath}`, parseErr);
         }
         if (parsed?.body) {
-          mergedBody = parsed.body.trim();
+          // #435 Item 2: this path hands the model a body and adopts its answer,
+          // exactly like the merge and related-page paths in #419 — and the
+          // title line is inside that window with no layer owning it. Softer
+          // here (the surviving page's title is already captured into
+          // `aliases:` above, so identity survives a lost H1) but the same
+          // class, and the same deterministic repair applies.
+          mergedBody = reassertH1(targetBody, parsed.body.trim());
           llmMergeSucceeded = true;
         } else if (!parsed) {
           console.warn(`mergeDuplicatePages: JSON parse returned null for ${sourcePath} → ${targetPath}, falling back to programmatic merge`);
