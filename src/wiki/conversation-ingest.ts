@@ -76,8 +76,13 @@ export class ConversationIngestor {
       this.ctx.onProgress?.('Checking for existing knowledge...');
       try {
         const dedupResult = await this.checkDedup(existingWikiIndex, conversationText);
+        // Issue #398: emit a console.warn so DevTools shows the LLM's actual
+        // dedup verdict when the user clicks Save and gets a 0/0/0 notice.
+        // The notice itself is surfaced via QueryView.saveToWiki (see
+        // QueryView-class.ts — `report.errorMessage`).
+        console.debug('[conversation-ingest] dedup verdict:', dedupResult);
         if (dedupResult === 'fully_redundant') {
-          console.debug('Conversation fully covered by existing Wiki, skipping save');
+          console.warn('[conversation-ingest] save skipped: dedup=fully_redundant');
           this.ctx.onProgress?.('This knowledge already exists in Wiki');
           return {
             sourceFile: `Conversation: ${history.messages[0]?.content?.substring(0, 50) || 'unknown'}`,

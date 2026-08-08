@@ -245,6 +245,7 @@ export const ZH_HANT_TEXTS = {
     lintRetrying: '出錯後重試中（{attempt}/{max}）...',
     lintAnalyzingLLM: 'LLM 正在分析 Wiki 健康狀態...',
     saveToWikiSuccess: '對話已儲存到Wiki！',
+    querySaveAlreadyExists: '提示：未寫入任何內容（該知識已存在於 Wiki 中）：',
     saveSummary: '{entities} 個實體, {concepts} 個概念, {pages} 個頁面',
     aliasAdded: '已為頁面\'{page}\'新增別名\'{alias}\'',
 

@@ -247,6 +247,7 @@ export const KO_TEXTS = {
     lintRetrying: '오류 후 재시도 ({attempt}/{max})...',
     lintAnalyzingLLM: 'LLM이 위키 건강 상태 분석 중...',
     saveToWikiSuccess: '대화가 위키에 저장되었습니다!',
+    querySaveAlreadyExists: '알림: 아무것도 저장되지 않았습니다(Wiki에 이미 지식이 존재함):',
     saveSummary: '{entities} 개체, {concepts} 개념, {pages} 페이지',
     aliasAdded: '페이지 \'{page}\'에 별칭 \'{alias}\' 추가됨',
 

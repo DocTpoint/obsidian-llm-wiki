@@ -246,6 +246,7 @@ export const JA_TEXTS = {
     lintRetrying: 'エラー後再試行中（{attempt}/{max}）...',
     lintAnalyzingLLM: 'LLMがWikiの健全性を分析中...',
     saveToWikiSuccess: '会話をWikiに保存しました！',
+    querySaveAlreadyExists: '注意：何も書き込まれませんでした（ナレッジは既にWikiに存在します）：',
     saveSummary: '{entities} エンティティ, {concepts} コンセプト, {pages} ページ',
     aliasAdded: 'ページ「{page}」に別名「{alias}」を追加しました',
 
