@@ -126,6 +126,7 @@ export async function updateRelatedPage(
   if (!client) throw new Error('LLM client not initialized');
 
   const updatedBody = await client.createMessage({
+    task: 'related-page',
     model: resolveModelForTask(ctx.settings, 'ingest'),
     max_tokens: TOKENS_PAGE_GENERATION,
     system: await ctx.buildSystemPrompt('related'),

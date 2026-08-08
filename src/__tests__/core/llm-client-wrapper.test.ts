@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { wrapWithAdvancedSettings, type WrapperSettings } from '../../llm-client-wrapper';
 import type { LLMClient } from '../../types';
+import { snapshotTaskUsage, taskUsageSince } from '../../core/llm-task-usage';
 
 // The wrapper is where a setting becomes a request field, and every field it
 // forwards is one the caller could also have set. Two rules hold for all of
@@ -64,5 +65,39 @@ describe('wrapWithAdvancedSettings — settings become request fields', () => {
     // `temperature: 0` is the setting that matters most for extraction and is
     // the one a truthiness check drops.
     expect(sent({ extractionTemperature: 0 }).temperature).toBe(0);
+  });
+});
+
+// The wrapper is the one seam every call passes through, which is why the
+// per-step accounting lives here rather than at the call sites. These two
+// assert the seam itself: that the label reaches the ledger, and that a call
+// which threw is still counted — its time was spent either way, and a step
+// that fails is exactly the one worth seeing in the table.
+describe('wrapWithAdvancedSettings — per-step accounting', () => {
+  const settings = { maxTokensPerCall: 0 } as WrapperSettings;
+
+  it('records the call under the label the caller gave', async () => {
+    const { client } = clientSpy();
+    const before = snapshotTaskUsage();
+    await wrapWithAdvancedSettings(client, settings)
+      .createMessage({ ...CALL, task: 'merge-triage' });
+    expect(new Map(taskUsageSince(before)).get('merge-triage')?.calls).toBe(1);
+  });
+
+  it('records an unlabelled call under "untagged"', async () => {
+    const { client } = clientSpy();
+    const before = snapshotTaskUsage();
+    await wrapWithAdvancedSettings(client, settings).createMessage({ ...CALL });
+    expect(new Map(taskUsageSince(before)).get('untagged')?.calls).toBe(1);
+  });
+
+  it('records a call that threw, because the time was spent regardless', async () => {
+    const createMessage = vi.fn(async () => { throw new Error('boom'); });
+    const client = { createMessage } as unknown as LLMClient;
+    const before = snapshotTaskUsage();
+    await expect(
+      wrapWithAdvancedSettings(client, settings).createMessage({ ...CALL, task: 'dedup' }),
+    ).rejects.toThrow('boom');
+    expect(new Map(taskUsageSince(before)).get('dedup')?.calls).toBe(1);
   });
 });

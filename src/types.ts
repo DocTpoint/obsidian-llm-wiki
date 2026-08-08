@@ -655,6 +655,14 @@ export interface LLMClient {
     messages: Array<{ role: 'user' | 'assistant'; content: string | MessageContentPart[] }>;
     response_format?: { type: 'json_object' };
     cacheBreakpoint?: number;
+    /**
+     * Which step of the pipeline is asking. Purely for accounting: an ingest is
+     * ten different call sites with different shapes — some write prose and are
+     * decode-bound, some answer in a dozen tokens over a long prompt — and a
+     * single total cannot tell them apart, so it cannot say where the time went.
+     * Clients ignore it; the CLI groups its usage report by it.
+     */
+    task?: string;
     maxTokensPerCall?: number;  // Issue #75: cap for truncation retry
     enableThinking?: boolean;   // ROADMAP P3 #12: allow thinking for thinking-capable models
     temperature?: number;       // Issue #128: per-request sampling temperature

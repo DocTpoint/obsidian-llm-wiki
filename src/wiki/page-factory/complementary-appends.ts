@@ -236,6 +236,7 @@ export async function callPerSectionAppend(
 
   try {
     const response = await client.createMessage({
+      task: 'complementary',
       model: resolveModelForTask(ctx.settings, 'ingest'),
       max_tokens: TOKENS_COMPLEMENTARY_APPEND,
       system: await ctx.buildSystemPrompt('merge'),

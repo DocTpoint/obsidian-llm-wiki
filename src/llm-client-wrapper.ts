@@ -15,6 +15,7 @@
 
 import { LLMClient } from './types';
 import { capMaxTokens } from './core/token-cap';
+import { recordTaskUsage } from './core/llm-task-usage';
 
 export interface WrapperSettings {
   maxTokensPerCall: number;
@@ -56,14 +57,28 @@ export function wrapWithAdvancedSettings(
   // methods (createMessageStream, listModels) from the original client.
   const wrapper = Object.create(client) as LLMClient;
   wrapper.createMessage = async (params) => {
-    return client.createMessage({
-      ...params,
-      ...(capTokens ? { max_tokens: capMaxTokens(params.max_tokens, { maxTokensPerCall: settings.maxTokensPerCall }), maxTokensPerCall: settings.maxTokensPerCall } : {}),
-      ...(params.temperature === undefined && settings.extractionTemperature !== undefined ? { temperature: settings.extractionTemperature } : {}),
-      ...(params.top_p === undefined && settings.extractionTopP !== undefined ? { top_p: settings.extractionTopP } : {}),
-      ...(params.repetition_penalty === undefined && settings.repetitionPenalty !== undefined ? { repetition_penalty: settings.repetitionPenalty } : {}),
-      ...(params.seed === undefined && settings.samplingSeed !== undefined ? { seed: settings.samplingSeed } : {}),
-    });
+    const startedAt = Date.now();
+    // The one seam every call passes through (`createLLMClient` always returns
+    // this wrapper), so the step's name is logged here rather than at twelve
+    // call sites. Without it the debug log prints a provider, a model and a
+    // prompt length per call and never says which step asked — and an ingest
+    // is tens of calls. Stubbed out in production builds along with every
+    // other `console.debug`.
+    console.debug(`[llm] task=${params.task ?? 'untagged'} model=${params.model} max_tokens=${params.max_tokens}`);
+    // Timed around the whole call, not on success: a call that throws still
+    // spent the time, and leaving it out would flatter whichever step fails.
+    try {
+      return await client.createMessage({
+        ...params,
+        ...(capTokens ? { max_tokens: capMaxTokens(params.max_tokens, { maxTokensPerCall: settings.maxTokensPerCall }), maxTokensPerCall: settings.maxTokensPerCall } : {}),
+        ...(params.temperature === undefined && settings.extractionTemperature !== undefined ? { temperature: settings.extractionTemperature } : {}),
+        ...(params.top_p === undefined && settings.extractionTopP !== undefined ? { top_p: settings.extractionTopP } : {}),
+        ...(params.repetition_penalty === undefined && settings.repetitionPenalty !== undefined ? { repetition_penalty: settings.repetitionPenalty } : {}),
+        ...(params.seed === undefined && settings.samplingSeed !== undefined ? { seed: settings.samplingSeed } : {}),
+      });
+    } finally {
+      recordTaskUsage(params.task, Date.now() - startedAt);
+    }
   };
   return wrapper;
 }

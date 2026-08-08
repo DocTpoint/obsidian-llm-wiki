@@ -205,6 +205,7 @@ export async function resolvePagePath(
     });
 
     const response = await client.createMessage({
+      task: 'dedup',
       model: resolveModelForTask(ctx.settings, 'ingest'),
       max_tokens: TOKENS_DEDUP_RESOLUTION,
       // Slim selector: the dedup decision is same-type and the matching
