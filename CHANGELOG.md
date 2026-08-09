@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > than as a standalone patch; the patch slot stays unused. See the v1.26.0
 > entry below for the substantive notes.
 
+## [1.26.2] - 2026-08-09
+
+A surgical PATCH that closes the pre-submission blind spot exposed by the v1.26.1 Obsidian Bot pre-review. The bot scans the **whole repo `.ts` tree** while local `pnpm lint` only scans `src/` — and v1.26.1 shipped a blocking `no-unsafe-call` Error in `tools/llm-wiki-cli/src/obsidian.ts` that local lint never saw. **No behaviour change, no new settings, no migration.** The headline: the CLI's `obsidian.ts:117` `await import()` chain is now type-safe AND exempt from `obsidianmd/no-nodejs-modules`, and a `pnpm lint:tools-bot` script closes the local blind spot so the next release doesn't need a Bot trip to surface what local lint should have caught.
+
+### Fixed
+
+- **CLI `obsidian.ts:117` blocking `unsafe-call` Error (`#442`).** `await import(<dynamic-arg>)` left `request` as `any`, cascading 6 `unsafe-*` warnings and triggering `no-unsafe-call` → Error. Split into two literal `await import('node:https')` / `await import('node:http')` branches with explicit `typeof import('node:http').request` annotation — Error + the entire unsafe-* cascade disappear in one stroke.
+- **`obsidian.ts:158` `requestUrl().json` contract (`#442`).** `JSON.parse(text) as unknown` + try/catch that re-throws with the status context, matching Obsidian host's behaviour on bad JSON.
+- **`main.ts:443` `loadSettings` `JSON.parse` argument type (`#442`).** Now typed as `Partial<LLMWikiSettings> | null` to match `applySettingsMigrations`' declared parameter; eliminates `no-unsafe-argument`.
+- **`main.ts:647` `globalThis.crypto.subtle` → `crypto.subtle` (`#442`).** Node 18+ exposes `crypto` as a global; the explicit `globalThis.` prefix was tripping `obsidianmd/no-global-this` (no-disable rule).
+- **`vault.ts:291` redundant `as Record<string, unknown> | null` removed (`#442`).** `parseFrontmatter` already returns a `FrontmatterData | null` whose index signature is compatible — Bot flagged as no-op assertion.
+- **`node-globals.ts:28` `(...args: any[])` → `(...args: unknown[])` (`#442`).** `Console` constructor accepts `unknown[]`; eliminates a Bot-flagged bare `any` and the `Unexpected any` warning.
+
+### Added
+
+- **Local `tools/` blind-spot closure: `pnpm lint:tools-bot` (`#442`).** New `eslint.tools-bot.config.mjs` (obsidianmd recommended ruleset scoped to `tools/**`, type context from `tools/llm-wiki-cli/tsconfig.json`, Node globals declared) and a matching `package.json` script (`|| true`, informational — never gates CI). Developers now see the Bot's view of the CLI tree locally instead of discovering it post-submission.
+- **`Platform.isDesktop` AST guards on the three runtime-loaded `node:*` imports (`#442`).** `obsidian.ts:requestUrl()` and `node-globals.ts:plainConsole()` each carry a function-start `if (!Platform.isDesktop) throw new Error(...)`. The CLI's own Platform shim hardcodes `isDesktop: true`, so the guards never throw at runtime — they declare the desktop-only invariant the `obsidianmd/no-nodejs-modules` rule requires (verified against the rule source; bare dynamic imports are **not** exempt, contrary to the assumption baked into PR #418/#433's patterns). Mirrors `src/llm-sdk/openai-codex/loopback-flow.ts:156-160`.
+
+### Notes for release engineering
+
+- **Release skill v1.7.0 now mandates an Obsidian Bot pre-review (Step 6b.5, HARD STOP ②) between tag and publish.** This is the gate that should have caught v1.26.1's pre-publish — making it explicit instead of relying on the maintainer remembering to submit. See [[feedback_obsidianmd_no_nodejs_guard_detection]] for the rule-detection mechanism.
+- **All 7 remaining `tools/` warnings are accepted-structural** (static `node:fs/path/fs-promises/util` imports, `.obsidian` literal, `console.log` output interface, `globalThis` shim). Dynamic form would break the 14 parser-contract tests that pin `parseCliOptions` as sync. The honest long-term fix is the **CLI split into a separate repo** ([[project_v1_27_0_cli_split_planning]]).
+
 ## [1.26.1] - 2026-08-08
 
 ### Added
