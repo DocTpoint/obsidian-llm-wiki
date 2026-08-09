@@ -393,3 +393,27 @@ describe('updateRelatedPage — placeholder rendering', () => {
     // test pins the bug it is about.
   });
 });
+
+// #419 — end-to-end on this call site: the model returns a body that starts at
+// the first `##`, and the written page must still carry its title.
+describe('updateRelatedPage — H1 survives a rewrite that omits it', () => {
+  it('writes the page\'s own title back when the reply has none', async () => {
+    const withTitle = `---\ncreated: 2026-07-10\nupdated: 2026-07-10\nsources:\n  - "[[existing]]"\ntags: []\n---\n\n# X — a title the file name cannot reproduce\n\n## Description\nOld body.\n`;
+    const ctx = makeCtx({ pageContent: withTitle, llmResponse: '## Description\nNew body.' });
+
+    const result = await updateRelatedPage(
+      ctx,
+      PAGE_TITLE,
+      makeAnalysis(PAGE_TITLE),
+      { path: 'src.md', basename: 'src' },
+    );
+
+    expect(result).toBe(true);
+    const written = ctx.written.get(PAGE_PATH) ?? '';
+    expect(written).toContain('# X — a title the file name cannot reproduce');
+    expect(written).toContain('New body.');
+    // Restored, not merely retained somewhere: the title leads the body.
+    const body = written.split('---').slice(2).join('---');
+    expect(body.trimStart().startsWith('# X —')).toBe(true);
+  });
+});

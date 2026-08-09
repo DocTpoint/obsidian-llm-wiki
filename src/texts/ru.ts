@@ -269,6 +269,7 @@ export const RU_TEXTS = {
     lintRetrying: 'Повтор ({attempt}/{max}) после ошибки...',
     lintAnalyzingLLM: 'LLM анализирует здоровье Wiki...',
     saveToWikiSuccess: 'Беседа сохранена в Wiki!',
+    querySaveAlreadyExists: 'Примечание: ничего не записано (знание уже существует в Wiki):',
     saveSummary: '{entities} сущностей, {concepts} концепций, {pages} страниц',
     aliasAdded: 'Псевдоним «{alias}» добавлен на страницу «{page}»',
 

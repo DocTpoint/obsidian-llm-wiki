@@ -139,7 +139,7 @@ That's it. The plugin modifies nothing in your original notes — only creates n
 - **🏷️ Mandatory aliases** — every page ships with at least one alias (translation, abbreviation, variant) so cross-language duplicate detection works.
 - **🔄 Tiered duplicate detection** — Tier 1 (direct name match: cross-language, abbreviation, high-similarity titles) is always verified; Tier 2 (shared links, medium similarity) fills remaining token budget.
 - **🧩 Smart merge & contradiction state** — duplicates merge while preserving aliases; contradictions are flagged with source attribution; `reviewed: true` pages are protected from overwrite.
-- **🎨 Custom tag vocabulary** — define your own entity-type and concept-type tag lists in Settings → Wiki → Tag Vocabulary → *Custom*. The vocabulary is a **schema injection hint** for the LLM, not a write-time enforcement gate — small/local models may still drift, and the Lint diagnostic surfaces those pages so you can fix them. (Schema enforcement is being designed for v1.26.0+; see the design anchor.)
+- **🎨 Custom tag vocabulary** — define your own entity-type and concept-type tag lists in Settings → Wiki → Tag Vocabulary → *Custom*. The vocabulary is a **schema injection hint** for the LLM, not a write-time enforcement gate — small/local models may still drift, and the Lint diagnostic surfaces those pages so you can fix them. (Schema enforcement is being designed for v1.27.0+; see the design anchor.)
 
 ### 📄 PDF ingest (v1.25.0+)
 
@@ -354,7 +354,9 @@ If LLM-Wiki has become a meaningful part of your knowledge workflow:
 
 Sponsorship is entirely optional. The plugin stays Apache-2.0-licensed and feature-complete regardless.
 
-Thanks to [@jameses-cyber](https://github.com/jameses-cyber) and [@issaqua](https://github.com/issaqua) for supporting the project.
+Thanks to the following for supporting the project:
+
+[@jameses-cyber](https://github.com/jameses-cyber), [@issaqua](https://github.com/issaqua), Dikson Choi
 
 ---
 

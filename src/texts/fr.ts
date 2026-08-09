@@ -248,6 +248,7 @@ export const FR_TEXTS = {
     lintRetrying: 'Nouvelle tentative ({attempt}/{max}) après erreur...',
     lintAnalyzingLLM: "L'IA analyse la santé du wiki...",
     saveToWikiSuccess: 'Conversation enregistrée dans le wiki !',
+    querySaveAlreadyExists: "Remarque : rien n'a été écrit (la connaissance existe déjà dans le wiki) :",
     saveSummary: '{entities} entités, {concepts} concepts, {pages} pages',
     aliasAdded: "Alias '{alias}' ajouté à la page '{page}'",
 

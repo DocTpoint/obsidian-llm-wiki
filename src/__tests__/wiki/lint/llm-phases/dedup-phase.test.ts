@@ -941,3 +941,85 @@ describe('runDedupPhase — batch failure diagnostic (throwOnEmpty)', () => {
     }
   });
 });
+
+// ── runDedupPhase — in-scan concurrency halving (v1.26.x PATCH CR-1) ───
+//
+// Regression guard for the dedup-phase halving counter being declared
+// INSIDE the chunk-iteration for-loop (where it reset every chunk).
+// See [[feedback_dedup_phase_halving_dead_code]] for the post-mortem;
+// the hoist to dedup-phase.ts:415-416 is the fix.
+
+describe('runDedupPhase — in-scan concurrency halving (CR-1 regression guard)', () => {
+  it('halves concurrency after 2 consecutive throttled chunks', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // 4 caseVariant pairs → 4 tier-1 candidates.
+    const wikiFiles: Array<{ path: string; basename: string }> = [
+      { path: 'wiki/entities/alpha.md', basename: 'alpha.md' },
+      { path: 'wiki/entities/Alpha.md', basename: 'Alpha.md' },
+      { path: 'wiki/entities/beta.md', basename: 'beta.md' },
+      { path: 'wiki/entities/Beta.md', basename: 'Beta.md' },
+      { path: 'wiki/entities/gamma.md', basename: 'gamma.md' },
+      { path: 'wiki/entities/Gamma.md', basename: 'Gamma.md' },
+      { path: 'wiki/entities/delta.md', basename: 'delta.md' },
+      { path: 'wiki/entities/Delta.md', basename: 'Delta.md' },
+    ];
+    const pageMap = makePageMap(
+      wikiFiles.map(f => [
+        f.path,
+        `---\ntype: entity\n---\n# ${f.basename.replace('.md', '')}\nshared content about the same concept for duplicate detection`,
+      ])
+    );
+
+    // 1st call per prompt → '' (soft-throttle); 2nd → valid JSON (recovery).
+    // Same dedup prompt is reused for the 2-attempt retry, so the call
+    // counts per prompt: call1 = throttle, call2 = recovery. Both chunks
+    // therefore record softThrottleDetected = true.
+    const callCountsByPrompt = new Map<string, number>();
+    const createMessage = vi.fn().mockImplementation(async (args: { messages: Array<{ content: string }> }) => {
+      const promptKey = args.messages[0].content;
+      const callNum = (callCountsByPrompt.get(promptKey) ?? 0) + 1;
+      callCountsByPrompt.set(promptKey, callNum);
+      if (callNum === 1) return ''; // soft-throttle
+      return '{"duplicates":[]}'; // recovery
+    });
+    const client = { createMessage } as unknown as LLMClient;
+
+    const ctx = makeLintPhaseContext({
+      llmClient: () => client,
+      // Splitter math (dedup-phase.ts:274-278): with 4 candidates,
+      // chunkSize starts at min(LINT_DEDUP_BATCH_SIZE=50, 4) = 4.
+      // 4*200 + 7000 = 7800 > 7000 budget → halve to 2.
+      // 2*200 + 7000 = 7400 > 7000 → halve to 1 (while exits).
+      // Result: 4 batches of 1 candidate each.
+      buildSystemPrompt: async () => 'X'.repeat(7000),
+      // pageGenerationConcurrency = 2 → the outer for-loop iterates
+      // 2 times (i += 2 per chunk): chunk 1 = batches 1-2 (parallel),
+      // chunk 2 = batches 3-4 (parallel). Both chunks throttle →
+      // consecutiveThrottleChunks reaches 2 → halving fires.
+      settings: {
+        ...makeLintPhaseContext().settings,
+        pageGenerationConcurrency: 2,
+      } as LintPhaseContext['settings'],
+    });
+
+    try {
+      await runDedupPhase(ctx, { wikiFiles, pageMap }, () => {});
+
+      // Each of the 4 batches must have retried (call count >= 2 per prompt).
+      // This sanity-checks the fixture actually exercised the retry path.
+      expect(createMessage.mock.calls.length).toBeGreaterThanOrEqual(8);
+
+      // Regression guard: after 2 consecutive throttled chunks, halving
+      // must fire and the warn line must surface.
+      const halvingWarnings = warnSpy.mock.calls.filter(args =>
+        typeof args[0] === 'string'
+        && args[0].includes('temporarily reducing in-scan concurrency')
+        && args[0].includes('2 → 1')
+      );
+      expect(halvingWarnings.length).toBeGreaterThan(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});

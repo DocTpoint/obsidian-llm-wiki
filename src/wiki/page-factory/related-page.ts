@@ -26,6 +26,7 @@ import {
   canonicalizeSectionHeaders,
   preserveExistingSections,
   stripUnknownSections,
+  reassertH1,
 } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
 import { getSectionLabels } from '../system-prompts';
@@ -126,6 +127,7 @@ export async function updateRelatedPage(
   if (!client) throw new Error('LLM client not initialized');
 
   const updatedBody = await client.createMessage({
+    task: 'related-page',
     model: resolveModelForTask(ctx.settings, 'ingest'),
     max_tokens: TOKENS_PAGE_GENERATION,
     system: await ctx.buildSystemPrompt('related'),
@@ -161,6 +163,11 @@ export async function updateRelatedPage(
     labels.mentions_in_source,
   );
 
+  // #419: the guard above owns `##` blocks only, so the title line falls
+  // between the layers — the model is asked for the whole body and the reply
+  // routinely starts at the first `##`. Restore the page's own H1.
+  const titledBody = reassertH1(promptBody, guardedBody);
+
   // 2. Assemble: programmatic frontmatter + LLM body + Mentions section.
   // Issue #267 established a non-lossy re-ingest on the merge path, but this
   // path never had it: the Mentions section lives in the body handed to the LLM,
@@ -171,7 +178,7 @@ export async function updateRelatedPage(
   // the accumulated mentions are recovered from the unstripped page.
   await ctx.createOrUpdateFile(
     page.path,
-    await assembleFinalContent(ctx, frontmatter, guardedBody, newInfo, sourceFile, existingBody),
+    await assembleFinalContent(ctx, frontmatter, titledBody, newInfo, sourceFile, existingBody),
     'updateRelatedPage:llm-body-rewrite',
   );
   return true;

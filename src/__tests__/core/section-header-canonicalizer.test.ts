@@ -4,6 +4,7 @@ import {
   classifyHeader,
   preserveExistingSections,
   stripUnknownSections,
+  reassertH1,
 } from '../../core/section-header-canonicalizer';
 
 describe('canonicalizeSectionHeaders (deterministic repair of LLM-garbled section headers)', () => {
@@ -309,5 +310,96 @@ describe('stripUnknownSections (drop prompt-scaffolding sections the model copie
     const r = stripUnknownSections(canon, DE);
     expect(r).toContain('## Erwähnungen in der Quelle');
     expect(r).not.toContain('Active Tag Vocabulary');
+  });
+});
+
+// #419 — the title line sits inside the rewrite window while no layer owns it.
+// `preserveExistingSections` guards `##` blocks only (its own test above pins
+// that), so a reply that starts at the first `##` silently drops the H1.
+describe('reassertH1 (the title is not the model\'s call)', () => {
+  it('prepends the page\'s own H1 when the rewrite dropped it', () => {
+    const existing = '# Silent Inflammation\n\nLead.\n\n## Beschreibung\nAlt';
+    const rewrite = '## Beschreibung\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe('# Silent Inflammation\n\n## Beschreibung\nNeu');
+  });
+
+  it('restores the previous title when the rewrite returned a different one', () => {
+    const existing = '# Sulforaphan\n\n## Beschreibung\nAlt';
+    const rewrite = '# Sulforaphan-Dosierung\n\n## Beschreibung\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe('# Sulforaphan\n\n## Beschreibung\nNeu');
+  });
+
+  it('is a no-op when the rewrite kept the title', () => {
+    const body = '# Sulforaphan\n\n## Beschreibung\nText';
+    expect(reassertH1(body, body)).toBe(body);
+  });
+
+  // The file name is a lossy slug of the title, so a synthesized `# <file name>`
+  // would flatten punctuation on every page that has a title the slug cannot
+  // reproduce. Nothing is invented: a page that never had an H1 keeps none.
+  it('invents no title when the page never had one', () => {
+    const existing = '## Beschreibung\nAlt';
+    const rewrite = '## Beschreibung\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(rewrite);
+  });
+
+  // The restore is spliced in at the match position, not handed to
+  // `String.replace` as a replacement string — which would read `$$` as one `$`
+  // and `$&` as the title it just matched, mutating exactly the punctuation this
+  // function exists to keep.
+  it('restores a title containing `$` escapes verbatim', () => {
+    const existing = '# Kosten $$500 und $& im Titel\n\n## Beschreibung\nAlt';
+    const rewrite = '# Kosten\n\n## Beschreibung\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(
+      '# Kosten $$500 und $& im Titel\n\n## Beschreibung\nNeu',
+    );
+  });
+
+  // ...and at the match POSITION, so a line that merely quotes the title earlier
+  // in the body is not mistaken for the H1.
+  it('changes the H1 only, not an earlier line quoting it mid-line', () => {
+    const existing = '# Sulforaphan\n\n## Beschreibung\nAlt';
+    const rewrite = 'Siehe # Sulforaphan-Dosierung im Anhang.\n# Sulforaphan-Dosierung\n\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(
+      'Siehe # Sulforaphan-Dosierung im Anhang.\n# Sulforaphan\n\nNeu',
+    );
+  });
+
+  // #435 Item 1: a `# ` line inside a `---` block the model echoed around the
+  // body is a comment, not the title. Taking it would have restored the page's
+  // title into the comment and left the model's title standing below it.
+  it('ignores a `# ` comment inside a leading `---` block', () => {
+    const existing = '# Sulforaphan\n\n## Beschreibung\nAlt';
+    const rewrite = '---\n# user note\ntitle: X\n---\n# Sulforaphan-Dosierung\n\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(
+      '---\n# user note\ntitle: X\n---\n# Sulforaphan\n\nNeu',
+    );
+  });
+
+  // The likelier variant of the same mistake: `# ` opens a comment in most shell
+  // dialects, so any page carrying a bash example carries H1-looking lines.
+  it('ignores a `# ` comment inside a fenced code block', () => {
+    const existing = '# Sulforaphan\n\n## Beschreibung\nAlt';
+    const rewrite = '```bash\n# install the thing\n```\n\n# Sulforaphan-Dosierung\n\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(
+      '```bash\n# install the thing\n```\n\n# Sulforaphan\n\nNeu',
+    );
+  });
+
+  // Same misreading on the READ side: a shell comment must not be adopted as the
+  // page's previous title, or the function would mint one for a page that had
+  // none — the mass mutation the file-name path was rejected for.
+  it('invents no title from a `# ` comment in the existing body', () => {
+    const existing = '```bash\n# install the thing\n```\n\n## Beschreibung\nAlt';
+    const rewrite = '## Beschreibung\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe(rewrite);
+  });
+
+  // A `---` further down is a thematic break, not frontmatter — the lines after
+  // it are ordinary body and can hold the H1.
+  it('finds an H1 that follows a mid-body thematic break', () => {
+    const existing = '# Sulforaphan\n\n## Beschreibung\nAlt';
+    const rewrite = 'Lead.\n\n---\n\n# Sulforaphan-Dosierung\n\nNeu';
+    expect(reassertH1(existing, rewrite)).toBe('Lead.\n\n---\n\n# Sulforaphan\n\nNeu');
   });
 });

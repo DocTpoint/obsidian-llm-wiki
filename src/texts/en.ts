@@ -266,6 +266,7 @@ export const EN_TEXTS = {
     lintRetrying: 'Retrying ({attempt}/{max}) after error...',
     lintAnalyzingLLM: 'LLM analyzing Wiki health...',
     saveToWikiSuccess: 'Conversation saved to Wiki!',
+    querySaveAlreadyExists: 'Notice: nothing was written (knowledge already exists in Wiki):',
     saveSummary: '{entities} entities, {concepts} concepts, {pages} pages',
     aliasAdded: 'Added alias \'{alias}\' to page \'{page}\'',
 

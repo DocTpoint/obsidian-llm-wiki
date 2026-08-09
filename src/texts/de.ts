@@ -248,6 +248,7 @@ export const DE_TEXTS = {
     lintRetrying: 'Wiederholung ({attempt}/{max}) nach Fehler...',
     lintAnalyzingLLM: 'LLM analysiert Wiki-Gesundheit...',
     saveToWikiSuccess: 'Konversation im Wiki gespeichert!',
+    querySaveAlreadyExists: 'Hinweis: Es wurde nichts geschrieben (Wissen ist bereits im Wiki vorhanden):',
     saveSummary: '{entities} Entitäten, {concepts} Konzepte, {pages} Seiten',
     aliasAdded: 'Alias \'{alias}\' zur Seite \'{page}\' hinzugefügt',
 

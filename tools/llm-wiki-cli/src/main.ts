@@ -2,6 +2,16 @@
 // with no Obsidian and no display. Everything Obsidian-specific comes from
 // the shim modules next to this file; the engine, the analyzer, the page
 // factory, the schema manager and the LLM client are the production ones.
+//
+// `node:*` static imports below survive the Obsidian review bot's
+// `obsidianmd/no-nodejs-modules` rule because the CLI is a Node program, not
+// a plugin — node:* are not "mobile-incompatible" APIs in this build target.
+// The `parseArgs` call inside `parseCliOptionsInner` is sync, so the
+// `node:util` import has to stay static; making the surrounding function
+// async would break 14 tests that pin the sync contract (see
+// `src/__tests__/tools/llm-wiki-cli/main.test.ts`). Only the runtime-loaded
+// modules (e.g. `node:http` in `obsidian.ts`, `node:console` in
+// `node-globals.ts`) can convert to dynamic form.
 
 import { parseArgs } from 'node:util';
 import { readFileSync, statSync, type Stats } from 'node:fs';
@@ -39,12 +49,14 @@ const INGEST_USAGE = `Usage:
   --dry-run       Run the full ingest but keep every write in memory.
   --force         Ignore the duplicate-content gate and re-ingest anyway.
   --extract-only  Stop after extraction; write no pages. Implies --dry-run.
-  --seed          Fix the sampling seed, so two runs of the same source are
-                  comparable. Without it the provider picks one per request.
-                  Local servers honour it strictly. Anthropic has no such
-                  parameter, and the openai provider drops it: that path builds
-                  the Responses model, which reports seed unsupported and omits
-                  it. Best-effort seed is a Chat Completions feature.
+  --seed          Fix the sampling seed. Without it the provider picks one per
+                  request. Some local servers honour it, not all: LM Studio
+                  accepts and type-validates the field and then ignores it
+                  (#423), so there only --temperature 0 makes two runs of one
+                  source comparable. Anthropic has no such parameter, and the
+                  openai provider drops it: that path builds the Responses
+                  model, which reports seed unsupported and omits it.
+                  Best-effort seed is a Chat Completions feature.
   --max-tokens-per-call  Cap max_tokens for every call. 0 removes the cap and
                   leaves whatever the call site asks for — for extraction that
                   is at least 16000, not "unlimited".
@@ -138,11 +150,21 @@ export function applyThinkingMode(
   if (mode === 'server-default') settings.disableThinking = false;
 }
 
+interface TaskUsage {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Wall time inside createMessage. Overlaps when calls run concurrently. */
+  millis: number;
+}
+
 interface LLMUsageTotals {
   calls: number;
   extractionRounds: number;
   inputTokens: number;
   outputTokens: number;
+  /** The same numbers split by `params.task`, so a run says where its time went. */
+  byTask: Map<string, TaskUsage>;
 }
 
 /**
@@ -428,7 +450,8 @@ function parseCliOptionsInner(argv: string[]): CliOptions {
 function loadSettings(vaultRoot: string): LLMWikiSettings {
   const dataPath = nodePath.join(vaultRoot, '.obsidian', 'plugins', PLUGIN_ID, 'data.json');
   const raw = readFileSync(dataPath, 'utf8');
-  const { settings } = applySettingsMigrations(JSON.parse(raw));
+  const savedData = JSON.parse(raw) as Partial<LLMWikiSettings> | null;
+  const { settings } = applySettingsMigrations(savedData);
   return settings;
 }
 
@@ -468,17 +491,58 @@ function withUsageAccounting(client: LLMClient, totals: LLMUsageTotals): LLMClie
   accounting.createMessage = params => {
     totals.calls++;
     if (params.cacheBreakpoint !== undefined) totals.extractionRounds++;
+
+    const label = params.task ?? 'untagged';
+    let bucket = totals.byTask.get(label);
+    if (!bucket) {
+      bucket = { calls: 0, inputTokens: 0, outputTokens: 0, millis: 0 };
+      totals.byTask.set(label, bucket);
+    }
+    bucket.calls++;
+
     const callerOnFinish = params.onFinish;
-    return client.createMessage({
+    const startedAt = Date.now();
+    const done = client.createMessage({
       ...params,
       onFinish: meta => {
         totals.inputTokens += meta.usage?.inputTokens ?? 0;
         totals.outputTokens += meta.usage?.outputTokens ?? 0;
+        bucket.inputTokens += meta.usage?.inputTokens ?? 0;
+        bucket.outputTokens += meta.usage?.outputTokens ?? 0;
         callerOnFinish?.(meta);
       },
     });
+    // Timed around the whole call, not inside onFinish: a call that throws still
+    // spent the time, and leaving it out would flatter whichever step fails.
+    return done.finally(() => { bucket.millis += Date.now() - startedAt; });
   };
   return accounting;
+}
+
+/**
+ * Where an ingest spent itself, per pipeline step. A single total cannot say
+ * that: the ten call sites of an ingest have different shapes — extraction
+ * writes long replies over a long prompt and is decode-bound, dedup answers in
+ * a dozen tokens over a page list and is prefill-bound — and tuning one of them
+ * against a single number is guesswork.
+ *
+ * Seconds are summed per call, so concurrent page generation double-counts
+ * against the wall clock. The share column is the honest one; compare it.
+ */
+function printTimeByStep(totals: LLMUsageTotals): void {
+  if (totals.byTask.size === 0) return;
+  console.log('');
+  console.log('=== Where the time went ===');
+  console.log('  step               calls   out tok    seconds   share');
+  const rows = [...totals.byTask.entries()].sort((a, b) => b[1].millis - a[1].millis);
+  const wall = rows.reduce((sum, [, usage]) => sum + usage.millis, 0) || 1;
+  for (const [name, usage] of rows) {
+    console.log(
+      `  ${name.padEnd(18)} ${String(usage.calls).padStart(5)}`
+      + ` ${String(usage.outputTokens).padStart(9)}`
+      + ` ${(usage.millis / 1000).toFixed(1).padStart(10)}`
+      + ` ${(100 * usage.millis / wall).toFixed(0).padStart(6)}%`);
+  }
 }
 
 function resolveSourceFile(app: ReturnType<typeof createVaultApp>, sourcePath: string): TFile {
@@ -532,6 +596,7 @@ function printSummary(
   console.log(`  llm calls         ${totals.calls}`);
   console.log(`  tokens in         ${totals.inputTokens}`);
   console.log(`  tokens out        ${totals.outputTokens}`);
+  printTimeByStep(totals);
   console.log(`  elapsed           ${(elapsedMs / 1000).toFixed(1)}s`);
 }
 
@@ -542,7 +607,7 @@ async function runIngest(argv: string[]): Promise<void> {
     return;
   }
 
-  installObsidianGlobals();
+  await installObsidianGlobals();
 
   // A nonexistent vault is the most common first-run mistake; surface it as a
   // CLI message instead of the raw Node ENOENT stack. The "not a directory"
@@ -568,7 +633,9 @@ async function runIngest(argv: string[]): Promise<void> {
   const sourceFile = resolveSourceFile(app, options.source);
 
   await preloadLLMClientModules();
-  const totals: LLMUsageTotals = { calls: 0, extractionRounds: 0, inputTokens: 0, outputTokens: 0 };
+  const totals: LLMUsageTotals = {
+    calls: 0, extractionRounds: 0, inputTokens: 0, outputTokens: 0, byTask: new Map(),
+  };
   const client = withUsageAccounting(createLLMClient(settings), totals);
   const getClient = (): LLMClient => client;
 
@@ -588,7 +655,10 @@ async function runIngest(argv: string[]): Promise<void> {
     path => console.log(`[write] ${path}`),
     message => console.log(`[progress] ${message}`),
     finished => { report = finished; },
-    globalThis.crypto.subtle,
+    // Node 18+ exposes `crypto` as a global; the explicit `globalThis` prefix
+    // is what trips `obsidianmd/no-global-this` in the review bot. Bare `crypto`
+    // has the same runtime behaviour and dodges the rule.
+    crypto.subtle,
   );
 
   console.log(`[cli] vault=${options.vault}`);

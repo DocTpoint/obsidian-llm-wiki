@@ -144,7 +144,7 @@
 - **🏷️ 强制别名** — 每个页面至少包含一个别名（翻译、缩写、变体名），使跨语言重复检测得以工作。
 - **🔄 分级重复检测** — 第 1 级（直接名称匹配：跨语言、缩写、高相似度标题）全部验证；第 2 级（共享链接、中等相似度）填充剩余 token 预算。
 - **🧩 智能合并与矛盾状态** — 重复页面合并时保留别名；矛盾被标记并注明来源归属；`reviewed: true` 的页面受保护不被覆盖。
-- **🎨 自定义标签词汇表** — 在设置 → Wiki → 标签词汇表 → *自定义* 中定义自己的实体类型和概念类型标签列表。词表是注入 LLM 的提示（schema injection hint），不是写入时的强制闸门——小型/本地模型仍可能漂移，Lint 会报告这些页面以便修复。(Schema 强制校验在 v1.26.0+ 设计中。)
+- **🎨 自定义标签词汇表** — 在设置 → Wiki → 标签词汇表 → *自定义* 中定义自己的实体类型和概念类型标签列表。词表是注入 LLM 的提示（schema injection hint），不是写入时的强制闸门——小型/本地模型仍可能漂移，Lint 会报告这些页面以便修复。(Schema 强制校验在 v1.27.0+ 设计中。)
 
 ### 📄 PDF 摄入 (v1.25.0+)
 
@@ -360,7 +360,9 @@ pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
 
 赞助完全自愿。插件始终保留 Apache-2.0 许可且功能完整。
 
-感谢 [@jameses-cyber](https://github.com/jameses-cyber) 和 [@issaqua](https://github.com/issaqua) 对项目的支持。
+感谢以下赞助者对项目的支持：
+
+[@jameses-cyber](https://github.com/jameses-cyber)、[@issaqua](https://github.com/issaqua)、Dikson Choi
 
 ---
 

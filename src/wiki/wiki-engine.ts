@@ -17,6 +17,7 @@ import {
 } from '../types';
 import { PROMPTS } from '../prompts';
 import { getText } from '../core/i18n';
+import { formatTaskUsage, snapshotTaskUsage, taskUsageSince } from '../core/llm-task-usage';
 import { TEXTS } from '../texts';
 import { buildIngestStatusBarText } from '../core/status-bar';
 import { renderTemplate } from '../core/template-renderer';
@@ -855,6 +856,7 @@ export class WikiEngine {
     }
 
     const totalStartTime = Date.now();
+    const llmUsageAtStart = snapshotTaskUsage();
 
     // Setup cancellation support
     // v1.25.0 PR3 follow-up #7 (Bug C): AbortController / onIngestionStart
@@ -1159,6 +1161,14 @@ export class WikiEngine {
       console.debug(`  - Related page update: ${relatedTime}ms`);
       console.debug(`  - Contradiction recording: ${contradictionTime}ms`);
       console.debug(`  - Index & log: ${indexTime}ms`);
+      // Inside the phases, per step. Page generation is the phase this exists
+      // for: one interval above, four steps below it — path resolution's dedup
+      // call, the page write, the merge triage and the body merge.
+      const llmByTask = formatTaskUsage(taskUsageSince(llmUsageAtStart));
+      if (llmByTask.length > 0) {
+        console.debug('[LLM time by step] (summed per call; concurrent steps overlap)');
+        for (const line of llmByTask) console.debug(line);
+      }
 
       // Show collision notice if any occurred
       if (collisions.length > 0) {
@@ -1312,6 +1322,7 @@ export class WikiEngine {
     const finalPrompt = this.applySectionLabels(prompt);
 
     const pageContent = await this.client.createMessage({
+      task: 'source-page',
       model: resolveModelForTask(this.settings, 'ingest'),
       max_tokens: TOKENS_PAGE_GENERATION,
       system: await this.buildSystemPrompt('summary'),

@@ -247,6 +247,7 @@ export const ZH_TEXTS = {
     lintRetrying: '出错后重试中（{attempt}/{max}）...',
     lintAnalyzingLLM: 'LLM 正在分析 Wiki 健康状态...',
     saveToWikiSuccess: '对话已保存到Wiki！',
+    querySaveAlreadyExists: '提示：未写入任何内容（该知识已存在于 Wiki 中）：',
     saveSummary: '{entities} 个实体, {concepts} 个概念, {pages} 个页面',
     aliasAdded: '已为页面\'{page}\'添加别名\'{alias}\'',
 

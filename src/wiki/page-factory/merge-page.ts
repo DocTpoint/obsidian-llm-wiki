@@ -39,6 +39,7 @@ import {
   canonicalizeSectionHeaders,
   preserveExistingSections,
   stripUnknownSections,
+  reassertH1,
 } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
 import { mergeFrontmatter, parseFrontmatter } from '../../core/frontmatter';
@@ -201,6 +202,7 @@ export async function mergePage(
     const finalPrompt = applySectionLabels(prompt, ctx.settings);
 
     const mergedBody = await client.createMessage({
+      task: 'merge-body',
       model: resolveModelForTask(ctx.settings, 'ingest'),
       max_tokens: TOKENS_PAGE_GENERATION,
       system: await ctx.buildSystemPrompt('merge'),
@@ -236,6 +238,11 @@ export async function mergePage(
       Object.values(labels),
       labels.mentions_in_source,
     );
+
+    // #419: the guard above owns `##` blocks only, so the title line falls
+    // between the layers — the model is asked for the whole body and the reply
+    // routinely starts at the first `##`. Restore the page's own H1.
+    const titledBody = reassertH1(existingBody, guardedBody);
     await ctx.createOrUpdateFile(
       path,
       await assembleFinalContent(
@@ -249,7 +256,7 @@ export async function mergePage(
         contradictedSourcePath
           ? appendContradictedByMarker(frontmatter, contradictedSourcePath)
           : frontmatter,
-        guardedBody,
+        titledBody,
         info,
         sourceFile,
         existingBody,
@@ -299,6 +306,7 @@ export async function appendToReviewedPage(
     const finalPrompt = applySectionLabels(prompt, ctx.settings);
 
     const newContent = await client.createMessage({
+      task: 'reviewed-append',
       model: resolveModelForTask(ctx.settings, 'ingest'),
       max_tokens: TOKENS_APPEND_REVIEWED,
       system: await ctx.buildSystemPrompt('merge'),

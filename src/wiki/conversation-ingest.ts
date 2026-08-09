@@ -76,8 +76,13 @@ export class ConversationIngestor {
       this.ctx.onProgress?.('Checking for existing knowledge...');
       try {
         const dedupResult = await this.checkDedup(existingWikiIndex, conversationText);
+        // Issue #398: emit a console.warn so DevTools shows the LLM's actual
+        // dedup verdict when the user clicks Save and gets a 0/0/0 notice.
+        // The notice itself is surfaced via QueryView.saveToWiki (see
+        // QueryView-class.ts — `report.errorMessage`).
+        console.debug('[conversation-ingest] dedup verdict:', dedupResult);
         if (dedupResult === 'fully_redundant') {
-          console.debug('Conversation fully covered by existing Wiki, skipping save');
+          console.warn('[conversation-ingest] save skipped: dedup=fully_redundant');
           this.ctx.onProgress?.('This knowledge already exists in Wiki');
           return {
             sourceFile: `Conversation: ${history.messages[0]?.content?.substring(0, 50) || 'unknown'}`,
@@ -151,6 +156,7 @@ CRITICAL RULES:
 - Names should be suitable for [[wiki-links]] referencing (judge appropriate naming based on Wiki index)`;
 
     const analysis = await client.createMessage({
+      task: 'conversation-extract',
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
       max_tokens: TOKENS_CONVERSATION_EXTRACTION,
       system: await this.ctx.buildSystemPrompt('conversation'),
@@ -165,6 +171,7 @@ CRITICAL RULES:
     const parsed = await parseJsonResponse(analysis, async (malformedJson: string) => {
       const repairPrompt = `Fix the following malformed JSON. Only fix JSON syntax errors (unescaped quotes, trailing commas, missing brackets). Do NOT change any values or content. Output ONLY the fixed JSON, no other text.\n\n${malformedJson}`;
       return await client.createMessage({
+        task: 'conversation-extract-retry',
         model: resolveModelForTask(this.ctx.settings, 'ingest'),
         max_tokens: TOKENS_PAGE_GENERATION,
         system: await this.ctx.buildSystemPrompt('conversation'),
@@ -230,6 +237,7 @@ CRITICAL RULES:
 
     this.ctx.onProgress?.('Generating summary page...');
     const summaryPageContent = await client.createMessage({
+      task: 'conversation-page',
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
       max_tokens: TOKENS_CONVERSATION_PAGE,
       system: await this.ctx.buildSystemPrompt('summary'),
@@ -321,6 +329,7 @@ CRITICAL RULES:
     if (!client) throw new Error('LLM client not initialized');
 
     const response = await client.createMessage({
+      task: 'conversation-save-dedup',
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
       max_tokens: TOKENS_QUERY_SAVE_DEDUP,
       system: await this.ctx.buildSystemPrompt('conversation'),

@@ -258,3 +258,105 @@ export function stripUnknownSections(content: string, canonicalLabels: string[])
   }
   return out.join('\n');
 }
+
+/**
+ * Re-assert the page's H1 after an LLM body rewrite (#419).
+ *
+ * `preserveExistingSections` above guards `##` blocks only — its contract, and
+ * its tests, deliberately ignore the title line. On the merge and related-page
+ * paths the model is handed the whole body and asked to return the whole body,
+ * so the H1 is inside the rewrite window while no layer owns it: when the reply
+ * comes back starting at `## Beschreibung`, the title is simply gone.
+ *
+ * The restored title is the page's OWN previous H1, not one synthesized from the
+ * file name. A page's file name is a slug of its title and is lossy — of 1930
+ * pages carrying an H1 in a 2416-page vault, 677 (35%) have a title the file name
+ * cannot reproduce (`Harvard-T-H-Chan-School-of-Public-Health` vs `Harvard T.H.
+ * Chan School of Public Health`, `Lungu-et-al-2021` vs `Lungu et al. (2021)`).
+ * Rebuilding the H1 from the file name would repair the pages that lost one and
+ * quietly flatten the punctuation of every page that did not.
+ *
+ * For the same reason this never invents a title: a page that had no H1 before
+ * the rewrite keeps none. 486 pages in that vault have no H1, and minting them
+ * on the next merge is a mass mutation, not a repair.
+ *
+ * A rewrite that returns a DIFFERENT H1 is overwritten with the previous one.
+ * The page's identity is not the model's call — the same reasoning that makes
+ * `correctRelatedLinkPrefixes` re-type a link folder rather than trust the copy.
+ * Pure, no LLM, O(lines).
+ */
+export function reassertH1(existingBody: string, rewrite: string): string {
+  const previous = findH1(existingBody)?.text;
+  if (previous === undefined) return rewrite;
+
+  const current = findH1(rewrite);
+  if (current === null) return `${previous}\n\n${rewrite.replace(/^\s+/, '')}`;
+  if (current.text === previous) return rewrite;
+
+  // Splice at the match position instead of `replace(current[0], previous)`: a
+  // string replacement interprets `$` escapes in the title it inserts (`# Kosten
+  // $$500` would arrive as `# Kosten $500`, `$&` as the whole matched title), and
+  // it substitutes the first occurrence ANYWHERE in the body — a preceding line
+  // quoting the title mid-line takes the restore while the real H1 keeps the
+  // model's version.
+  const head = rewrite.slice(0, current.start);
+  const tail = rewrite.slice(current.end);
+  return `${head}${previous}${tail}`;
+}
+
+/**
+ * Locate a body's H1 — the line, and where it sits (#435).
+ *
+ * A line starting with `# ` is not automatically the title. It is a comment when
+ * it stands inside a fenced code block (`# clone the repo` in a bash example) or
+ * inside a `---` block the model echoed around the body, and `reassertH1` used
+ * to accept both: on the read side a shell comment could be adopted as the
+ * page's previous title, and on the write side it took the restore while the
+ * model's title survived above it — the opposite of the contract.
+ *
+ * A `---` line opens a skipped block only in frontmatter position, i.e. as the
+ * body's first content line; further down it is a thematic break and the lines
+ * after it are ordinary body. Fences are closed by their own opening marker, so
+ * a ``` inside a ~~~ block does not end it.
+ *
+ * Pure, single pass, O(lines).
+ */
+function findH1(body: string): { text: string; start: number; end: number } | null {
+  let offset = 0;
+  let fence: string | null = null;
+  let inFrontmatter = false;
+  let seenContent = false;
+
+  for (const line of body.split('\n')) {
+    const start = offset;
+    offset += line.length + 1; // +1 for the '\n' that split() consumed
+    const trimmed = line.trim();
+
+    if (inFrontmatter) {
+      if (trimmed === '---') inFrontmatter = false;
+      continue;
+    }
+    if (fence !== null) {
+      if (trimmed.startsWith(fence)) fence = null;
+      continue;
+    }
+    if (trimmed === '') continue;
+
+    if (!seenContent && trimmed === '---') {
+      seenContent = true;
+      inFrontmatter = true;
+      continue;
+    }
+    seenContent = true;
+
+    const opener = /^(```|~~~)/.exec(trimmed);
+    if (opener) {
+      fence = opener[1];
+      continue;
+    }
+
+    if (line.startsWith('# ')) return { text: line, start, end: start + line.length };
+  }
+
+  return null;
+}

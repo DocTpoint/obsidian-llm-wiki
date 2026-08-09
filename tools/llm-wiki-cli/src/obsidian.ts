@@ -95,35 +95,87 @@ export interface RequestUrlResponse {
 }
 
 /**
- * Obsidian's HTTP client, backed by Node's global fetch.
+ * Obsidian's HTTP client, backed by `node:http` / `node:https`.
  *
  * The plugin's `obsidianFetchBridge` hard-depends on this for every local
  * base URL, and it reads `status` / `headers` / `text` as eagerly-resolved
  * properties — not as methods — so the body is buffered here.
+ *
+ * Not Node's global `fetch`: that applies undici's default `headersTimeout`
+ * of 300 s. A non-streamed completion sends no response headers until the
+ * whole answer is ready, so any single LLM call that needs more than five
+ * minutes fails with a bare `fetch failed` — measured twice at 301 s with a
+ * 12B model on LM Studio and an 82 000-character extraction prompt. Obsidian's
+ * real `requestUrl` goes through Electron's `net` and has no such ceiling, so
+ * the shim would be stricter than the host it stands in for, on exactly the
+ * configuration this CLI exists to serve. `node:http` has no default timeout,
+ * which restores the host's behaviour without adding a dependency (undici's
+ * own API is not reachable from a plain Node install).
  */
 export async function requestUrl(param: RequestUrlParam): Promise<RequestUrlResponse> {
-  const response = await fetch(param.url, {
-    method: param.method ?? 'GET',
-    ...(param.headers ? { headers: param.headers } : {}),
-    ...(param.body !== undefined ? { body: param.body as BodyInit } : {}),
+  // Function-start early-exit guard — satisfies `obsidianmd/no-nodejs-modules`
+  // AST guard-detection for the dynamic `node:https`/`node:http` imports below
+  // (mirrors src/llm-sdk/openai-codex/loopback-flow.ts). The CLI's own Platform
+  // shim hardcodes `isDesktop: true`, so this never throws at runtime; it
+  // declares the invariant "this code is desktop-only" that the rule requires.
+  if (!Platform.isDesktop) throw new Error('requestUrl (node:http) is desktop-only');
+
+  const url = new URL(param.url);
+
+  // Two separate `await import()` branches (rather than `await import(cond)`)
+  // so TS infers `request` back to the correct overload from each module.
+  // Otherwise the dynamic argument leaves the return type as `any` and the
+  // downstream `request(url, ...)` chain turns into 6 unsafe-call /
+  // unsafe-member-access warnings — and ESLint's `no-unsafe-call` rule
+  // promotes the first one to Error. Dynamic imports satisfy
+  // `obsidianmd/no-nodejs-modules` without any inline `eslint-disable`.
+  const request: typeof import('node:http').request = url.protocol === 'https:'
+    ? (await import('node:https')).request
+    : (await import('node:http')).request;
+
+  const { status, headers, buffer } = await new Promise<{
+    status: number;
+    headers: Record<string, string>;
+    buffer: Buffer;
+  }>((resolve, reject) => {
+    function onResponse(res: import('node:http').IncomingMessage): void {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => {
+        const flat: Record<string, string> = {};
+        for (const [k, v] of Object.entries(res.headers)) {
+          if (v !== undefined) flat[k] = Array.isArray(v) ? v.join(', ') : v;
+        }
+        resolve({ status: res.statusCode ?? 0, headers: flat, buffer: Buffer.concat(chunks) });
+      });
+      res.on('error', reject);
+    }
+    const req = request(url, { method: param.method ?? 'GET', headers: param.headers ?? {} }, onResponse);
+    req.on('error', reject);
+    if (param.body !== undefined) req.write(param.body);
+    req.end();
   });
 
-  const arrayBuffer = await response.arrayBuffer();
+  const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
   const text = new TextDecoder().decode(arrayBuffer);
-  const headers: Record<string, string> = {};
-  response.headers.forEach((value, key) => { headers[key] = value; });
 
-  if (param.throw !== false && response.status >= 400) {
-    throw new Error(`Request failed, status ${response.status}`);
+  if (param.throw !== false && status >= 400) {
+    throw new Error(`Request failed, status ${status}`);
   }
 
   return {
-    status: response.status,
+    status,
     headers,
     arrayBuffer,
     text,
     get json(): unknown {
-      return text === '' ? null : JSON.parse(text);
+      if (text === '') return null;
+      try {
+        return JSON.parse(text) as unknown;
+      } catch (e) {
+        // Obsidian's real `requestUrl().json` throws on bad JSON. Match it.
+        throw new Error(`Request URL response is not valid JSON: ${(e as Error).message}`);
+      }
     },
   };
 }

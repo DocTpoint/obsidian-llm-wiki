@@ -140,7 +140,7 @@ Das war's. Das Plugin ändert nichts an deinen ursprünglichen Notizen — es er
 - **🏷️ Obligatorische Aliase** — jede Seite wird mit mindestens einem Alias (Übersetzung, Abkürzung, Variante) ausgeliefert, damit sprachübergreifende Duplikaterkennung funktioniert.
 - **🔄 Abgestufte Duplikaterkennung** — Stufe 1 (direkter Namensmatch: sprachübergreifend, Abkürzung, hohe Titelähnlichkeit) wird immer verifiziert; Stufe 2 (gemeinsame Links, mittlere Ähnlichkeit) füllt das verbleibende Token-Budget.
 - **🧩 Intelligentes Zusammenführen & Widerspruchsstatus** — Duplikate werden unter Erhalt der Aliase zusammengeführt; Widersprüche werden mit Quellenangabe markiert; `reviewed: true`-Seiten sind vor Überschreibung geschützt.
-- **🎨 Anpassbares Tag-Vokabular** — definiere eigene Entity-Typ- und Concept-Typ-Tag-Listen in Einstellungen → Wiki → Tag-Vokabular → *Custom*. Das Vokabular ist ein SCHEMA-INJECTION-HINWEIS für die LLM, kein Schreibzeit-Gate — kleine/lokale Modelle können weiterhin abdriften, und Lint meldet diese Seiten. (Durchsetzung wird für v1.26.0+ entworfen.)
+- **🎨 Anpassbares Tag-Vokabular** — definiere eigene Entity-Typ- und Concept-Typ-Tag-Listen in Einstellungen → Wiki → Tag-Vokabular → *Custom*. Das Vokabular ist ein SCHEMA-INJECTION-HINWEIS für die LLM, kein Schreibzeit-Gate — kleine/lokale Modelle können weiterhin abdriften, und Lint meldet diese Seiten. (Durchsetzung wird für v1.27.0+ entworfen.)
 
 ### 📄 PDF-Ingest (v1.25.0+)
 
@@ -356,7 +356,9 @@ Wenn LLM-Wiki zu einem wichtigen Teil deines Wissens-Workflows geworden ist:
 
 Sponsoring ist völlig freiwillig. Das Plugin bleibt Apache-2.0-lizenziert und voll funktionsfähig.
 
-Dank an [@jameses-cyber](https://github.com/jameses-cyber) und [@issaqua](https://github.com/issaqua) für die Unterstützung des Projekts.
+Dank an die Folgenden für die Unterstützung des Projekts:
+
+[@jameses-cyber](https://github.com/jameses-cyber), [@issaqua](https://github.com/issaqua), Dikson Choi
 
 ---
 

@@ -60,3 +60,48 @@ describe('mergeDuplicatePages — link retargeting (#386)', () => {
     expect(summary).toBe('merged entities/Osteopontin-2 → entities/Osteopontin');
   });
 });
+
+// #435 Item 2 — the sibling of #419 on the lint path. Here the LLM client is
+// present on purpose: the programmatic fallback keeps the target's body verbatim
+// and can never lose the title, so only the adopted-rewrite path can.
+describe('mergeDuplicatePages — the merged body keeps the surviving page H1 (#435)', () => {
+  function ctxWithMergeAnswer(files: Record<string, string>, body: string) {
+    const { ctx, fake, deleted } = makeCtx(files);
+    (ctx as unknown as { getClient: () => unknown }).getClient = () => ({
+      createMessage: async () => JSON.stringify({ body, aliases: [] }),
+    });
+    return { ctx, fake, deleted };
+  }
+
+  it('restores the H1 when the merge answer drops it', async () => {
+    const { ctx, fake } = ctxWithMergeAnswer(
+      {
+        [TARGET]: '---\ntype: entity\ntags: [other]\n---\n\n# Osteopontin\n\nBone marker.\n',
+        [SOURCE]: '---\ntype: entity\ntags: [other]\n---\n\n# Osteopontin-2\n\nAlso a bone marker.\n',
+      },
+      '## Description\n\nA bone marker, and also a bone marker — merged prose long enough to clear the hundred-character floor this path applies.',
+    );
+
+    await mergeDuplicatePages(ctx, TARGET, SOURCE);
+
+    const written = fake.read(TARGET) ?? '';
+    expect(written).toContain('# Osteopontin\n');
+    expect(written.indexOf('# Osteopontin')).toBeLessThan(written.indexOf('## Description'));
+  });
+
+  it('does not let the merge answer rename the surviving page', async () => {
+    const { ctx, fake } = ctxWithMergeAnswer(
+      {
+        [TARGET]: '---\ntype: entity\ntags: [other]\n---\n\n# Osteopontin\n\nBone marker.\n',
+        [SOURCE]: '---\ntype: entity\ntags: [other]\n---\n\n# Osteopontin-2\n\nAlso a bone marker.\n',
+      },
+      '# Osteopontin and Osteopontin-2\n\n## Description\n\nMerged prose, long enough to clear the hundred-character floor that this path applies before it parses.',
+    );
+
+    await mergeDuplicatePages(ctx, TARGET, SOURCE);
+
+    const written = fake.read(TARGET) ?? '';
+    expect(written).toContain('# Osteopontin\n');
+    expect(written).not.toContain('# Osteopontin and Osteopontin-2');
+  });
+});
