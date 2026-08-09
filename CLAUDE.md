@@ -1,14 +1,14 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-08-08 (v1.26.1 PATCH RELEASED 2026-08-08; v1.27.0 MINOR in design. **Prior 2026-08-06**: Bot scan-scope finding documented in the Bot compliance invariant below — the review bot lints the whole repo `.ts` tree, not just `main.js`; `tools/` Node CLI carries ~56 structural warnings invisible to local lint — accepted, no re-tag, per 2026-08-06 decision.)
+**Last Updated:** 2026-08-09 (v1.26.2 PATCH RELEASED 2026-08-09; v1.27.0 MINOR in design. **Prior 2026-08-06**: Bot scan-scope finding documented in the Bot compliance invariant below — the review bot lints the whole repo `.ts` tree, not just `main.js`; `tools/` Node CLI carries ~60 structural warnings invisible to local lint — accepted per 2026-08-06 decision. **Prior 2026-08-08**: v1.26.2 hotfix PR #442 closed the blind spot + introduced release-skill HARD STOP ②' (Step 6b.5) so future releases Bot-pre-review before publish.)
 
 ---
 
-## Current Phase: v1.26.1 RELEASED (2026-08-08); v1.27.0 MINOR in design
+## Current Phase: v1.26.2 RELEASED (2026-08-09); v1.27.0 MINOR in design
 
-**Forward-looking planning** lives in [ROADMAP.md](./ROADMAP.md#v1270-minor-design-track). v1.26.1 shipped 21 PRs (see [CHANGELOG.md v1.26.1 entry](./CHANGELOG.md#1261---2026-08-08)): #403 reasoning caps, CR-1 dedup halving, #419/#435 H1, #424 yaml devDep, #398 silent-save, #407 Stage 0, #423 `--seed`, #409 per-step LLM timing, #439 deps. Remaining v1.26.x follow-ups (#407 Stages 1+2, #414 `repetition_penalty`, #438 frontmatter data-loss) moved to the v1.27.0 window.
+**Forward-looking planning** lives in [ROADMAP.md](./ROADMAP.md#v1270-minor-design-track). v1.26.2 PATCH SHIPPED 2026-08-09 (PR #442): closed the Obsidian Bot scan-scope blind spot — fixed the blocking `unsafe-call` Error + 8 type-safety warnings in `tools/llm-wiki-cli/src/`, added `Platform.isDesktop` AST guards on the runtime-loaded `node:*` imports, and shipped `pnpm lint:tools-bot` so the local blind spot stays closed. Release-skill v1.7.0 mandates an Obsidian Bot pre-review (Step 6b.5, HARD STOP ②) so future releases can't ship Bot-blocking findings again. See [[feedback_obsidianmd_no_nodejs_guard_detection]] for the rule-detection mechanism.
 
-**Historic v1.26.0 composition** (117 commits / 110 files / +10,604 / −994 since v1.25.11, 2928 tests / 213 files passing, all 5 P0+P1 batches MERGED) lives in [CHANGELOG.md v1.26.0 entry](./CHANGELOG.md#1260---2026-08-05). Do not duplicate the Batch table or commit log here — this file is for **process standards + invariants**, not version history.
+**Historic v1.26.1 composition** (21 PRs / 2992 tests / 218 files passing) lives in [CHANGELOG.md v1.26.1 entry](./CHANGELOG.md#1261---2026-08-08). v1.26.0 composition (117 commits / 110 files / +10,604 / −994 since v1.25.11, 2928 tests / 213 files passing, all 5 P0+P1 batches MERGED) lives in [CHANGELOG.md v1.26.0 entry](./CHANGELOG.md#1260---2026-08-05).
 
 **v1.26.x PATCH items (post-release, pre-v1.27.0 kickoff):** see [[feedback_force_disable_thinking_openai_compat_noop]] + [[feedback_force_disable_thinking_dedup_wiring]] + [[feedback_dedup_phase_halving_dead_code]] + [[feedback_dedup_phase_truncation_vs_empty_conflation]] for the full list (CR-1 halving dead code location-only fix; per-id key correction for `thinking` / `chat_template_kwargs`; `repetition_penalty` visible defect fix via Layer-3 mechanism; LLM empty-response retry extraction to `core/llm-retry.ts`; per-call `thinkingPolicy` enum; `parseJsonShape<T>` helper; shared `BaseUrlKeyedCache<T>` primitive; DeepSeek/Kimi/GLM `reasoning_effort: 'none'` real e2e measurement).
 
