@@ -70,15 +70,13 @@ describe('OpenAICompatSdkClient — what reaches the request body', () => {
       expect(Object.keys(body)).not.toContain(field);
     }
 
-    // Requested above and absent for a second, independent reason: the client
-    // no longer builds it at all. #65 reported this against LM Studio 0.4.15,
-    // and it is not historical — measured again on 0.4.20 in #372 by curl,
-    // outside both the plugin and the SDK: `{"type":"json_object"}` answers
-    // 400 `'response_format.type' must be 'json_schema' or 'text'`, while
-    // `json_schema` answers 200 and structures correctly. So `json_object` is
-    // not a form to keep, and `json_schema` is not a form to inject raw — it
-    // travels as the SDK's own `responseFormat` argument, which is where the
-    // structured-output work will put it.
+    // DocTpoint's 2026-08-09 LM Studio / gemma-4-12b measurement
+    // (Issue #443 comment 1): `response_format: { type: 'json_object' }`
+    // answers HTTP 400 in 29 ms — `'response_format.type' must be
+    // 'json_schema' or 'text'`. Shipping it would regress #65 / ca4a24d
+    // / v1.14.0 — the very fix that dropped the field on local servers.
+    // Same LM Studio 400 measurement is cited below in the schema-arm
+    // tests as the gate: `json_schema` answers 200 in 356 ms.
     expect(Object.keys(body)).not.toContain('response_format');
   });
 
@@ -86,12 +84,12 @@ describe('OpenAICompatSdkClient — what reaches the request body', () => {
   // whether correcting the key is a behaviour change for anybody who has not
   // opened Advanced → custom. The two controls that feed the fields above live
   // there and are cleared on the way back to default, so a default install
-  // passes none of them — but it does pass `response_format`, which is not a
-  // setting at all: fifteen call sites ask for `json_object` unconditionally,
-  // two of them in extraction. That combination is the request LM Studio
-  // actually receives, and it is asserted here rather than reasoned from the
-  // settings code, because the settings code is not what the server sees.
-  it('adds nothing of its own when the caller configures nothing', async () => {
+  // passes none of them — but the call sites still ask for `json_object`
+  // unconditionally. The no-schema case puts no `response_format` on the
+  // wire at all (see the comment above — LM Studio 400); the call sites
+  // fall back to prompt-only JSON enforcement, exactly as the pre-PR
+  // behaviour shipped from v1.14.0 (`ca4a24d`).
+  it('emits no response_format for the no-schema default shape', async () => {
     let body: Record<string, unknown> = {};
     const stub = vi.fn(async (_url: string, init?: { body?: unknown }) => {
       body = JSON.parse(String(init?.body));
@@ -108,8 +106,9 @@ describe('OpenAICompatSdkClient — what reaches the request body', () => {
     });
     await client.createMessage({
       model: 'm', max_tokens: 100, messages: [{ role: 'user', content: 'hi' }],
-      // Asked for, as every extraction asks for it, so its absence below is a
-      // withholding and not an artefact of nobody wanting it.
+      // Asked for, as every extraction asks for it — the shape that 15 of
+      // the 16 call sites still produce (the 16th, path-resolution.ts:217,
+      // is the pilot and supplies a schema).
       response_format: { type: 'json_object' },
     });
 
@@ -118,8 +117,166 @@ describe('OpenAICompatSdkClient — what reaches the request body', () => {
     expect(stub).toHaveBeenCalledTimes(1);
     expect(body).toHaveProperty('model', 'm');
 
-    for (const field of ['thinking', 'chat_template_kwargs', 'repetition_penalty', 'top_p', 'seed', 'response_format']) {
+    //    // v1.26.3 PATCH pilot (Issue #443): `response_format` IS now on the
+    //    // wire — that is the whole point of the fix. Without a schema the
+    //    // SDK encodes `json_object` (the form OpenAI / Anthropic / most
+    //    // cloud compat servers already accept), and the 15 non-pilot call
+    //    // sites keep working unchanged. The pre-pilot assertion
+    //    // ("response_format absent on the wire") was the v1.26.1 root cause
+    //    // of the parse-failure class that #443 is closing.
+    //    expect(body.response_format).toEqual({ type: 'json_object' });
+
+    // No-schema case: `response_format` MUST be absent. Restores v1.14.0
+    // (`ca4a24d`) behaviour for LM Studio / Ollama / `custom` (where the
+    // field would 400 per DocTpoint Issue #443 comment 1 2026-08-09)
+    // and is a no-op identity for the cloud cohort (where the field
+    // would be accepted but the no-schema path does not need it).
+    expect(Object.keys(body)).not.toContain('response_format');
+
+    for (const field of ['thinking', 'chat_template_kwargs', 'repetition_penalty', 'top_p', 'seed']) {
       expect(Object.keys(body)).not.toContain(field);
     }
+  });
+});
+
+// v1.26.3 PATCH pilot — Issue #443.
+//
+// The compat SDK client currently drops `response_format` before the wire
+// (destructure list at openai-compat-sdk-client.ts:154 does not include
+// it). The 16 call sites in source-analyzer / conversation-ingest / lint /
+// query that ask for `json_object` therefore get no server-side JSON
+// constraint on openai-compat providers — backends like LM Studio / Ollama
+// reject the absence too, so a passing prompt-only result depends on the
+// model following the prompt without help.
+//
+// The fix has two halves. (1) The compat provider is created with
+// `supportsStructuredOutputs: true` for the providers whose servers
+// accept `json_schema` (LM Studio, Ollama with the right build, custom
+// self-hosted). (2) When the caller passes a `schema` on `response_format`
+// and the provider is in the supportsStructuredOutputs set, the SDK
+// emits `response_format: { type: 'json_schema', json_schema: { ... } }`
+// on the wire (via the AI SDK's own `responseFormat: { type: 'json',
+// schema }` path, which the compat provider turns into json_schema when
+// supportsStructuredOutputs=true). Without a schema, the SDK falls back
+// to `json_object` — same shape the call sites had before, and
+// acceptable for OpenAI / Anthropic / cloud providers that already
+// accept `json_object`.
+//
+// The pilot: ONE call site (path-resolution.ts:217) passes a schema; the
+// other 15 stay on plain `json_object` until the pilot validates. If the
+// wire-body tests below pass and Gate 1 is green, the design is proven
+// and the remaining 15 sites can be ported one PR at a time per the
+// CLAUDE.md "one PR per call site" rule for #407 Stages 1+2.
+describe('OpenAICompatSdkClient — Issue #443 pilot: schema emits json_schema on the wire', () => {
+  const validResponse = (): Response => new Response(JSON.stringify({
+    id: 'x', object: 'chat.completion', created: 0, model: 'm',
+    choices: [{ index: 0, message: { role: 'assistant', content: '{}' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+
+  // Reads the request body the compat SDK actually sent. Returns a parsed
+  // object so each assertion can pattern-match against the wire shape.
+  async function captureBody(provider: string): Promise<Record<string, unknown>> {
+    let body: Record<string, unknown> = {};
+    const stub = vi.fn(async (_url: string, init?: { body?: unknown }) => {
+      // Guard: the AI SDK's compat provider stringifies chat-completions
+      // bodies. If a future SDK version shipped a binary / streamed
+      // encoding, `String(<any non-string>)` would silently coerce to
+      // `"[object Object]"` / `"<Buffer ...>"` and JSON.parse would
+      // throw with a cryptic message that hides the regression. Assert
+      // the contract up-front so the next regression surfaces as a
+      // "wrong body type" error, not a parse error.
+      if (typeof init?.body !== 'string') {
+        throw new Error(`expected body to be a string, got ${typeof init?.body}`);
+      }
+      body = JSON.parse(init.body);
+      return validResponse();
+    });
+    const client = new OpenAICompatSdkClient({
+      apiKey: 'k', baseURL: 'http://localhost/v1/', provider,
+      fetch: stub as never,
+    });
+    await client.createMessage({
+      model: 'm', max_tokens: 100,
+      messages: [{ role: 'user', content: 'hi' }],
+      response_format: {
+        type: 'json_object',
+        schema: { type: 'object', properties: { match: { type: 'boolean' } } },
+      },
+    });
+    return body;
+  }
+
+  // The 3 providers whose `PREDEFINED_PROVIDERS[provider].supportsStructuredOutputs`
+  // is true. Each should produce `json_schema` on the wire when a schema
+  // is supplied (the AI SDK's compat provider reads that flag and
+  // encodes the schema-bearing form on `response_format`). LM Studio
+  // gets the full strict-match assertion because it is the canonical
+  // Issue #443 root-cause case; the other two are toMatchObject
+  // because the AI SDK's `name` / `strict` field order is not
+  // contractually pinned.
+  it.each([
+    'lmstudio',
+    'ollama',
+    'custom',
+  ] as const)('emits json_schema on the wire for provider:%s when a schema is supplied', async (provider) => {
+    const body = await captureBody(provider);
+    if (provider === 'lmstudio') {
+      expect(body.response_format).toEqual({
+        type: 'json_schema',
+        json_schema: expect.objectContaining({
+          schema: expect.objectContaining({ type: 'object' }),
+          strict: true,
+          name: 'response',
+        }),
+      });
+    } else {
+      expect(body.response_format).toMatchObject({ type: 'json_schema' });
+    }
+  });
+
+  it('emits no response_format when no schema is supplied (LM Studio + cloud)', async () => {
+    let body: Record<string, unknown> = {};
+    const stub = vi.fn(async (_url: string, init?: { body?: unknown }) => {
+      body = JSON.parse(String(init?.body));
+      return validResponse();
+    });
+    const client = new OpenAICompatSdkClient({
+      apiKey: 'k', baseURL: 'http://localhost/v1/', provider: 'lmstudio',
+      fetch: stub as never,
+    });
+    await client.createMessage({
+      model: 'm', max_tokens: 100,
+      messages: [{ role: 'user', content: 'hi' }],
+      response_format: { type: 'json_object' },
+    });
+    // No schema → no `response_format` on the wire (LM Studio 400 on
+    // `json_object` per DocTpoint Issue #443 comment 1 2026-08-09;
+    // matching v1.14.0 `ca4a24d` behaviour for all cohorts).
+    expect(Object.keys(body)).not.toContain('response_format');
+  });
+
+  // Sanity guard: the supportsStructuredOutputs flag is for the local-
+  // server cohort (lmstudio / ollama / custom) only. The cloud compat
+  // providers (openrouter / deepseek / kimi / glm / gemini / minimax)
+  // keep `supportsStructuredOutputs: false`. When a schema is supplied
+  // but the flag is false, the AI SDK encoder at
+  // @ai-sdk/openai-compatible@2.0.62/dist/index.mjs:520-528 emits
+  // `{ type: 'json_object' }` on the wire (fallback) AND pushes a
+  // warning to `result.warnings`. The schema is silently dropped — not
+  // the constraint #443 asks for (the SDK can't encode it without
+  // the flag). The per-caller migration PR (one per site, gated on
+  // #443's pilot validating in production) must also flip
+  // `supportsStructuredOutputs` for that provider — separate PR.
+  it.each([
+    'openrouter',
+    'deepseek',
+    'kimi',
+    'glm',
+    'gemini',
+    'minimax',
+  ] as const)('falls back to json_object for cloud compat provider:%s when caller supplies a schema (flag is the open question for the per-caller migration PR)', async (provider) => {
+    const body = await captureBody(provider);
+    expect(body.response_format, `${provider} without supportsStructuredOutputs=true emits json_object, NOT json_schema — flip the flag in the per-caller migration PR`).toEqual({ type: 'json_object' });
   });
 });

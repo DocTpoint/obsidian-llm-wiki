@@ -186,19 +186,18 @@ describe('OpenAICompatSdkClient', () => {
     });
   });
 
-  describe('response_format is not forwarded', () => {
-    // #65 reports an error from LM Studio 0.4.15 on `{"type":"json_object"}`,
-    // with no status code given. The fix
-    // for that removed the field outright (5851cc8); the AI-SDK migration
-    // (6be9258) reintroduced it inside `buildProviderOptions`, where the fixed
-    // `openaiCompatible` key hid it again — the field has been built and
-    // discarded ever since, which is why no one noticed it was back.
-    //
-    // Correcting the key would deliver it. It goes for real instead. Nothing
-    // changes on the wire: extraction asks for `json_object` and nothing else,
-    // and the prompt already states the shape. What would justify sending it is
-    // `json_schema`, which is not in this branch.
-    it('leaves it out even when the caller asks for it', async () => {
+  describe('response_format is withheld on the wire for the no-schema case (LM Studio 400 — Issue #443 comment 1)', () => {
+    // DocTpoint's 2026-08-09 measurement on LM Studio / gemma-4-12b
+    // (Issue #443 comment 1): `response_format: { type: 'json_object' }`
+    // answers HTTP 400 in 29 ms — `'response_format.type' must be
+    // 'json_schema' or 'text'`. Shipping it on the no-schema path would
+    // regress #65 / ca4a24d / v1.14.0 — the very fix that dropped the
+    // field on local servers. The helper therefore returns `{}` for the
+    // no-schema case: no `output` is set, and the SDK never sees a
+    // `response_format` field to encode on the wire. This test pins that
+    // contract at the SDK-client call-site boundary (separate from the
+    // wire-body assertion in `openai-compat-request-body.test.ts`).
+    it('does NOT set top-level output when caller asks for json_object without schema', async () => {
       const client = new OpenAICompatSdkClient({
         apiKey: 'sk-test',
         baseURL: 'https://api.deepseek.com/v1',
@@ -213,6 +212,11 @@ describe('OpenAICompatSdkClient', () => {
 
       const call = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
       expect(call.providerOptions).toEqual({});
+      // Issue #443 Option 1 contract: no-schema case → `output` is
+      // absent. The schema arm (separately tested via captureBody
+      // in `openai-compat-request-body.test.ts`) is the only path
+      // that emits anything on the wire.
+      expect(call.output).toBeUndefined();
     });
   });
 

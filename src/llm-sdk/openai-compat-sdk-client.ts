@@ -21,6 +21,7 @@
 import { type LanguageModel, APICallError } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { LLMClient, type LLMFinishReason } from '../types';
+import { PREDEFINED_PROVIDERS } from '../types';
 import { obsidianFetchBridge, streamWithFallback } from '../core/obsidian-fetch-bridge';
 import { mapAiSdkError } from './openai-sdk-client';
 import {
@@ -32,6 +33,7 @@ import { TokenKeyProber } from './token-key-probe';
 import { ReasoningStripProber } from './reasoning-strip-probe';
 import { reportFinish } from './finish-reason';
 import { buildSamplingArgs } from './sampling-args';
+import { buildOutputArgs } from './output-args';
 
 export interface OpenAICompatSdkClientOptions {
   apiKey: string;
@@ -69,12 +71,29 @@ export class OpenAICompatSdkClient implements LLMClient {
    */
   private readonly reasoningStripProber = new ReasoningStripProber();
 
+  /**
+   * v1.26.3 PATCH (Issue #443): whether the openai-compat SDK provider
+   * should be created with `supportsStructuredOutputs: true`. Reads
+   * from `PREDEFINED_PROVIDERS` (the canonical per-provider config
+   * table at `src/types.ts`) so adding a new compat provider that
+   * accepts `json_schema` is a one-field config change instead of
+   * editing the SDK client. Local servers (LM Studio / Ollama /
+   * self-hosted `custom`) accept this form; cloud compat servers
+   * (openrouter / deepseek / kimi / glm) accept `json_object` and
+   * do NOT receive `json_schema` (they may 400 on it). The openai /
+   * anthropic / codex paths go through their own SDK clients and
+   * are unaffected by this flag.
+   */
+  private readonly supportsStructuredOutputs: boolean;
+
   constructor(opts: OpenAICompatSdkClientOptions) {
     this.apiKey = opts.apiKey;
     this.baseURL = opts.baseURL;
     this.provider = opts.provider;
     this.fetchImpl = opts.fetch ?? obsidianFetchBridge;
     this.streamFetchImpl = opts.streamFetch ?? streamWithFallback;
+    this.supportsStructuredOutputs
+      = PREDEFINED_PROVIDERS[opts.provider]?.supportsStructuredOutputs ?? false;
   }
 
   /**
@@ -104,6 +123,15 @@ export class OpenAICompatSdkClient implements LLMClient {
       // don't return usage unless asked. AI-SDK's default is true for
       // OpenAI; we set it explicitly to ensure consistent token tracking.
       includeUsage: true,
+      // v1.26.3 PATCH (Issue #443): when true AND a schema is supplied
+      // on the call's `response_format`, the SDK encodes
+      // `response_format: { type: 'json_schema', json_schema: { ... } }`
+      // on the wire. Without a schema, the SDK falls back to
+      // `json_object` — same shape the 15 non-pilot call sites
+      // produce today. The flag is sourced from
+      // `PREDEFINED_PROVIDERS[provider].supportsStructuredOutputs` and
+      // cached on the instance in the constructor.
+      supportsStructuredOutputs: this.supportsStructuredOutputs,
       // v1.23.0 P1.5 follow-up: token-key probe hook. Read the
       // current cached key for this baseURL at request time — this
       // closure captures `this` so each request consults the latest
@@ -151,7 +179,17 @@ export class OpenAICompatSdkClient implements LLMClient {
   }
 
   async createMessage(params: LLMClient['createMessage'] extends (p: infer P) => unknown ? P : never): Promise<string> {
-    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, seed, enableThinking, onFinish } = params;
+    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, seed, enableThinking, response_format, onFinish } = params;
+
+    // v1.26.3 PATCH (Issue #443): translate the public `response_format`
+    // shape into the AI SDK's `output` mechanism via `buildOutputArgs`
+    // (see `src/llm-sdk/output-args.ts` for the contract). Build once
+    // and spread at every generateText call site below — the URL
+    // fallback and reasoning-strip retry paths both reuse the same
+    // args. Without this shared object, a future retry path can
+    // silently omit `output` and re-introduce the v1.26.1 bug #443
+    // is closing.
+    const outputArgs = buildOutputArgs(response_format);
 
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
@@ -162,6 +200,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         ...(system ? { system } : {}),
         messages: messages.map((m) => ({ role: m.role, content: m.content })),
         maxOutputTokens: max_tokens,
+        ...outputArgs,
         providerOptions: this.buildProviderOptions({
           enableThinking,
           repetitionPenalty: repetition_penalty,
@@ -189,6 +228,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           ...(system ? { system } : {}),
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
           maxOutputTokens: max_tokens,
+          ...outputArgs,
           providerOptions: this.buildProviderOptions({
             enableThinking,
             repetitionPenalty: repetition_penalty,
@@ -257,6 +297,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           ...(system ? { system } : {}),
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
           maxOutputTokens: max_tokens,
+          ...outputArgs,
           providerOptions: this.buildProviderOptions({
             enableThinking: true,
             repetitionPenalty: repetition_penalty,
@@ -297,6 +338,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           ...(system ? { system } : {}),
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
           maxOutputTokens: max_tokens,
+          ...outputArgs,
           providerOptions: this.buildProviderOptions({
             enableThinking,
             repetitionPenalty: repetition_penalty,
