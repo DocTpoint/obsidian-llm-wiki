@@ -50,16 +50,20 @@
 //     error message names `json_object` or `response_format`, retries
 //     without `output`, and caches the strip decision.
 //
-//   * Behavioural note on `parseCompleteOutput` (corrects a v1
-//     description that was wrong for ai@6.0.230): both `generateText`
-//     (line 5021) and `streamText` (line 8277) call
-//     `outputSpecification.parseCompleteOutput` after the model
-//     finishes. `Output.object({schema})`'s variant runs `safeParseJSON`
-//     and throws `NoObjectGeneratedError` on malformed JSON — callers
-//     that opt into schema-mode are expected to either guarantee a
-//     JSON-returning model or catch `NoObjectGeneratedError` and retry
-//     without schema. Out of scope for the no-schema path that all 16
-//     production sites use today.
+//   * **Both `Output.json()` and `Output.object({schema})` throw
+//     `NoObjectGeneratedError` on malformed JSON** (corrects an
+//     earlier v1 description that was wrong for `ai@6.0.230`). Both
+//     call `outputSpecification.parseCompleteOutput` after the model
+//     finishes (`ai@6.0.230/dist/index.mjs:3899` and the Output.json
+//     factory). On a JSON-shape mismatch (unclosed array, truncation,
+//     malformed structure), the SDK throws and the catch block in
+//     `OpenAICompatSdkClient.createMessage` recovers by returning
+//     `err.text` so caller-side `parseJsonResponse` + greedy regex +
+//     LLM repair can run (the Path 2 fix shipped in commit `9789cbf`).
+//     This applies equally to the no-schema (Tier 1) and schema
+//     (Tier 0) arms — both call paths can emit malformed JSON on the
+//     cloud cohort (deepseek / openrouter / glm / kimi / minimax /
+//     gemini).
 //
 //   * `Output.object({ schema })` requires a `Schema`, not a raw
 //     JSONSchema object. The wrapper `jsonSchema()` (re-exported by
