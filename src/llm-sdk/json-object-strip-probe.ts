@@ -114,17 +114,17 @@ export class JsonObjectStripProber {
   }
 
   /**
-   * Does an error message indicate that `json_object` /
-   * `response_format` was the cause of an HTTP 400?
+   * Does an error indicate that `json_object` / `response_format` was
+   * the cause of an HTTP 400?
    *
    * Two-marker classifier. BOTH conditions must hold (AND):
    *
-   *   1. The message contains a REJECTION_VERB substring (e.g.
+   *   1. The body contains a REJECTION_VERB substring (e.g.
    *      "unrecognized", "invalid value", "must be"). Without this,
    *      messages that happen to contain "json_object" for unrelated
    *      reasons (response body, log line, model name) would
    *      trigger the strip.
-   *   2. The message contains a FIELD_MARKER substring. Without this,
+   *   2. The body contains a FIELD_MARKER substring. Without this,
    *      generic "invalid value" 400s (unrelated to json_object)
    *      would trigger the strip.
    *
@@ -134,9 +134,23 @@ export class JsonObjectStripProber {
    * request; false positives (unrelated 400s that match) permanently
    * disable server-side type hints for the baseURL, which is much
    * worse. Mirrors the `reasoning-strip-probe.ts` classifier design.
+   *
+   * IMPORTANT — the input MUST be the raw response body (e.g.
+   * `err.responseBody` from an AI SDK `APICallError`), NOT
+   * `err.message`. The AI SDK's APICallError.message field is a
+   * fixed template ("Provider returned error") and does NOT include
+   * the provider's actual error text — the body is in
+   * `responseBody` instead. The original probe (reasoning-strip,
+   * PR #411) and the json-object-strip probe (v1.26.3 PATCH
+   * follow-up) were both originally written against `err.message`,
+   * which is why they silently never fired against real provider
+   * 400s in production — the first real E2E on LM Studio 0.4.20 +
+   * qwythos-9b-claude-mythos-5-1m-mlx (2026-08-10) surfaced it.
+   * Both probes were fixed together in the v1.26.3 PATCH follow-up
+   * to take the response body as input.
    */
-  static isJsonObjectFieldError(message: string): boolean {
-    const lower = message.toLowerCase();
+  static isJsonObjectFieldError(body: string): boolean {
+    const lower = body.toLowerCase();
     const hasVerb = REJECTION_VERBS.some((v) => lower.includes(v));
     const hasField = FIELD_MARKERS.some((f) => lower.includes(f));
     return hasVerb && hasField;

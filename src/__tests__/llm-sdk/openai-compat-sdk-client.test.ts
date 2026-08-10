@@ -324,12 +324,17 @@ describe('OpenAICompatSdkClient', () => {
       // First call to this baseURL: 400 then retry success
       mockGenerateText
         .mockRejectedValueOnce(new APICallError({
-          message: 'Invalid value for reasoning_effort',
+          // v1.26.3 PATCH follow-up: simulate the real AI SDK APICallError
+          // shape — `message` is the AI SDK template, `responseBody` is
+          // the provider's actual body. The reasoning-strip classifier
+          // now checks responseBody (not message). This matches what
+          // the wire produces in production.
+          message: 'Provider returned error',
           statusCode: 400,
           responseHeaders: {},
           url: 'https://api.deepseek.com/v1',
           requestBodyValues: {},
-          responseBody: '{}',
+          responseBody: '{"error":{"message":"Invalid value for reasoning_effort"}}',
         }))
         .mockResolvedValueOnce(makeResult('hello-1'));
       // Second call: should NOT 400 again — strip is cached, the call
@@ -373,12 +378,13 @@ describe('OpenAICompatSdkClient', () => {
       // triggers it) but it does not add reasoningEffort either.
       mockGenerateText.mockReset();
       mockGenerateText.mockRejectedValue(new APICallError({
-        message: 'Invalid value for reasoning_effort',
+        // Real AI SDK shape — see comment above (line 325-333).
+        message: 'Provider returned error',
         statusCode: 400,
         responseHeaders: {},
         url: 'https://api.deepseek.com/v1',
         requestBodyValues: {},
-        responseBody: '{}',
+        responseBody: '{"error":{"message":"Invalid value for reasoning_effort"}}',
       }));
 
       const client = new OpenAICompatSdkClient({
@@ -386,6 +392,11 @@ describe('OpenAICompatSdkClient', () => {
         baseURL: 'https://api.deepseek.com/v1',
         provider: 'deepseek',
       });
+      // v1.26.3 PATCH follow-up: the AI SDK's APICallError.message is
+      // a fixed template ("Provider returned error"). The real
+      // provider body is in responseBody. Assert the body carries
+      // the reasoning_effort marker (the actual content the user
+      // cares about), not the message string.
       await expect(
         client.createMessage({
           model: 'deepseek-chat',
@@ -393,7 +404,9 @@ describe('OpenAICompatSdkClient', () => {
           messages: [{ role: 'user', content: 'hi' }],
           // enableThinking intentionally not set
         }),
-      ).rejects.toThrow(/reasoning_effort/);
+      ).rejects.toMatchObject({
+        responseBody: expect.stringContaining('reasoning_effort'),
+      });
       // The original call AND the token-key retry fire (any 400 →
       // token-key retry) — but no reasoningEffort is added in either
       // call because enableThinking !== false.
@@ -411,12 +424,16 @@ describe('OpenAICompatSdkClient', () => {
       mockGenerateText.mockReset();
       mockGenerateText
         .mockRejectedValueOnce(new APICallError({
-          message: 'Invalid value for max_tokens',
+          // Real AI SDK APICallError shape — responseBody carries the
+          // provider's actual body, message is the AI SDK template.
+          // The body mentions max_tokens only (no reasoning field
+          // marker), so the reasoning-strip probe must NOT fire.
+          message: 'Provider returned error',
           statusCode: 400,
           responseHeaders: {},
           url: 'https://api.deepseek.com/v1',
           requestBodyValues: {},
-          responseBody: '{}',
+          responseBody: '{"error":{"message":"Invalid value for max_tokens"}}',
         }))
         .mockResolvedValueOnce(makeResult('hello'));
 
@@ -488,12 +505,16 @@ describe('OpenAICompatSdkClient', () => {
       // First call: 400 then retry success
       mockGenerateText
         .mockRejectedValueOnce(new APICallError({
-          message: "'response_format.type' must be 'json_schema' or 'text'",
+          // Real AI SDK APICallError shape — responseBody carries the
+          // provider's actual body. This is the LM Studio 0.4.20 +
+          // qwythos-9b-claude-mythos-5-1m-mlx body from the 2026-08-10
+          // E2E that surfaced the err.message vs err.responseBody bug.
+          message: 'Provider returned error',
           statusCode: 400,
           responseHeaders: {},
           url: 'https://api.deepseek.com/v1',
           requestBodyValues: {},
-          responseBody: '{}',
+          responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
         }))
         .mockResolvedValueOnce(makeResult('hello-1'));
       // Second call: should NOT 400 — strip is cached, output omitted from the start
@@ -538,12 +559,16 @@ describe('OpenAICompatSdkClient', () => {
       for (const statusCode of [500, 401, 429] as const) {
         mockGenerateText.mockReset();
         mockGenerateText.mockRejectedValue(new APICallError({
-          message: 'server error',
+          // Real AI SDK shape — generic server error. No json_object /
+          // response_format field marker in the body, so even on 400
+          // the strip would not fire. statusCode guards the first
+          // gate, field marker guards the second.
+          message: 'Provider returned error',
           statusCode,
           responseHeaders: {},
           url: 'https://api.deepseek.com/v1',
           requestBodyValues: {},
-          responseBody: '{}',
+          responseBody: '{"error":{"message":"server error"}}',
         }));
 
         const client = new OpenAICompatSdkClient({
@@ -574,12 +599,17 @@ describe('OpenAICompatSdkClient', () => {
       // pattern.
       mockGenerateText.mockReset();
       mockGenerateText.mockRejectedValue(new APICallError({
-        message: "Invalid value for 'reasoning_effort'",
+        // Real AI SDK shape — body carries reasoning_effort, no
+        // json_object marker. Reasoning-strip probe fires (because
+        // the message identifies reasoning_effort as the cause);
+        // json-object-strip does NOT (caller did not pass
+        // response_format, and body has no json_object marker).
+        message: 'Provider returned error',
         statusCode: 400,
         responseHeaders: {},
         url: 'https://api.deepseek.com/v1',
         requestBodyValues: {},
-        responseBody: '{}',
+        responseBody: '{"error":{"message":"Invalid value for \'reasoning_effort\'"}}',
       }));
 
       const client = new OpenAICompatSdkClient({
@@ -590,6 +620,12 @@ describe('OpenAICompatSdkClient', () => {
       // The 400 here mentions reasoning_effort (not json_object), so
       // the reasoning-strip retry fires — but the json-object-strip
       // does NOT (the strip cache stays empty for this baseURL).
+      // v1.26.3 PATCH follow-up: AI SDK's APICallError.message is a
+      // fixed template; the real body is in responseBody. Assert the
+      // body content (what the user cares about), not the message
+      // string. Also assert the reasoning-strip branch fired (call
+      // count = 2: original + retry without reasoning_effort), which
+      // is the actual behavior we want to pin.
       await expect(
         client.createMessage({
           model: 'deepseek-chat',
@@ -597,7 +633,9 @@ describe('OpenAICompatSdkClient', () => {
           messages: [{ role: 'user', content: 'hi' }],
           // response_format intentionally not set
         }),
-      ).rejects.toThrow(/reasoning_effort/);
+      ).rejects.toMatchObject({
+        responseBody: expect.stringContaining('reasoning_effort'),
+      });
       // Reasoning-strip retry fired (1 = original, 2 = retry without
       // reasoning_effort). Json-object-strip did NOT fire — total calls
       // is exactly 2, not 3.

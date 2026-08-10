@@ -315,7 +315,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         err.statusCode === 400 &&
         enableThinking === false &&
         !this.reasoningStripProber.shouldStrip(this.baseURL) &&
-        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+        ReasoningStripProber.isReasoningFieldError(err.responseBody ?? err.message ?? '')
       ) {
         const retryLanguageModel = this.getProvider(model, this.fetchImpl);
         const { generateText } = await import('ai');
@@ -386,7 +386,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         err.statusCode === 400 &&
         response_format !== undefined &&
         !this.jsonObjectStripProber.shouldStrip(this.baseURL) &&
-        JsonObjectStripProber.isJsonObjectFieldError(err.message ?? '')
+        JsonObjectStripProber.isJsonObjectFieldError(err.responseBody ?? err.message ?? '')
       ) {
         const retryLanguageModel = this.getProvider(model, this.fetchImpl);
         const { generateText } = await import('ai');
@@ -755,7 +755,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         err.statusCode === 400 &&
         enableThinking === false &&
         !this.reasoningStripProber.shouldStrip(this.baseURL) &&
-        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+        ReasoningStripProber.isReasoningFieldError(err.responseBody ?? err.message ?? '')
       ) {
         const retryLanguageModel = this.getProvider(model, this.streamFetchImpl);
         const { streamText } = await import('ai');
