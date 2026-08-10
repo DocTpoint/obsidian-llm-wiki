@@ -21,6 +21,13 @@ function makeClient(createMessage: KeywordGenClient['createMessage']): KeywordGe
   return { createMessage };
 }
 
+/** Build a client that implements createMessageWithOutput (Phase B typed-output). */
+function makeTypedClient(
+  createMessageWithOutput: NonNullable<KeywordGenClient['createMessageWithOutput']>,
+): KeywordGenClient {
+  return { createMessage: vi.fn(), createMessageWithOutput };
+}
+
 describe('generateQueryKeywords (Phase 5.5.1)', () => {
   beforeEach(() => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
@@ -174,6 +181,80 @@ describe('generateQueryKeywords (Phase 5.5.1)', () => {
       // Long sentences (>5 words) are filtered out.
       expect(keywords).toContain('对比学习');
       expect(keywords.find(k => k.includes('very long sentence'))).toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // v1.26.3 PATCH Phase B — typed-output path (createMessageWithOutput).
+  // ==========================================================================
+  describe('typed-output path (createMessageWithOutput)', () => {
+    it('uses result.output when Tier 0 succeeds (schema on wire)', async () => {
+      const createMessageWithOutput = vi.fn().mockResolvedValueOnce({
+        text: '{"keywords":["对比学习","Contrastive Learning"]}',
+        output: { keywords: ['对比学习', 'Contrastive Learning'] },
+        outputMode: 'json_schema',
+        finishReason: 'stop',
+      });
+
+      const keywords = await generateQueryKeywords(
+        '什么叫对比学习？',
+        makeTypedClient(createMessageWithOutput),
+        { model: 'gpt-4' },
+      );
+
+      expect(keywords).toEqual(['对比学习', 'Contrastive Learning']);
+      const callArg = createMessageWithOutput.mock.calls[0]?.[0] as {
+        response_format?: { type: string; schema?: unknown };
+      };
+      // Zod schema must travel on the wire (Tier 0 shape).
+      expect(callArg.response_format?.schema).toBeDefined();
+    });
+
+    it('falls back to parseJsonResponse(text) when Tier 1/2 succeed (output undefined)', async () => {
+      const createMessageWithOutput = vi.fn().mockResolvedValueOnce({
+        text: '{"keywords":["对比学习"]}',
+        output: undefined,
+        outputMode: 'json_object',
+        finishReason: 'stop',
+      });
+
+      const keywords = await generateQueryKeywords(
+        '对比学习',
+        makeTypedClient(createMessageWithOutput),
+        { model: 'gpt-4' },
+      );
+
+      expect(keywords).toEqual(['对比学习']);
+    });
+
+    it('dedupes Tier 0 output via normalizeKeywords (same as legacy)', async () => {
+      const createMessageWithOutput = vi.fn().mockResolvedValueOnce({
+        text: '{"keywords":["a","a","A"]}',
+        output: { keywords: ['a', 'a', 'A'] },
+        outputMode: 'json_schema',
+        finishReason: 'stop',
+      });
+
+      const keywords = await generateQueryKeywords(
+        'q', makeTypedClient(createMessageWithOutput), { model: 'gpt-4' },
+      );
+
+      expect(keywords).toEqual(['a']);
+    });
+
+    it('returns [] when output shape is invalid (graceful degradation)', async () => {
+      const createMessageWithOutput = vi.fn().mockResolvedValueOnce({
+        text: '{"keywords": "not-an-array"}',
+        output: { keywords: 'not-an-array' },
+        outputMode: 'json_schema',
+        finishReason: 'stop',
+      });
+
+      const keywords = await generateQueryKeywords(
+        'q', makeTypedClient(createMessageWithOutput), { model: 'gpt-4' },
+      );
+
+      expect(keywords).toEqual([]);
     });
   });
 });
