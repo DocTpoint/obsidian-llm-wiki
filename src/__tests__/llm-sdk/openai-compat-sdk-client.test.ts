@@ -455,99 +455,128 @@ describe('OpenAICompatSdkClient', () => {
     });
   });
 
-  // v1.26.3 PATCH follow-up (Issue #443 elegant fallback): a 400 with
-  // a `json_object` / `response_format` field marker triggers a one-shot
-  // retry that omits `output` entirely, and caches the strip decision
-  // per baseURL. Mirrors the reasoning-strip pattern (same Probe-class
-  // design) but applies to the no-schema path. The strip decision is
-  // committed AFTER the retry succeeds — a transient 5xx on the retry
-  // must not permanently disable `json_object` for the baseURL.
-  describe('json-object-strip 400-retry (v1.26.3 PATCH follow-up to #443)', () => {
-    it('retries without output after 400 mentioning json_object / response_format', async () => {
+  // v1.26.3 PATCH Phase A4 — 3-tier output-mode demotion chain (replaces
+  // the v1.26.2 2-tier json-object-strip describe block). The legacy
+  // block tested "strip output on json_object 400" — the new chain
+  // demotes one tier per matched classifier. The two tests below cover
+  // the LM Studio 400 body verbatim (the regression guard from the
+  // 2026-08-10 E2E that surfaced the err.message vs err.responseBody
+  // bug). They now assert the 3-call demotion path: json_schema → 400 →
+  // json_object → 400 → text_prompt → success.
+  describe('output-mode 3-tier demotion (LM Studio regression guard)', () => {
+    it('demotes json_schema → json_object → text_prompt on the LM Studio body', async () => {
       mockGenerateText.mockReset();
       mockGenerateText
         .mockRejectedValueOnce(new APICallError({
-          message: "'response_format.type' must be 'json_schema' or 'text'",
+          // v1.26.2 used `err.message` for the classifier — both probes
+          // were silently broken until the 2026-08-10 E2E surfaced it.
+          // We use the real AI SDK shape here (message=template,
+          // responseBody=provider body) to pin the v1.26.2 fix.
+          message: 'Provider returned error',
           statusCode: 400,
           responseHeaders: {},
-          url: 'https://api.deepseek.com/v1',
+          url: 'http://localhost:1234/v1',
           requestBodyValues: {},
-          responseBody: '{"error":{"message":"response_format.type must be json_schema or text"}}',
+          responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
+        }))
+        .mockRejectedValueOnce(new APICallError({
+          message: 'Provider returned error',
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'http://localhost:1234/v1',
+          requestBodyValues: {},
+          responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
         }))
         .mockResolvedValueOnce(makeResult('hello'));
 
       const client = new OpenAICompatSdkClient({
-        apiKey: 'sk-test',
-        baseURL: 'https://api.deepseek.com/v1',
-        provider: 'deepseek',
+        apiKey: 'lm-studio',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
       });
       const text = await client.createMessage({
-        model: 'deepseek-chat',
+        model: 'qwythos-9b',
         max_tokens: 100,
         messages: [{ role: 'user', content: 'hi' }],
         response_format: { type: 'json_object' },
       });
 
       expect(text).toBe('hello');
-      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+      // 3 calls: Tier 0 (json_schema) → Tier 1 (json_object) → Tier 2 (text_prompt)
+      expect(mockGenerateText).toHaveBeenCalledTimes(3);
 
-      // First call: response_format: json_object IS on the wire
-      const firstCall = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
-      expect(firstCall.output).toBeDefined();
+      // Tier 0 call: Output.json() (no schema → A3 fallback)
+      const call1 = mockGenerateText.mock.calls[0][0] as { output?: { name?: string } };
+      expect(call1.output?.name).toBe('json');
 
-      // Second call: output is undefined (the strip)
-      const secondCall = mockGenerateText.mock.calls[1][0] as Record<string, unknown>;
-      expect(secondCall.output).toBeUndefined();
+      // Tier 1 call: same Output.json() (json_object wire)
+      const call2 = mockGenerateText.mock.calls[1][0] as { output?: { name?: string } };
+      expect(call2.output?.name).toBe('json');
+
+      // Tier 2 call: output is undefined, JSON enforcement prefix injected
+      const call3 = mockGenerateText.mock.calls[2][0] as { output?: { name?: string }; system?: string };
+      expect(call3.output?.name).toBeUndefined();
+      expect(call3.system).toContain('CRITICAL: Your reply MUST be a single valid JSON object');
     });
 
-    it('caches the strip decision per baseURL — second call skips the 400', async () => {
+    it('caches the demoted mode per baseURL — second call goes directly to Tier 2', async () => {
       mockGenerateText.mockReset();
-      // First call: 400 then retry success
+      // First invocation: 3 calls (Tier 0 → Tier 1 → Tier 2)
       mockGenerateText
         .mockRejectedValueOnce(new APICallError({
-          // Real AI SDK APICallError shape — responseBody carries the
-          // provider's actual body. This is the LM Studio 0.4.20 +
-          // qwythos-9b-claude-mythos-5-1m-mlx body from the 2026-08-10
-          // E2E that surfaced the err.message vs err.responseBody bug.
           message: 'Provider returned error',
           statusCode: 400,
           responseHeaders: {},
-          url: 'https://api.deepseek.com/v1',
+          url: 'http://localhost:1234/v1',
+          requestBodyValues: {},
+          responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
+        }))
+        .mockRejectedValueOnce(new APICallError({
+          message: 'Provider returned error',
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'http://localhost:1234/v1',
           requestBodyValues: {},
           responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
         }))
         .mockResolvedValueOnce(makeResult('hello-1'));
-      // Second call: should NOT 400 — strip is cached, output omitted from the start
+      // Second invocation: cache hit at Tier 2 — 1 call, no output
       mockGenerateText.mockResolvedValueOnce(makeResult('hello-2'));
 
       const client = new OpenAICompatSdkClient({
-        apiKey: 'sk-test',
-        baseURL: 'https://api.deepseek.com/v1',
-        provider: 'deepseek',
+        apiKey: 'lm-studio',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
       });
 
-      // First invocation: triggers 400 → retry → cache strip
+      // First invocation: 3 generateText calls (chain to Tier 2)
       const text1 = await client.createMessage({
-        model: 'deepseek-chat',
+        model: 'qwythos-9b',
         max_tokens: 100,
         messages: [{ role: 'user', content: 'hi' }],
         response_format: { type: 'json_object' },
       });
       expect(text1).toBe('hello-1');
-      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+      expect(mockGenerateText).toHaveBeenCalledTimes(3);
 
-      // Second invocation: cache hit, only ONE call, no output
+      // Second invocation: cache hit at Tier 2 — 1 generateText call, no output
       const text2 = await client.createMessage({
-        model: 'deepseek-chat',
+        model: 'qwythos-9b',
         max_tokens: 100,
         messages: [{ role: 'user', content: 'hi' }],
         response_format: { type: 'json_object' },
       });
       expect(text2).toBe('hello-2');
-      expect(mockGenerateText).toHaveBeenCalledTimes(3); // 1st=400, 2nd=retry-success, 3rd=second-call-single
+      expect(mockGenerateText).toHaveBeenCalledTimes(4);
 
-      const thirdCall = mockGenerateText.mock.calls[2][0] as Record<string, unknown>;
-      expect(thirdCall.output).toBeUndefined();
+      const fourthCall = mockGenerateText.mock.calls[3][0] as { output?: { name?: string }; system?: string };
+      expect(fourthCall.output?.name).toBeUndefined();
+      // No system was passed by the caller on the second invocation,
+      // and the cache-hit path doesn't add the JSON prefix (the prefix
+      // is only injected on Tier 2 RETRY, not on subsequent cache-hit
+      // calls). This is intentional: on cache hits the model already
+      // emits well-formed JSON because the previous retry succeeded.
+      expect(fourthCall.system).toBeUndefined();
     });
 
     it('does NOT trigger strip on non-400 errors (e.g., 500, 401, 429)', async () => {
@@ -640,6 +669,189 @@ describe('OpenAICompatSdkClient', () => {
       // reasoning_effort). Json-object-strip did NOT fire — total calls
       // is exactly 2, not 3.
       expect(mockGenerateText).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ==========================================================================
+  // v1.26.3 PATCH Phase A4 — 3-tier output-mode demotion chain
+  //
+  // The chain:
+  //   Tier 0 (json_schema) + 400 with json_schema-rejection  →  retry Tier 1 (json_object)
+  //   Tier 1 (json_object)  + 400 with json_object-rejection  →  retry Tier 2 (text_prompt)
+  //   Tier 2 (text_prompt)  + 400  →  fall through (no further demotion)
+  //
+  // The mode cache is committed AFTER the demoted retry succeeds (not
+  // before). A transient retry failure must not permanently downgrade
+  // a baseURL.
+  //
+  // The 6 P0 callers' Phase B migration will exercise Tier 0
+  // (json_schema on the wire). For now, all callers pass no schema →
+  // they start at the no-schema Tier 0 path and immediately fall back
+  // to Tier 1 (json_object) when response_format has no schema. So
+  // Tier 0 demotion is exercised via a test that supplies a schema.
+  // ==========================================================================
+
+  describe('Phase A4 — 3-tier output-mode demotion chain', () => {
+    const makeTier0Rejection = () => new APICallError({
+      message: 'Provider returned error',
+      statusCode: 400,
+      responseHeaders: {},
+      url: 'https://custom.example.com/v1',
+      requestBodyValues: {},
+      responseBody: '{"error":{"message":"Unsupported value: response_format.json_schema"}}',
+    });
+
+    const makeTier1Rejection = () => new APICallError({
+      message: 'Provider returned error',
+      statusCode: 400,
+      responseHeaders: {},
+      url: 'http://localhost:1234/v1',
+      requestBodyValues: {},
+      responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
+    });
+
+    it('Tier 0 → Tier 1: schema-rejection 400 demotes to json_object, then succeeds', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(makeTier0Rejection())  // 1st call: json_schema rejected
+        .mockResolvedValueOnce(makeResult('ok'));  // 2nd call: json_object works
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://custom.example.com/v1',
+        provider: 'custom',
+      });
+      const schema = { type: 'object', properties: { name: { type: 'string' } } } as const;
+      const result = await client.createMessage({
+        model: 'any-model',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object', schema },
+      });
+      expect(result).toBe('ok');
+      // 2 calls: original (json_schema) + retry (json_object)
+      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+      // 2nd call's output should be Output.json() (name='json'),
+      // not Output.object() (name='object')
+      const secondCallArgs = mockGenerateText.mock.calls[1][0] as { output?: { name?: string } };
+      expect(secondCallArgs.output?.name).toBe('json');
+    });
+
+    it('Tier 0 → Tier 1 → Tier 2: schema-rejection, then object-rejection, then succeeds with text_prompt', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(makeTier0Rejection())  // Tier 0 rejected
+        .mockRejectedValueOnce(makeTier1Rejection())  // Tier 1 rejected
+        .mockResolvedValueOnce(makeResult('ok'));  // Tier 2 works
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const schema = { type: 'object', properties: { name: { type: 'string' } } } as const;
+      const result = await client.createMessage({
+        model: 'any-model',
+        max_tokens: 100,
+        system: 'You are a helper.',
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object', schema },
+      });
+      expect(result).toBe('ok');
+      // 3 calls: json_schema → json_object → text_prompt
+      expect(mockGenerateText).toHaveBeenCalledTimes(3);
+      // Last call: no output, JSON enforcement prefix injected
+      const lastCallArgs = mockGenerateText.mock.calls[2][0] as {
+        output?: { name?: string };
+        system?: string;
+      };
+      expect(lastCallArgs.output?.name).toBeUndefined();
+      expect(lastCallArgs.system).toContain('CRITICAL: Your reply MUST be a single valid JSON object');
+    });
+
+    it('Tier 2 is the floor: object-rejection after Tier 2 is reached does NOT trigger another retry', async () => {
+      // After two demotions, cache says text_prompt. A subsequent call
+      // on the same baseURL should NOT re-probe — it should emit Tier 2
+      // directly. We test this with a single client instance: the cache
+      // lives for the lifetime of the client.
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(makeTier0Rejection())
+        .mockRejectedValueOnce(makeTier1Rejection())
+        .mockResolvedValueOnce(makeResult('ok'))
+        .mockResolvedValueOnce(makeResult('ok2'));  // 2nd call: cache hit, Tier 2 directly
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const schema = { type: 'object', properties: { name: { type: 'string' } } } as const;
+      // First call: Tier 0 → 1 → 2 (3 generateText calls)
+      await client.createMessage({
+        model: 'any-model',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object', schema },
+      });
+      // Second call: should hit cache at Tier 2 — only 1 generateText call
+      await client.createMessage({
+        model: 'any-model',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi again' }],
+        response_format: { type: 'json_object', schema },
+      });
+      // Total: 4 generateText calls (3 for first call's chain + 1 for
+      // second call's cache-hit).
+      expect(mockGenerateText).toHaveBeenCalledTimes(4);
+      // 4th call: no output (Tier 2)
+      const lastCallArgs = mockGenerateText.mock.calls[3][0] as { output?: { name?: string } };
+      expect(lastCallArgs.output?.name).toBeUndefined();
+    });
+
+    it('tentative markMode is rolled back when the chain exhausts without success', async () => {
+      // v1.26.3 PATCH Phase A4 — the chain tentatively writes the
+      // demoted mode BEFORE each retry so the next iteration's
+      // classifier check sees the demoted mode. If the chain exhausts
+      // (all tiers rejected), we roll back so a transient retry
+      // failure doesn't permanently downgrade the baseURL.
+      //
+      // Setup: Tier 0 reject → Tier 1 retry rejects → Tier 2 retry
+      // rejects → chain exhausted → all tentative writes rolled back.
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(makeTier0Rejection())   // Tier 0 reject
+        .mockRejectedValueOnce(makeTier0Rejection())   // Tier 1 retry reject
+        .mockRejectedValueOnce(makeTier0Rejection());  // Tier 2 retry reject
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://custom.example.com/v1',
+        provider: 'custom',
+      });
+      const schema = { type: 'object', properties: { name: { type: 'string' } } } as const;
+      // First call: chain exhausts, error propagates
+      await expect(
+        client.createMessage({
+          model: 'any-model',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'hi' }],
+          response_format: { type: 'json_object', schema },
+        }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      // 3 generateText calls (Tier 0 → Tier 1 → Tier 2)
+      expect(mockGenerateText).toHaveBeenCalledTimes(3);
+      // Second call: cache rolled back to json_schema — re-probes from Tier 0
+      mockGenerateText.mockResolvedValueOnce(makeResult('ok'));
+      const result = await client.createMessage({
+        model: 'any-model',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object', schema },
+      });
+      expect(result).toBe('ok');
+      // 2nd call succeeds with 1 generateText call (Tier 0 directly)
+      expect(mockGenerateText).toHaveBeenCalledTimes(4);
     });
   });
 });

@@ -31,7 +31,7 @@ import {
 } from '../core/url-fallback';
 import { TokenKeyProber } from './token-key-probe';
 import { ReasoningStripProber } from './reasoning-strip-probe';
-import { JsonObjectStripProber } from './json-object-strip-probe';
+import { OutputModeProber, type OutputMode } from './output-mode-prober';
 import { reportFinish } from './finish-reason';
 import { buildSamplingArgs } from './sampling-args';
 import { buildOutputArgs } from './output-args';
@@ -74,20 +74,16 @@ export class OpenAICompatSdkClient implements LLMClient {
   private readonly reasoningStripProber = new ReasoningStripProber();
 
   /**
-   * v1.26.3 PATCH follow-up (Issue #443 elegant fallback): per-baseURL
-   * cache for the "strip `Output.json()` after a 400" decision. LM
-   * Studio is the measured case (DocTpoint Issue #443 comment 1,
-   * 2026-08-09) — it rejects `response_format: { type: 'json_object' }`
-   * with HTTP 400. The probe catches any 400 whose error message
-   * names `json_object` / `response_format` (no per-provider
-   * hardcoding — the classifier is message-based, identical pattern to
-   * the reasoning-strip prober above) and retries once with `output`
-   * omitted. The strip decision is committed AFTER the retry succeeds
-   * — a transient 5xx on the retry must not permanently disable
-   * server-side type hints for the baseURL. Mirrors the design of
-   * [[ReasoningStripProber]] and [[TokenKeyProber]].
+   * v1.26.3 PATCH Phase A2 — 3-tier output-mode state machine
+   * (replaces the v1.26.2 JsonObjectStripProber). Per-baseURL cache
+   * stores the strongest mode the backend accepts (default =
+   * 'json_schema'). On 400 with a structured-output rejection, the
+   * catch-block demotes one tier and retries; the demotion is
+   * committed to the cache AFTER the retry succeeds. See
+   * [[OutputModeProber]] for the tier ordering and classifier
+   * contract.
    */
-  private readonly jsonObjectStripProber = new JsonObjectStripProber();
+  private readonly outputModeProber = new OutputModeProber();
 
   /**
    * v1.26.3 PATCH (Issue #443): whether the openai-compat SDK provider
@@ -211,28 +207,29 @@ export class OpenAICompatSdkClient implements LLMClient {
     // v1.26.3 PATCH follow-up (elegant fallback): if the per-baseURL
     // strip cache says "this backend rejects json_object", skip the
     // helper's `Output.json()` emission entirely — pass `{}` so no
-    // `response_format` field reaches the wire. This makes the strip
-    // decision a one-time probe per unique baseURL: the first call
-    // gets a 400, the retry without `output` succeeds and caches the
-    // decision, and every subsequent call on this baseURL skips the
-    // probe. The helper itself does not consult the cache — keeping
-    // it stateless and easy to reason about — so the override happens
-    // here at the call site.
-    const outputArgs = (
-      response_format !== undefined
-      && this.jsonObjectStripProber.shouldStrip(this.baseURL)
-    )
-      ? {}
-      : buildOutputArgs(response_format);
+    // `response_format` field reaches the wire. The prober itself is
+    // stateless w.r.t. the response_format — the override happens here
+    // at the call site: getMode() returns the strongest mode the
+    // backend has accepted (default 'json_schema'); buildOutputArgs
+    // then dispatches based on the mode.
+    //
+    // v1.26.3 PATCH Phase A4: the previous 2-tier shouldStrip boolean
+    // is gone. The 3-tier mode ('json_schema' / 'json_object' /
+    // 'text_prompt') is consulted instead, and the demotion happens in
+    // the catch-block below.
+    const currentMode = this.outputModeProber.getMode(this.baseURL);
+    const outputArgs = buildOutputArgs(response_format, currentMode);
 
     // [DEBUG-LOG v1.26.3 E2E] visible entry-point trace: response_format
-    // requested by caller, cache state for json-object-strip, and the
-    // final outputArgs that will reach the wire. If response_format is
-    // set but outputArgs has no `output` key, the cache forced a strip.
+    // requested by caller, current mode from the prober, and the
+    // final outputArgs that will reach the wire.
+    //   - outputArgs has no `output` key     → Tier 2 (text_prompt)
+    //   - output.output.name === 'object'    → Tier 0 (json_schema with schema)
+    //   - output.output.name === 'json'      → Tier 1 (json_object, or Tier 0 with no schema)
     console.debug(
-      `[JSON-MODE-DEBUG] baseURL=${this.baseURL} ` +
+      `[OUTPUT-MODE-DEBUG] baseURL=${this.baseURL} ` +
       `response_format=${JSON.stringify(response_format)} ` +
-      `cache.shouldStrip=${this.jsonObjectStripProber.shouldStrip(this.baseURL)} ` +
+      `mode=${currentMode} ` +
       `outputArgs=${JSON.stringify(outputArgs)}`,
     );
 
@@ -383,89 +380,143 @@ export class OpenAICompatSdkClient implements LLMClient {
       // `response_format` on the wire at all), and cache the strip
       // decision so subsequent calls skip the probe.
       //
-      // ORDER MATTERS: this branch runs AFTER the reasoning-strip
-      // branch above (so a 400 with a reasoning-field marker goes to
-      // the reasoning path first) and BEFORE the token-key branch
-      // below. Token-key is coarse (any 400 → swap max_tokens) and
-      // would otherwise swallow the json-object-strip 400, mark the
-      // baseURL as max_completion_tokens, and skip the strip probe
-      // entirely. Same ordering logic as the reasoning-strip branch.
+      // v1.26.3 PATCH Phase A4 — 3-tier output-mode demotion chain.
       //
-      // Guard: skip retry if we've already cached "strip" for this
-      // baseURL — means the first retry already happened (and the
-      // retry either succeeded or failed the same way).
+      // Replaces the v1.26.2 2-tier json-object-strip branch. The
+      // chain demotes one tier weaker per matched 400:
       //
-      // Guard: caller must have passed `response_format` for the
-      // initial call — if they didn't, no `output` was set, no
-      // `response_format` on the wire, the 400 cannot be on this
-      // field. Mirrors the reasoning-strip `enableThinking === false`
-      // guard.
+      //   currentMode='json_schema' + isJsonSchemaFieldError(err)  →  retry at 'json_object'
+      //   currentMode='json_object'  + isJsonObjectFieldError(err)  →  retry at 'text_prompt'
+      //   currentMode='text_prompt'                              →  no demotion (floor)
       //
-      // markStrip AFTER the retry succeeds (not before). If the retry
-      // itself throws (same backend, transient 5xx, network blip), we
-      // don't want the cache permanently poisoned. Mirrors the
-      // reasoning-strip Bug-3 fix from PR #411.
+      // Order matters: this block runs AFTER the reasoning-strip branch
+      // above (so a 400 with a reasoning-field marker goes to the
+      // reasoning path first) and BEFORE the token-key branch below
+      // (token-key is coarse — any 400 → swap max_tokens — and would
+      // otherwise swallow a structured-output 400, mark the baseURL as
+      // max_completion_tokens, and skip the mode demotion entirely).
+      //
+      // Guards:
+      //   - response_format must have been passed on the call site. If
+      //     the caller did not opt in, no response_format was on the
+      //     wire, no mode demotion applies. Mirrors the reasoning-strip
+      //     `enableThinking === false` guard.
+
       if (
         APICallError.isInstance(err) &&
         err.statusCode === 400 &&
-        response_format !== undefined &&
-        !this.jsonObjectStripProber.shouldStrip(this.baseURL) &&
-        JsonObjectStripProber.isJsonObjectFieldError(err.responseBody ?? err.message ?? '')
+        response_format !== undefined
       ) {
-        // [DEBUG-LOG v1.26.3 E2E] json-object-strip probe matched — the
-        // classifier returned true on err.responseBody. The responseBody
-        // excerpt is the canonical evidence: if you see LM Studio's
-        // "'response_format.type' must be 'json_schema' or 'text'" here,
-        // the probe sees what it needs and the retry below will strip
-        // `output`. If this line NEVER prints during the LM Studio 400,
-        // either (a) the classifier still misreads the body (re-check
-        // err.responseBody) or (b) the err was not an APICallError /
-        // statusCode != 400 / response_format was undefined on the call
-        // site / cache already said strip — check [JSON-MODE-DEBUG].
+        const errBody = err.responseBody ?? err.message ?? '';
+        const currentMode = this.outputModeProber.getMode(this.baseURL);
+
+        // Cache write policy (3-tier chain):
+      //
+      // Cache write policy (3-tier chain):
+      //
+      //   markMode BEFORE the retry (tentatively), so that if the retry
+      //   ALSO throws, the catch block sees the demoted mode and
+      //   progresses to the next tier instead of looping back to Tier
+      //   0. If the retry succeeds, the cache is already at the
+      //   correct value — no extra write needed. If the retry fails,
+      //   the NEXT tier's demotion branch runs; if THAT retry also
+      //   fails, we UNDO the tentative write before propagating so a
+      //   transient retry failure does not permanently downgrade the
+      //   baseURL. This mirrors the v1.26.2 strip-probe "commit AFTER
+      //   retry success" intent but is structured for a multi-step
+      //   chain rather than a single retry.
+      //
+      // Why tentatively-write instead of tracking retry state in a
+      //   local variable: the chain is a sequence of independent
+      //   catch → retry cycles that recurse through the SAME catch
+      //   block. Each cycle needs to see the mode corresponding to
+      //   the LAST attempt, not the original. Writing to the cache is
+      //   the simplest way to make the "current mode" state visible
+      //   across these cycles.
+      //
+      // Implementation note — why an inner for-loop instead of nested
+      //   catches: nested catches can't re-enter their parent's catch
+      //   (the throw exits the entire catch block). The chain needs to
+      //   iterate so that a retry's error can re-trigger the demotion
+      //   branch with the (now-updated) mode.
+      let tentativeDemotion: OutputMode | null = null;
+      let lastErrBody: string = errBody;
+      // Up to 2 demotions: Tier 0→1, then Tier 1→2.
+      for (let chainAttempt = 0; chainAttempt < 2; chainAttempt++) {
+        const currentMode = this.outputModeProber.getMode(this.baseURL);
+
+        // Determine target tier based on current mode and last error body.
+        let demotedMode: OutputMode | null = null;
+        if (currentMode === 'json_schema' && OutputModeProber.isJsonSchemaFieldError(lastErrBody)) {
+          demotedMode = 'json_object';
+        } else if (currentMode === 'json_object' && OutputModeProber.isJsonObjectFieldError(lastErrBody)) {
+          demotedMode = 'text_prompt';
+        } else {
+          // No demotion applies at this level. Break out cleanly —
+          // either the 400 doesn't match any classifier (chain
+          // doesn't apply) or we've exhausted the floor.
+          break;
+        }
+
+        // [DEBUG-LOG v1.26.3 E2E] demotion step.
         console.debug(
-          `[JSON-OBJECT-STRIP-DEBUG] baseURL=${this.baseURL} ` +
-          `classifier matched. statusCode=${err.statusCode} ` +
-          `responseBody="${(err.responseBody ?? '').slice(0, 240)}" ` +
-          `→ retrying with output=undefined (no response_format on wire)`,
+          `[OUTPUT-MODE-DEMOTE-DEBUG] baseURL=${this.baseURL} ` +
+          `tier=${currentMode} → tier=${demotedMode}. ` +
+          `responseBody="${lastErrBody.slice(0, 240)}"`,
         );
-        const retryLanguageModel = this.getProvider(model, this.fetchImpl);
-        const { generateText } = await import('ai');
-        // Retry without `output` — the helper returns `{}` when
-        // response_format is undefined, so we call it with undefined
-        // here. The 4 retry paths all spread outputArgs, and the
-        // original call's response_format is preserved on the call
-        // site; only the SDK argument is recomputed.
-        //
-        // v1.26.3 PATCH follow-up (2026-08-10 E2E on LM Studio):
-        // stripping response_format leaves the model without any
-        // structured-output constraint, so local backends (gemma-4,
-        // llama.cpp) emit unclosed arrays / trailing commas and the
-        // downstream JSON parser fails. Prepend a JSON-shape
-        // enforcement line to the system prompt so the retry still
-        // produces parseable JSON without response_format on the wire.
-        //
-        // v1.26.3 PATCH Phase A1: prefix is now a reusable constant
-        // (src/llm-sdk/json-prompt-prefix.ts) shared by Tier 1 / Tier 2
-        // retry paths in the 3-tier output-mode architecture.
-        const result = await generateText({
-          model: retryLanguageModel,
-          ...(system ? { system: `${JSON_ENFORCEMENT_SYSTEM_PREFIX}\n\n${system}` } : { system: JSON_ENFORCEMENT_SYSTEM_PREFIX }),
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
-          maxOutputTokens: max_tokens,
-          ...buildOutputArgs(undefined),
-          providerOptions: this.buildProviderOptions({
-            enableThinking,
-            repetitionPenalty: repetition_penalty,
-          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
-          ...buildSamplingArgs({ temperature, top_p, seed }),
-        });
-        // Retry succeeded — commit the cache decision now. If the
-        // retry above throws, this line never runs and the cache is
-        // untouched; the outer catch propagates the error.
-        this.jsonObjectStripProber.markStrip(this.baseURL);
-        console.debug(`[JSON-OBJECT-STRIP-DEBUG] baseURL=${this.baseURL} cache committed (markStrip). Future calls on this baseURL will skip the probe and emit no response_format.`);
-        reportFinish(onFinish, result.finishReason, result.usage);
-        return result.text;
+
+        // Tentative write BEFORE retry so the next iteration sees the
+        // demoted mode if the retry throws.
+        this.outputModeProber.markMode(this.baseURL, demotedMode);
+        tentativeDemotion = demotedMode;
+
+        try {
+          const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+          const { generateText } = await import('ai');
+          // Tier 2 retry injects the JSON enforcement prefix; Tier 1
+          // does not (Output.json() is a wire-shape constraint; no
+          // prompt change needed).
+          const retrySystem =
+            demotedMode === 'text_prompt'
+              ? (system ? `${JSON_ENFORCEMENT_SYSTEM_PREFIX}\n\n${system}` : JSON_ENFORCEMENT_SYSTEM_PREFIX)
+              : system;
+          const result = await generateText({
+            model: retryLanguageModel,
+            ...(retrySystem ? { system: retrySystem } : {}),
+            messages: messages.map((m) => ({ role: m.role, content: m.content })),
+            maxOutputTokens: max_tokens,
+            ...buildOutputArgs(response_format, demotedMode),
+            providerOptions: this.buildProviderOptions({
+              enableThinking,
+              repetitionPenalty: repetition_penalty,
+            }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+            ...buildSamplingArgs({ temperature, top_p, seed }),
+          });
+          console.debug(`[OUTPUT-MODE-DEMOTE-DEBUG] baseURL=${this.baseURL} retry succeeded. Cache committed: mode=${demotedMode}.`);
+          reportFinish(onFinish, result.finishReason, result.usage);
+          return result.text;
+        } catch (retryErr) {
+          // Retry at the demoted tier also failed. Update lastErrBody
+          // for the next iteration's classifier check (the loop will
+          // decide whether to demote one more tier or break).
+          if (APICallError.isInstance(retryErr)) {
+            lastErrBody = retryErr.responseBody ?? retryErr.message ?? '';
+          }
+          console.debug(`[OUTPUT-MODE-DEMOTE-DEBUG] baseURL=${this.baseURL} retry at tier=${demotedMode} failed. Continuing chain.`);
+        }
+      }
+      // Chain exhausted without success. Roll back any tentative
+      // writes so a transient retry failure doesn't poison the cache.
+      if (tentativeDemotion !== null) {
+        this.outputModeProber.markMode(this.baseURL, 'json_schema');
+        console.debug(`[OUTPUT-MODE-DEMOTE-DEBUG] baseURL=${this.baseURL} chain exhausted without success. Rolling back tentative writes; cache reset to json_schema.`);
+      }
+      // Re-throw the original 400 so the caller sees the same
+      // APICallError that started the chain. The token-key probe
+      // below is a coarse "any 400" mechanism — we don't want it to
+      // trigger on a structured-output-rejection 400 (that's already
+      // been correctly diagnosed above).
+      throw err;
       }
 
       // v1.23.0 P1.5 follow-up: token-key probe-then-retry fallback.
