@@ -186,18 +186,34 @@ describe('OpenAICompatSdkClient', () => {
     });
   });
 
-  describe('response_format is withheld on the wire for the no-schema case (LM Studio 400 — Issue #443 comment 1)', () => {
-    // DocTpoint's 2026-08-09 measurement on LM Studio / gemma-4-12b
-    // (Issue #443 comment 1): `response_format: { type: 'json_object' }`
-    // answers HTTP 400 in 29 ms — `'response_format.type' must be
-    // 'json_schema' or 'text'`. Shipping it on the no-schema path would
-    // regress #65 / ca4a24d / v1.14.0 — the very fix that dropped the
-    // field on local servers. The helper therefore returns `{}` for the
-    // no-schema case: no `output` is set, and the SDK never sees a
-    // `response_format` field to encode on the wire. This test pins that
-    // contract at the SDK-client call-site boundary (separate from the
-    // wire-body assertion in `openai-compat-request-body.test.ts`).
-    it('does NOT set top-level output when caller asks for json_object without schema', async () => {
+  describe('response_format: no-schema case sets output=Output.json() for the SDK to encode (Issue #443 elegant fallback)', () => {
+    // v1.26.3 PATCH follow-up (elegant fallback) supersedes Option 1:
+    //
+    //   Option 1 (shipped in e053cef): buildOutputArgs returned `{}` for
+    //   the no-schema case — `Output.json()` was never invoked, no
+    //   `output` was set, the SDK never saw a `response_format` field.
+    //   Rationale: LM Studio rejects `json_object` with HTTP 400
+    //   (DocTpoint Issue #443 comment 1, 2026-08-09) — skip the field
+    //   to avoid 400. Cost: the 6 cloud providers (deepseek / openrouter
+    //   / kimi / glm / gemini / minimax) lose the server-side type hint
+    //   that reduces parse-failure class of issues.
+    //
+    //   Elegant fallback (this follow-up): buildOutputArgs returns
+    //   `{ output: Output.json() }` for the no-schema case. The SDK
+    //   encodes `response_format: { type: 'json_object' }` on the wire
+    //   for every openai-compat provider. The 6 cloud providers accept
+    //   it (server-side type hint restored). The local-server cohort
+    //   (LM Studio / Ollama / `custom`) that rejects the field is
+    //   caught by the json-object-strip 400-retry at the client
+    //   level (json-object-strip-probe.ts) — the cost is one 400 per
+    //   unique baseURL, then cache hit and the wire field is dropped
+    //   silently thereafter. No provider is hardcoded in the helper.
+    //
+    // This test pins the SDK-client call-site boundary: `output` IS
+    // set (so the SDK encodes `json_object` on the wire). The
+    // wire-body assertion in `openai-compat-request-body.test.ts`
+    // pins what the SDK actually sends.
+    it('sets top-level output=Output.json() when caller asks for json_object without schema', async () => {
       const client = new OpenAICompatSdkClient({
         apiKey: 'sk-test',
         baseURL: 'https://api.deepseek.com/v1',
@@ -212,11 +228,13 @@ describe('OpenAICompatSdkClient', () => {
 
       const call = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
       expect(call.providerOptions).toEqual({});
-      // Issue #443 Option 1 contract: no-schema case → `output` is
-      // absent. The schema arm (separately tested via captureBody
-      // in `openai-compat-request-body.test.ts`) is the only path
-      // that emits anything on the wire.
-      expect(call.output).toBeUndefined();
+      // Issue #443 elegant-fallback contract: no-schema case → `output`
+      // is set (the SDK encodes it as `json_object` on the wire). The
+      // strip probe at the client level handles backends that 400 on
+      // the field (LM Studio is the measured case). The wire-body test
+      // in `openai-compat-request-body.test.ts` pins the actual wire
+      // shape: `{type:'json_object'}`.
+      expect(call.output).toBeDefined();
     });
   });
 
@@ -416,6 +434,173 @@ describe('OpenAICompatSdkClient', () => {
       expect(text).toBe('hello');
       // Two calls — token-key retry path (different from reasoning-strip).
       // We don't assert which retry fired, only that the 400 was handled.
+      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // v1.26.3 PATCH follow-up (Issue #443 elegant fallback): a 400 with
+  // a `json_object` / `response_format` field marker triggers a one-shot
+  // retry that omits `output` entirely, and caches the strip decision
+  // per baseURL. Mirrors the reasoning-strip pattern (same Probe-class
+  // design) but applies to the no-schema path. The strip decision is
+  // committed AFTER the retry succeeds — a transient 5xx on the retry
+  // must not permanently disable `json_object` for the baseURL.
+  describe('json-object-strip 400-retry (v1.26.3 PATCH follow-up to #443)', () => {
+    it('retries without output after 400 mentioning json_object / response_format', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(new APICallError({
+          message: "'response_format.type' must be 'json_schema' or 'text'",
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'https://api.deepseek.com/v1',
+          requestBodyValues: {},
+          responseBody: '{"error":{"message":"response_format.type must be json_schema or text"}}',
+        }))
+        .mockResolvedValueOnce(makeResult('hello'));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const text = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(text).toBe('hello');
+      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+
+      // First call: response_format: json_object IS on the wire
+      const firstCall = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
+      expect(firstCall.output).toBeDefined();
+
+      // Second call: output is undefined (the strip)
+      const secondCall = mockGenerateText.mock.calls[1][0] as Record<string, unknown>;
+      expect(secondCall.output).toBeUndefined();
+    });
+
+    it('caches the strip decision per baseURL — second call skips the 400', async () => {
+      mockGenerateText.mockReset();
+      // First call: 400 then retry success
+      mockGenerateText
+        .mockRejectedValueOnce(new APICallError({
+          message: "'response_format.type' must be 'json_schema' or 'text'",
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'https://api.deepseek.com/v1',
+          requestBodyValues: {},
+          responseBody: '{}',
+        }))
+        .mockResolvedValueOnce(makeResult('hello-1'));
+      // Second call: should NOT 400 — strip is cached, output omitted from the start
+      mockGenerateText.mockResolvedValueOnce(makeResult('hello-2'));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+
+      // First invocation: triggers 400 → retry → cache strip
+      const text1 = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object' },
+      });
+      expect(text1).toBe('hello-1');
+      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+
+      // Second invocation: cache hit, only ONE call, no output
+      const text2 = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object' },
+      });
+      expect(text2).toBe('hello-2');
+      expect(mockGenerateText).toHaveBeenCalledTimes(3); // 1st=400, 2nd=retry-success, 3rd=second-call-single
+
+      const thirdCall = mockGenerateText.mock.calls[2][0] as Record<string, unknown>;
+      expect(thirdCall.output).toBeUndefined();
+    });
+
+    it('does NOT trigger strip on non-400 errors (e.g., 500, 401, 429)', async () => {
+      // The strip retry is gated on statusCode === 400 + a json_object /
+      // response_format field marker. Other status codes must NOT
+      // trigger the strip — the existing token-key / URL-fallback paths
+      // handle those, and silently disabling `json_object` for a
+      // 500/401/429 would be a wrong cache decision.
+      for (const statusCode of [500, 401, 429] as const) {
+        mockGenerateText.mockReset();
+        mockGenerateText.mockRejectedValue(new APICallError({
+          message: 'server error',
+          statusCode,
+          responseHeaders: {},
+          url: 'https://api.deepseek.com/v1',
+          requestBodyValues: {},
+          responseBody: '{}',
+        }));
+
+        const client = new OpenAICompatSdkClient({
+          apiKey: 'sk-test',
+          baseURL: 'https://api.deepseek.com/v1',
+          provider: 'deepseek',
+        });
+        await expect(
+          client.createMessage({
+            model: 'deepseek-chat',
+            max_tokens: 100,
+            messages: [{ role: 'user', content: 'hi' }],
+            response_format: { type: 'json_object' },
+          })
+        ).rejects.toThrow();
+        // Single call: no retry, no strip probe. (Token-key fallback
+        // would fire for some 400s, but for 500/401/429 it doesn't —
+        // and even if it did, that's a different retry path that does
+        // not omit `output`.)
+        expect(mockGenerateText.mock.calls.length, `statusCode=${statusCode}`).toBeLessThanOrEqual(2);
+      }
+    });
+
+    it('does NOT trigger strip when caller did not pass response_format', async () => {
+      // No response_format → no `output` set → no json_object on the
+      // wire → the 400 must not be misclassified as a json_object
+      // rejection. Mirrors the reasoning-strip "no override → no field"
+      // pattern.
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValue(new APICallError({
+        message: "Invalid value for 'reasoning_effort'",
+        statusCode: 400,
+        responseHeaders: {},
+        url: 'https://api.deepseek.com/v1',
+        requestBodyValues: {},
+        responseBody: '{}',
+      }));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      // The 400 here mentions reasoning_effort (not json_object), so
+      // the reasoning-strip retry fires — but the json-object-strip
+      // does NOT (the strip cache stays empty for this baseURL).
+      await expect(
+        client.createMessage({
+          model: 'deepseek-chat',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'hi' }],
+          // response_format intentionally not set
+        }),
+      ).rejects.toThrow(/reasoning_effort/);
+      // Reasoning-strip retry fired (1 = original, 2 = retry without
+      // reasoning_effort). Json-object-strip did NOT fire — total calls
+      // is exactly 2, not 3.
       expect(mockGenerateText).toHaveBeenCalledTimes(2);
     });
   });

@@ -31,6 +31,7 @@ import {
 } from '../core/url-fallback';
 import { TokenKeyProber } from './token-key-probe';
 import { ReasoningStripProber } from './reasoning-strip-probe';
+import { JsonObjectStripProber } from './json-object-strip-probe';
 import { reportFinish } from './finish-reason';
 import { buildSamplingArgs } from './sampling-args';
 import { buildOutputArgs } from './output-args';
@@ -70,6 +71,22 @@ export class OpenAICompatSdkClient implements LLMClient {
    * the probe. Mirrors the [[TokenKeyProber]] design.
    */
   private readonly reasoningStripProber = new ReasoningStripProber();
+
+  /**
+   * v1.26.3 PATCH follow-up (Issue #443 elegant fallback): per-baseURL
+   * cache for the "strip `Output.json()` after a 400" decision. LM
+   * Studio is the measured case (DocTpoint Issue #443 comment 1,
+   * 2026-08-09) — it rejects `response_format: { type: 'json_object' }`
+   * with HTTP 400. The probe catches any 400 whose error message
+   * names `json_object` / `response_format` (no per-provider
+   * hardcoding — the classifier is message-based, identical pattern to
+   * the reasoning-strip prober above) and retries once with `output`
+   * omitted. The strip decision is committed AFTER the retry succeeds
+   * — a transient 5xx on the retry must not permanently disable
+   * server-side type hints for the baseURL. Mirrors the design of
+   * [[ReasoningStripProber]] and [[TokenKeyProber]].
+   */
+  private readonly jsonObjectStripProber = new JsonObjectStripProber();
 
   /**
    * v1.26.3 PATCH (Issue #443): whether the openai-compat SDK provider
@@ -189,7 +206,23 @@ export class OpenAICompatSdkClient implements LLMClient {
     // args. Without this shared object, a future retry path can
     // silently omit `output` and re-introduce the v1.26.1 bug #443
     // is closing.
-    const outputArgs = buildOutputArgs(response_format);
+    //
+    // v1.26.3 PATCH follow-up (elegant fallback): if the per-baseURL
+    // strip cache says "this backend rejects json_object", skip the
+    // helper's `Output.json()` emission entirely — pass `{}` so no
+    // `response_format` field reaches the wire. This makes the strip
+    // decision a one-time probe per unique baseURL: the first call
+    // gets a 400, the retry without `output` succeeds and caches the
+    // decision, and every subsequent call on this baseURL skips the
+    // probe. The helper itself does not consult the cache — keeping
+    // it stateless and easy to reason about — so the override happens
+    // here at the call site.
+    const outputArgs = (
+      response_format !== undefined
+      && this.jsonObjectStripProber.shouldStrip(this.baseURL)
+    )
+      ? {}
+      : buildOutputArgs(response_format);
 
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
@@ -312,6 +345,76 @@ export class OpenAICompatSdkClient implements LLMClient {
         return result.text;
       }
 
+      // v1.26.3 PATCH follow-up (Issue #443 elegant fallback): Layer-3
+      // 400-retry for `json_object` / `response_format` field rejection.
+      //
+      // LM Studio is the measured case (DocTpoint Issue #443 comment 1,
+      // 2026-08-09: 29 ms, `'response_format.type' must be 'json_schema'
+      // or 'text'`). The SDK's `Output.json()` arm encodes
+      // `response_format: { type: 'json_object' }` on the wire for every
+      // openai-compat provider — most accept it (the 6 cloud providers
+      // documented in their respective json_mode guides), but local
+      // servers may not. On 400 with a json_object/response_format field
+      // marker, retry exactly once with `output` omitted (i.e. no
+      // `response_format` on the wire at all), and cache the strip
+      // decision so subsequent calls skip the probe.
+      //
+      // ORDER MATTERS: this branch runs AFTER the reasoning-strip
+      // branch above (so a 400 with a reasoning-field marker goes to
+      // the reasoning path first) and BEFORE the token-key branch
+      // below. Token-key is coarse (any 400 → swap max_tokens) and
+      // would otherwise swallow the json-object-strip 400, mark the
+      // baseURL as max_completion_tokens, and skip the strip probe
+      // entirely. Same ordering logic as the reasoning-strip branch.
+      //
+      // Guard: skip retry if we've already cached "strip" for this
+      // baseURL — means the first retry already happened (and the
+      // retry either succeeded or failed the same way).
+      //
+      // Guard: caller must have passed `response_format` for the
+      // initial call — if they didn't, no `output` was set, no
+      // `response_format` on the wire, the 400 cannot be on this
+      // field. Mirrors the reasoning-strip `enableThinking === false`
+      // guard.
+      //
+      // markStrip AFTER the retry succeeds (not before). If the retry
+      // itself throws (same backend, transient 5xx, network blip), we
+      // don't want the cache permanently poisoned. Mirrors the
+      // reasoning-strip Bug-3 fix from PR #411.
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        response_format !== undefined &&
+        !this.jsonObjectStripProber.shouldStrip(this.baseURL) &&
+        JsonObjectStripProber.isJsonObjectFieldError(err.message ?? '')
+      ) {
+        const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+        const { generateText } = await import('ai');
+        // Retry without `output` — the helper returns `{}` when
+        // response_format is undefined, so we call it with undefined
+        // here. The 4 retry paths all spread outputArgs, and the
+        // original call's response_format is preserved on the call
+        // site; only the SDK argument is recomputed.
+        const result = await generateText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          ...buildOutputArgs(undefined),
+          providerOptions: this.buildProviderOptions({
+            enableThinking,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        // Retry succeeded — commit the cache decision now. If the
+        // retry above throws, this line never runs and the cache is
+        // untouched; the outer catch propagates the error.
+        this.jsonObjectStripProber.markStrip(this.baseURL);
+        reportFinish(onFinish, result.finishReason, result.usage);
+        return result.text;
+      }
+
       // v1.23.0 P1.5 follow-up: token-key probe-then-retry fallback.
       //
       // On ANY HTTP 400 from the gateway, try the alternate token key
@@ -323,9 +426,10 @@ export class OpenAICompatSdkClient implements LLMClient {
       // baseURL — means the first retry already happened (and failed),
       // so retrying again would loop.
       //
-      // Runs AFTER the reasoning-strip branch above: the reasoning
-      // branch handles a more specific 400 case (the message clearly
-      // names a reasoning-related field). Token-key is the broader
+      // Runs AFTER the reasoning-strip + json-object-strip branches
+      // above: those branches handle more specific 400 cases (the
+      // error message clearly names a reasoning-related field, or
+      // `json_object` / `response_format`). Token-key is the broader
       // catch-all for any other 400.
       if (APICallError.isInstance(err) && err.statusCode === 400 && !this.tokenKeyProber.getCachedKey(this.baseURL)) {
         // The default wire format is `max_tokens`. If the gateway
