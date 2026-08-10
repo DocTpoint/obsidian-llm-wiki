@@ -45,6 +45,8 @@
 //   field, all models on the gateway get demoted; not the case here).
 //   Mirrors the [[reasoning-strip-probe]] design.
 
+import { classifyFieldError, REJECTION_VERBS } from './shared-rejection-verbs';
+
 /**
  * The three output-mode tiers, ordered strongest → weakest.
  * The numeric index in OUTPUT_MODES is the demotion order: a 400 with
@@ -52,22 +54,6 @@
  */
 export const OUTPUT_MODES = ['json_schema', 'json_object', 'text_prompt'] as const;
 export type OutputMode = (typeof OUTPUT_MODES)[number];
-
-/**
- * Rejection verbs shared by both classifiers. Same vocabulary as the
- * reasoning-strip-probe classifier so a future contributor can grep for
- * the pattern and find both probes.
- */
-const REJECTION_VERBS = [
-  'unrecognized',
-  'unknown',
-  'invalid value',
-  'unsupported',
-  'not allowed',
-  'not supported',
-  'must be',
-  'should be',
-] as const;
 
 /**
  * Field markers for the Tier 1 demotion classifier (json_object /
@@ -145,10 +131,7 @@ export class OutputModeProber {
    * fixed template and does NOT include the provider body.
    */
   static isJsonSchemaFieldError(body: string): boolean {
-    const lower = body.toLowerCase();
-    const hasVerb = REJECTION_VERBS.some((v) => lower.includes(v));
-    const hasField = JSON_SCHEMA_FIELD_MARKERS.some((f) => lower.includes(f));
-    return hasVerb && hasField;
+    return classifyFieldError(body, JSON_SCHEMA_FIELD_MARKERS);
   }
 
   /**
@@ -160,9 +143,6 @@ export class OutputModeProber {
    * message (same contract as isJsonSchemaFieldError above).
    */
   static isJsonObjectFieldError(body: string): boolean {
-    const lower = body.toLowerCase();
-    const hasVerb = REJECTION_VERBS.some((v) => lower.includes(v));
-    const hasField = JSON_OBJECT_FIELD_MARKERS.some((f) => lower.includes(f));
-    return hasVerb && hasField;
+    return classifyFieldError(body, JSON_OBJECT_FIELD_MARKERS);
   }
 }
