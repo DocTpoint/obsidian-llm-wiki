@@ -311,3 +311,81 @@ describe('classifyMergeNeed — source context in the triage prompt (#312)', () 
     expect(prompt).not.toContain('\n\n\n');
   });
 });
+
+// v1.26.3 PATCH Phase B (Issue #443): typed-output path for merge triage.
+// When the client implements createMessageWithOutput, classifyMergeNeed
+// prefers result.output (Tier 0 json_schema) and passes the Zod schema
+// on the wire; falls back to parseJsonResponse(text) when output is
+// undefined (Tier 1/2) or the client lacks the typed method.
+describe('classifyMergeNeed — typed-output path (createMessageWithOutput)', () => {
+  function makeTypedCtx(
+    createMessageWithOutput: (params: Record<string, unknown>) => Promise<{
+      text: string;
+      output?: unknown;
+      outputMode: string;
+      finishReason: string;
+    }>,
+  ): MergeTriageContext {
+    return {
+      settings: { wikiFolder: 'wiki', wikiLanguage: 'en', disableThinking: false } as LLMWikiSettings,
+      getClient: () => ({
+        createMessage: async () => '',
+        createMessageWithOutput: createMessageWithOutput as unknown as NonNullable<ReturnType<MergeTriageContext['getClient']>>['createMessageWithOutput'],
+      }),
+      buildSystemPrompt: async () => 'system',
+    };
+  }
+
+  it('uses result.output when Tier 0 succeeds (schema on wire)', async () => {
+    const createMessageWithOutput = async () => ({
+      text: JSON.stringify({ strategy: 'skip', reason: 'typed' }),
+      output: { strategy: 'skip', reason: 'typed' },
+      outputMode: 'json_schema',
+      finishReason: 'stop',
+    });
+    const result = await classifyMergeNeed(
+      makeTypedCtx(createMessageWithOutput),
+      createMockEntity({ name: 'X' }),
+      'entity',
+      { path: 'p.md', basename: 'p.md' },
+      '# existing',
+    );
+    expect(result.strategy).toBe('skip');
+    expect(result.reason).toBe('typed');
+  });
+
+  it('falls back to parseJsonResponse(text) when output undefined (Tier 1/2)', async () => {
+    const createMessageWithOutput = async () => ({
+      text: JSON.stringify({ strategy: 'complementary', items: [{ content: 'x', target_section: 'Sec', kind: 'complementary', reason: 'r' }], reason: 'c' }),
+      output: undefined,
+      outputMode: 'json_object',
+      finishReason: 'stop',
+    });
+    const result = await classifyMergeNeed(
+      makeTypedCtx(createMessageWithOutput),
+      createMockEntity({ name: 'X' }),
+      'entity',
+      { path: 'p.md', basename: 'p.md' },
+      '# existing',
+    );
+    expect(result.strategy).toBe('complementary');
+    expect(result.items[0].content).toBe('x');
+  });
+
+  it('passes the Zod schema on the wire (Tier 0 shape)', async () => {
+    let seenSchema: unknown;
+    const createMessageWithOutput = async (params: Record<string, unknown>) => {
+      const rf = params.response_format as { schema?: unknown } | undefined;
+      seenSchema = rf?.schema;
+      return { text: '{"strategy":"skip"}', output: { strategy: 'skip' }, outputMode: 'json_schema', finishReason: 'stop' };
+    };
+    await classifyMergeNeed(
+      makeTypedCtx(createMessageWithOutput),
+      createMockEntity({ name: 'X' }),
+      'entity',
+      { path: 'p.md', basename: 'p.md' },
+      '# existing',
+    );
+    expect(seenSchema).toBeDefined();
+  });
+});
