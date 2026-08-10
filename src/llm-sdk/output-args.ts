@@ -76,6 +76,7 @@
 //   });
 
 import { jsonSchema, Output } from 'ai';
+import type { OutputMode } from './output-mode-prober';
 
 export interface ResponseFormatWithSchema {
   type: 'json_object';
@@ -86,40 +87,70 @@ export interface ResponseFormatWithSchema {
  * Returns `{ output: <Output> }` to spread into `generateText` /
  * `streamText` options, or `{}` when no `response_format` is supplied.
  *
- * - No `response_format` → returns `{}` (caller spreads nothing).
- * - `response_format` without a schema → returns
- *   `{ output: Output.json() }`. The AI SDK encodes this as
- *   `response_format: { type: 'json_object' }` on the wire. 6 cloud
- *   providers accept it; LM Studio / Ollama / `custom` (local-server
- *   cohort) may 400 — handled by the runtime 400-strip fallback in
- *   `json-object-strip-probe.ts`. No provider is hardcoded here.
- * - `response_format` with a schema → returns
- *   `{ output: Output.object({ schema, name }) }` (encodes
- *   `json_schema` on the wire when the provider's
- *   `supportsStructuredOutputs` is true; falls back to `json_object`
- *   otherwise with an AI SDK warning pushed to `result.warnings`).
+ * v1.26.3 PATCH Phase A3: the helper now takes a 3rd parameter
+ * `mode: OutputMode` (one of `'json_schema'` / `'json_object'` /
+ * `'text_prompt'`). It dispatches the wire-shape choice so the SDK
+ * encodes the strongest mode the backend accepts. The per-baseURL
+ * mode cache lives in `OutputModeProber` (src/llm-sdk/output-mode-prober.ts);
+ * the helper itself is stateless w.r.t. the cache — the caller passes
+ * the current mode in. This keeps the helper pure and easy to test.
+ *
+ * Dispatch table (response_format × mode):
+ *
+ * | response_format | mode         | output emitted                              |
+ * |-----------------|--------------|---------------------------------------------|
+ * | undefined       | any          | `{}` (caller has no JSON intent)            |
+ * | {schema}        | json_schema  | `{output: Output.object({schema, name})}`   |
+ * | {no schema}     | json_schema  | `{output: Output.json()}` (fallback — no    |
+ * |                 |              | schema to constrain; SDK encodes json_object)|
+ * | any             | json_object  | `{output: Output.json()}` (schema silently  |
+ * |                 |              | dropped — AI SDK cannot attach a schema to  |
+ * |                 |              | the json_object wire shape)                 |
+ * | any             | text_prompt  | `{}` (we drop response_format entirely;     |
+ * |                 |              | caller adds the JSON-shape enforcement      |
+ * |                 |              | system prompt prefix at retry time)         |
  *
  * `name` defaults to `'response'`. The AI SDK requires it on
  * `Output.object`; the default matches the convention used by
  * every call site in the codebase.
+ *
+ * Mode defaults to `'json_schema'` (the strongest, what most modern
+ * backends accept) — this preserves backward-compat for the existing
+ * 16 callers that pass `response_format` without a mode argument.
+ * They get Tier 0 / Tier 1 by default until they explicitly opt into
+ * the lower tiers via the OutputModeProber.
  */
 export function buildOutputArgs(
   response_format: ResponseFormatWithSchema | undefined,
+  mode: OutputMode = 'json_schema',
   options: { name?: string } = {},
 ): { output?: ReturnType<typeof Output.json> | ReturnType<typeof Output.object> } {
   if (!response_format) return {};
-  // No-schema case: emit `Output.json()`. The AI SDK encodes this as
-  // `{type:'json_object'}` on the wire (see file-header note for the
-  // full rationale). The local-server cohort's 400 on `json_object`
-  // is caught at the SDK client level by `json-object-strip-probe.ts`
-  // — a runtime per-baseURL cache that retries without `output` and
-  // remembers the strip decision. The helper does not branch on
-  // provider here; the SDK client's catch-handler is provider-agnostic
-  // (it only inspects the error message for `json_object` /
-  // `response_format`).
+
+  const name = options.name ?? 'response';
+
+  // Tier 2 — text_prompt: drop response_format entirely. The retry
+  // call site adds JSON_ENFORCEMENT_SYSTEM_PREFIX to the system prompt
+  // so the model still emits parseable JSON without wire-level
+  // constraint. Any caller-supplied schema is meaningless at this tier
+  // (no SDK grammar enforcement) and would confuse the model.
+  if (mode === 'text_prompt') return {};
+
+  // Tier 1 — json_object: SDK encodes `{type:'json_object'}` on the
+  // wire. The AI SDK cannot attach a schema to this wire shape, so a
+  // caller-supplied schema is silently dropped at this tier. If the
+  // caller wants schema enforcement, they need mode='json_schema'
+  // AND the backend must support it (the prober tracks this).
+  if (mode === 'json_object') return { output: Output.json() };
+
+  // Tier 0 — json_schema: SDK encodes
+  // `{type:'json_schema', json_schema:{name, strict, schema}}` on the
+  // wire when the provider's `supportsStructuredOutputs` flag is true.
+  // Without a schema from the caller, there's nothing to constrain at
+  // Tier 0 — fall back to Output.json() (which the SDK encodes as
+  // json_object). This is the same fallback the v1.26.2 helper used.
   if (!('schema' in response_format) || response_format.schema === undefined) {
     return { output: Output.json() };
   }
-  const name = options.name ?? 'response';
   return { output: Output.object({ schema: jsonSchema(response_format.schema), name }) };
 }
