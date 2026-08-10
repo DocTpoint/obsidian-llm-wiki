@@ -78,6 +78,21 @@
 import { jsonSchema, Output } from 'ai';
 import type { OutputMode } from './output-mode-prober';
 
+/**
+ * v1.26.3 PATCH simplify round: Output.json() is a no-arg factory that
+ * returns a stable object. AI SDK v6's Output.json() allocates a fresh
+ * Promise-wrapping object on every call (verified by inspecting
+ * `node_modules/ai/dist/index.mjs`). For our hot path (every LLM call
+ * that doesn't pass a schema runs Output.json()), that's one
+ * allocation per call. Hoist to a module-level frozen constant so the
+ * same object is reused across calls.
+ *
+ * Why frozen: Output.json()'s contract doesn't expose mutation
+ * entry points, but a future AI SDK upgrade could. Freezing documents
+ * the intent and prevents accidental sharing-state bugs.
+ */
+const OUTPUT_JSON_FROZEN = Object.freeze(Output.json()) as ReturnType<typeof Output.json>;
+
 export interface ResponseFormatWithSchema {
   type: 'json_object';
   schema?: Record<string, unknown>;
@@ -141,7 +156,7 @@ export function buildOutputArgs(
   // caller-supplied schema is silently dropped at this tier. If the
   // caller wants schema enforcement, they need mode='json_schema'
   // AND the backend must support it (the prober tracks this).
-  if (mode === 'json_object') return { output: Output.json() };
+  if (mode === 'json_object') return { output: OUTPUT_JSON_FROZEN };
 
   // Tier 0 — json_schema: SDK encodes
   // `{type:'json_schema', json_schema:{name, strict, schema}}` on the
@@ -150,7 +165,7 @@ export function buildOutputArgs(
   // Tier 0 — fall back to Output.json() (which the SDK encodes as
   // json_object). This is the same fallback the v1.26.2 helper used.
   if (!('schema' in response_format) || response_format.schema === undefined) {
-    return { output: Output.json() };
+    return { output: OUTPUT_JSON_FROZEN };
   }
   return { output: Output.object({ schema: jsonSchema(response_format.schema), name }) };
 }
