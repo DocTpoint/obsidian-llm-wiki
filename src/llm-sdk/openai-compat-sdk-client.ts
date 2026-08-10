@@ -35,6 +35,7 @@ import { JsonObjectStripProber } from './json-object-strip-probe';
 import { reportFinish } from './finish-reason';
 import { buildSamplingArgs } from './sampling-args';
 import { buildOutputArgs } from './output-args';
+import { JSON_ENFORCEMENT_SYSTEM_PREFIX } from './json-prompt-prefix';
 
 export interface OpenAICompatSdkClientOptions {
   apiKey: string;
@@ -224,6 +225,17 @@ export class OpenAICompatSdkClient implements LLMClient {
       ? {}
       : buildOutputArgs(response_format);
 
+    // [DEBUG-LOG v1.26.3 E2E] visible entry-point trace: response_format
+    // requested by caller, cache state for json-object-strip, and the
+    // final outputArgs that will reach the wire. If response_format is
+    // set but outputArgs has no `output` key, the cache forced a strip.
+    console.debug(
+      `[JSON-MODE-DEBUG] baseURL=${this.baseURL} ` +
+      `response_format=${JSON.stringify(response_format)} ` +
+      `cache.shouldStrip=${this.jsonObjectStripProber.shouldStrip(this.baseURL)} ` +
+      `outputArgs=${JSON.stringify(outputArgs)}`,
+    );
+
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
       const { generateText } = await import('ai');
@@ -317,6 +329,17 @@ export class OpenAICompatSdkClient implements LLMClient {
         !this.reasoningStripProber.shouldStrip(this.baseURL) &&
         ReasoningStripProber.isReasoningFieldError(err.responseBody ?? err.message ?? '')
       ) {
+        // [DEBUG-LOG v1.26.3 E2E] reasoning-strip probe matched — the
+        // classifier returned true on err.responseBody. If this never
+        // fires during a real 400, the classifier still misreads the
+        // field; the responseBody excerpt proves what the provider
+        // actually said.
+        console.debug(
+          `[REASONING-STRIP-DEBUG] baseURL=${this.baseURL} ` +
+          `classifier matched. statusCode=${err.statusCode} ` +
+          `responseBody="${(err.responseBody ?? '').slice(0, 240)}" ` +
+          `→ retrying with enableThinking=true (no reasoningEffort on wire)`,
+        );
         const retryLanguageModel = this.getProvider(model, this.fetchImpl);
         const { generateText } = await import('ai');
         // Retry without reasoningEffort — pass enableThinking=true so
@@ -341,6 +364,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         // retry above throws, this line never runs and the cache is
         // untouched; the outer catch propagates the error.
         this.reasoningStripProber.markStrip(this.baseURL);
+        console.debug(`[REASONING-STRIP-DEBUG] baseURL=${this.baseURL} cache committed (markStrip). Future calls on this baseURL will skip the probe.`);
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
       }
@@ -388,6 +412,22 @@ export class OpenAICompatSdkClient implements LLMClient {
         !this.jsonObjectStripProber.shouldStrip(this.baseURL) &&
         JsonObjectStripProber.isJsonObjectFieldError(err.responseBody ?? err.message ?? '')
       ) {
+        // [DEBUG-LOG v1.26.3 E2E] json-object-strip probe matched — the
+        // classifier returned true on err.responseBody. The responseBody
+        // excerpt is the canonical evidence: if you see LM Studio's
+        // "'response_format.type' must be 'json_schema' or 'text'" here,
+        // the probe sees what it needs and the retry below will strip
+        // `output`. If this line NEVER prints during the LM Studio 400,
+        // either (a) the classifier still misreads the body (re-check
+        // err.responseBody) or (b) the err was not an APICallError /
+        // statusCode != 400 / response_format was undefined on the call
+        // site / cache already said strip — check [JSON-MODE-DEBUG].
+        console.debug(
+          `[JSON-OBJECT-STRIP-DEBUG] baseURL=${this.baseURL} ` +
+          `classifier matched. statusCode=${err.statusCode} ` +
+          `responseBody="${(err.responseBody ?? '').slice(0, 240)}" ` +
+          `→ retrying with output=undefined (no response_format on wire)`,
+        );
         const retryLanguageModel = this.getProvider(model, this.fetchImpl);
         const { generateText } = await import('ai');
         // Retry without `output` — the helper returns `{}` when
@@ -395,9 +435,21 @@ export class OpenAICompatSdkClient implements LLMClient {
         // here. The 4 retry paths all spread outputArgs, and the
         // original call's response_format is preserved on the call
         // site; only the SDK argument is recomputed.
+        //
+        // v1.26.3 PATCH follow-up (2026-08-10 E2E on LM Studio):
+        // stripping response_format leaves the model without any
+        // structured-output constraint, so local backends (gemma-4,
+        // llama.cpp) emit unclosed arrays / trailing commas and the
+        // downstream JSON parser fails. Prepend a JSON-shape
+        // enforcement line to the system prompt so the retry still
+        // produces parseable JSON without response_format on the wire.
+        //
+        // v1.26.3 PATCH Phase A1: prefix is now a reusable constant
+        // (src/llm-sdk/json-prompt-prefix.ts) shared by Tier 1 / Tier 2
+        // retry paths in the 3-tier output-mode architecture.
         const result = await generateText({
           model: retryLanguageModel,
-          ...(system ? { system } : {}),
+          ...(system ? { system: `${JSON_ENFORCEMENT_SYSTEM_PREFIX}\n\n${system}` } : { system: JSON_ENFORCEMENT_SYSTEM_PREFIX }),
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
           maxOutputTokens: max_tokens,
           ...buildOutputArgs(undefined),
@@ -411,6 +463,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         // retry above throws, this line never runs and the cache is
         // untouched; the outer catch propagates the error.
         this.jsonObjectStripProber.markStrip(this.baseURL);
+        console.debug(`[JSON-OBJECT-STRIP-DEBUG] baseURL=${this.baseURL} cache committed (markStrip). Future calls on this baseURL will skip the probe and emit no response_format.`);
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
       }

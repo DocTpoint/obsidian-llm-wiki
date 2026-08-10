@@ -2,13 +2,24 @@
 
 > Feature planning and improvement proposals
 
-**Version:** v1.26.2 PATCH RELEASED 2026-08-09 (tag `1.26.2`). v1.27.0 MINOR in design. v1.26.1 PATCH RELEASED 2026-08-08. | **Updated:** 2026-08-09
+**Version:** v1.26.2 PATCH RELEASED 2026-08-09 (tag `1.26.2`). v1.26.3 PATCH in development. v1.27.0 MINOR in design. v1.26.1 PATCH RELEASED 2026-08-08. | **Updated:** 2026-08-10
 
 ## Current Status
 
 **v1.26.2 PATCH SHIPPED 2026-08-09** (tag `1.26.2`). Surgical fix for v1.26.1's pre-submission blind spot: the Obsidian review bot scans the whole repo `.ts` tree but local `pnpm lint` was `src/`-only, so v1.26.1 shipped a blocking `unsafe-call` Error in `tools/llm-wiki-cli/src/obsidian.ts` that local lint never saw. PR #442 fixes the Error + 8 type-safety warnings, adds `Platform.isDesktop` AST guards on the runtime-loaded `node:*` imports, and ships `pnpm lint:tools-bot` so the local blind spot stays closed. Release skill v1.7.0 now mandates an Obsidian Bot pre-review (Step 6b.5, HARD STOP ②) — see [CHANGELOG.md v1.26.2 entry](./CHANGELOG.md#1262---2026-08-09).
 
 **v1.26.1 PATCH SHIPPED 2026-08-08** (tag `1.26.1`). 21 PRs since v1.26.0: high-ROI bug fixes (#399 / #403 / #408 / #419 / #424 / #435 + CR-1 dedup halving + #398 silent-save), #407 Stage 0 parse-failure naming, per-step LLM timing (PR #409), 24 Dependabot alerts closed, plus H1 hardening and `--seed` / `thinking` doc corrections. See [CHANGELOG.md v1.26.1 entry](./CHANGELOG.md#1261---2026-08-08).
+
+**v1.26.3 PATCH in development (2026-08-10).** PR #444 merged (Stage 1 of #407). PR #447 expanding to close Issue #443 properly:
+
+- **#443** — openai-compat JSON output architecture. **Direction change 2026-08-10**: from "elegant 2-tier fallback (json_object → no-field)" to **3-tier output-mode state machine** (json_schema → json_object → text+prompt). User's LM Studio 0.4.20 E2E (2026-08-10) showed the 2-tier design fixes the 400 but leaves downstream parse failures (model emits unclosed arrays when not constrained). First-principles: `json_schema` is the strongest mode and is accepted by LM Studio / Ollama / OpenAI / Anthropic / Gemini / xAI / Qwen / Kimi — we were degrading *down* to json_object by default and probing for further demotion, which inverts the right order. Two-phase delivery in this PR:
+  - **Phase A — infrastructure (no caller changes):** `OutputModeProber` (3-tier per-baseURL state, ordered promotion); `buildOutputArgs` accepts `OutputMode` and emits `Output.object` / `Output.json` / `{}`; catch block rewires to retry one tier weaker on 400 with structured-output-related rejection; new `json-prompt-prefix.ts` (the Plan A prefix moves from temporary hack to Tier 1/2 permanent companion); delete `json-object-strip-probe.ts`; debug logs preserved (`[OUTPUT-MODE-DEBUG]`). 16 callers unchanged.
+  - **Phase B — entry: 6 P0 caller schema migrations:** `LLMClient.createMessage` return type extends `{text, output?, outputMode, finishReason, usage?}` (backward-compatible — all callers can keep using `result.text`); new `output-schemas.ts` with Zod schemas for `seed-selector` / `query-keywords` / `merge-triage` / `link-orphan` / `fix-dead-link` / `QueryView` (lowest-complexity); those 6 drop their `as { ... }` casts, prefer `result.output`, fall back to `parseJsonResponse` when undefined. Remaining 10+ callers (`source-analyzer` × 3, `conversation-ingest` × 3, `dedup-phase`, `schema-manager`, `path-resolution`, `fix-runners` × 2) stay in Phase A mode until their schema migration in a follow-up PR.
+  - Why now: Issue #443 has been on the board for 3 PRs; v1.26.3 PATCH is the only window where the design and the 6 low-complexity migrations can ship together without the "feature work interleaved with perf infrastructure" smell.
+  - Design plan: [[project_v1_26_3_three_tier_output_mode]].
+- **#306** — `buildCompactSlugList` injects 67K chars (~77 %) of full vault slug list into Ingest extraction prompt. DocTpoint's 2026-08-08 measurement rejected the v1.26.0 PATCH-era `localKeywordMatch` design (34 % coverage ceiling) and the "K=30 is the lever" assumption. **Plan D accepted 2026-08-09:** dual-signal ingest context — source-analyzer entity extraction + 1-hop graph diffusion, reusing the same `scorePagesByNeedles` primitive as Query's Stage 1.5b but with 1-hop diffusion (vs Query's full PPR — overkill on rich source-note signal). Estimated 80-95 % recall, 4-5K chars prompt (~5-7 % of current 67K). Awaiting DocTpoint's two measurements (entity-stage recall, 1-hop diffusion marginal gain) on his 30-notes fixture before implementation. Design plan: [[project_ingest_context_dual_signal_plan_d]].
+
+**#91 parked** (DocTpoint self-correction 2026-08-08: 99.8 % prompt-hint compliance on tag nesting + 4 read sites are all write-carry-display, no retrieval — read-end disambiguation is the better target; new issue to be opened separately).
 
 **v1.26.0 P0+P1 final scope** (executed 2026-08-02 → 2026-08-05; all MERGED via PRs #401 / #406 / #410 / #411):
 
