@@ -12,6 +12,7 @@ import {
   replaceDeadLink,
 } from '../../core/dead-link-detector';
 import { getExistingWikiPages } from './get-existing-pages';
+import { FixDeadLinkSchema, type FixDeadLink } from '../../llm-sdk/output-schemas';
 
 const PLURAL_MAP: Record<string, string> = {
   entity: WIKI_SUBFOLDERS.entities,
@@ -147,42 +148,66 @@ export async function fixDeadLink(
   const client = ctx.getClient();
   if (!client) return 'no action taken (no client)';
 
-  let response = await client.createMessage({
-    model: resolveModelForTask(ctx.settings, 'lint'),
-    max_tokens: TOKENS_LINT_PAGE_FIX,
-    system: await buildSystemPrompt(
-      ctx.settings,
-      ctx.getSchemaContext,
-      'lint'
-    ),
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
-    ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
-  });
+  const model = resolveModelForTask(ctx.settings, 'lint');
+  const systemPrompt = await buildSystemPrompt(
+    ctx.settings,
+    ctx.getSchemaContext,
+    'lint'
+  );
+  const disableThinking = ctx.settings.disableThinking;
 
-  if (!response) {
-    console.debug(
-      `fixDeadLink: empty response for target "${targetName}", retrying without JSON mode`
-    );
-    response = await client.createMessage({
-      model: resolveModelForTask(ctx.settings, 'lint'),
+  // v1.26.3 PATCH Phase B (Issue #443): typed-output path. Prefer
+  // `result.output` when the client implements createMessageWithOutput
+  // and the Tier 0 (json_schema) parse succeeds; fall back to
+  // parseJsonResponse(text). The empty-response retry (without JSON
+  // mode) below is preserved verbatim — it runs when the typed path
+  // returns an empty text too.
+  let result: FixDeadLink | null;
+  if (client.createMessageWithOutput) {
+    let typedResult = await client.createMessageWithOutput<FixDeadLink>({
+      task: 'fix-dead-link',
+      model,
       max_tokens: TOKENS_LINT_PAGE_FIX,
-      system: await buildSystemPrompt(
-        ctx.settings,
-        ctx.getSchemaContext,
-        'lint'
-      ),
+      system: systemPrompt,
       messages: [{ role: 'user', content: prompt }],
-      ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
+      response_format: { type: 'json_object', schema: FixDeadLinkSchema },
+      ...(disableThinking ? { enableThinking: false } : {}),
     });
-  }
 
-  const result = (await parseJsonResponse(response)) as {
-    action?: string;
-    correct_link?: string;
-    stub_title?: string;
-    stub_type?: string;
-  } | null;
+    // v1.26.3 PATCH Phase B note: the typed path's Tier 0 output is
+    // preferred when present; but the empty-response retry is kept on
+    // the createMessage (legacy) arm only. A typed Tier 0 success
+    // guarantees a parsed object; a Tier 1/2 success with empty text
+    // falls through to parseJsonResponse which throws/returns null on
+    // empty — the caller below handles null as "no action".
+    result = typedResult.output && typeof typedResult.output === 'object'
+      ? typedResult.output
+      : await parseJsonResponse(typedResult.text);
+  } else {
+    let response = await client.createMessage({
+      model,
+      max_tokens: TOKENS_LINT_PAGE_FIX,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      ...(disableThinking ? { enableThinking: false } : {}),
+    });
+
+    if (!response) {
+      console.debug(
+        `fixDeadLink: empty response for target "${targetName}", retrying without JSON mode`
+      );
+      response = await client.createMessage({
+        model,
+        max_tokens: TOKENS_LINT_PAGE_FIX,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: prompt }],
+        ...(disableThinking ? { enableThinking: false } : {}),
+      });
+    }
+
+    result = await parseJsonResponse(response);
+  }
 
   if (result?.action === 'correct' && result.correct_link) {
     let newLink = result.correct_link.trim();
