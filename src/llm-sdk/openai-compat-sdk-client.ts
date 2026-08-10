@@ -19,6 +19,7 @@
 // based on the `provider` id we pass in.
 
 import { type LanguageModel, APICallError, NoObjectGeneratedError } from 'ai';
+import type { z } from 'zod';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
   LLMClient,
@@ -653,7 +654,7 @@ export class OpenAICompatSdkClient implements LLMClient {
     max_tokens: number;
     system?: string;
     messages: Array<{ role: 'user' | 'assistant'; content: string | MessageContentPart[] }>;
-    response_format?: { type: 'json_object'; schema?: Record<string, unknown> };
+    response_format?: { type: 'json_object'; schema?: Record<string, unknown> | z.ZodType };
     task?: string;
     enableThinking?: boolean;
     temperature?: number;
