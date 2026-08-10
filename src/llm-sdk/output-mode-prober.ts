@@ -104,18 +104,6 @@ export class OutputModeProber {
   }
 
   /**
-   * Pure helper: given the current mode, return the next-weaker mode.
-   * 'text_prompt' is the floor — promoting it again returns itself.
-   * Exposed as a static method because the call site uses it both for
-   * the retry-mode computation AND for documentation of the tier
-   * ordering in tests.
-   */
-  static promote(mode: OutputMode): OutputMode {
-    const idx = OUTPUT_MODES.indexOf(mode);
-    return OUTPUT_MODES[Math.min(idx + 1, OUTPUT_MODES.length - 1)];
-  }
-
-  /**
    * Two-marker classifier for Tier 0 demotion (json_schema not accepted).
    * BOTH conditions must hold (AND):
    *   1. The body contains a REJECTION_VERB substring.

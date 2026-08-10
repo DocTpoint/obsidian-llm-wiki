@@ -18,15 +18,11 @@
 //   - markMode(baseURL, mode) writes the tier to the cache.
 //     Called AFTER retry success (not before — transient retry failure
 //     must not permanently downgrade a baseURL).
-//   - promote(baseURL) returns the next-weaker tier.
 //
 // Test matrix pins:
 //   1. Default mode = 'json_schema'
 //   2. markMode + getMode round-trip per baseURL (no cross-baseURL leak)
-//   3. promote('json_schema') → 'json_object'
-//   4. promote('json_object')  → 'text_prompt'
-//   5. promote('text_prompt')  → 'text_prompt' (floor; no demotion beyond)
-//   6. isJsonSchemaFieldError: catches 'json_schema' rejection
+//   3. isJsonSchemaFieldError: catches 'json_schema' rejection
 //      (e.g. Cloudflare / Anthropic-via-proxy hypothetical response)
 //   7. isJsonSchemaFieldError: does NOT match bare 'json' / model names
 //   8. isJsonObjectFieldError: matches the LM Studio 400 body verbatim
@@ -53,17 +49,6 @@ describe('OutputModeProber — cache & promotion', () => {
     expect(prober.getMode('https://api.openai.com/v1')).toBe('json_schema');
   });
 
-  it('promote: json_schema → json_object', () => {
-    expect(OutputModeProber.promote('json_schema')).toBe('json_object');
-  });
-
-  it('promote: json_object → text_prompt', () => {
-    expect(OutputModeProber.promote('json_object')).toBe('text_prompt');
-  });
-
-  it('promote: text_prompt is the floor (no further demotion)', () => {
-    expect(OutputModeProber.promote('text_prompt')).toBe('text_prompt');
-  });
 });
 
 describe('OutputModeProber.isJsonSchemaFieldError — two-marker classifier for Tier 0 demotion', () => {
