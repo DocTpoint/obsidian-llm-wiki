@@ -5,7 +5,7 @@
 // parameterizing over their baseURLs.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { APICallError } from 'ai';
+import { APICallError, NoObjectGeneratedError } from 'ai';
 
 vi.mock('ai', async () => {
   const actual = await vi.importActual<typeof import('ai')>('ai');
@@ -852,6 +852,168 @@ describe('OpenAICompatSdkClient', () => {
       expect(result).toBe('ok');
       // 2nd call succeeds with 1 generateText call (Tier 0 directly)
       expect(mockGenerateText).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  // ==========================================================================
+  // v1.26.3 PATCH Path 2 fix: catch NoObjectGeneratedError from AI SDK
+  // and return the raw text so caller-side parseJsonResponse + greedy
+  // regex + LLM repair runs.
+  //
+  // Background (DocTpoint CHANGES_REQUESTED, 2026-08-10T12:50:37Z):
+  //
+  //   Both `Output.json()` (no-schema path) and `Output.object()`
+  //   (schema path) call `parseCompleteOutput` after the model finishes
+  //   (`ai@6.0.230/dist/index.mjs:3899`). On malformed JSON — common
+  //   on the cloud cohort (deepseek / openrouter / glm / kimi / minimax
+  //   / gemini) when the model emits unclosed arrays — the SDK throws
+  //   `NoObjectGeneratedError`. Without a catch in the SDK client,
+  //   the raw text NEVER reaches the caller-side `parseJsonResponse`,
+  //   so the existing repair path (greedy regex + LLM repair) is dead.
+  //   Users see "Failed to connect to <provider> API" — a JSON-shape
+  //   problem misreported as a connectivity/credentials error.
+  //
+  //   This describe block pins the fix: the client catches
+  //   NoObjectGeneratedError, returns `err.text`, and the caller-side
+  //   parseJsonResponse can do its job on the malformed JSON.
+  // ==========================================================================
+
+  describe('NoObjectGeneratedError path (Path 2 fix — Issue #443 regression)', () => {
+    // Real shape from `ai@6.0.230/dist/index.mjs` (line 3899):
+    // `parseCompleteOutput` throws NoObjectGeneratedError with the
+    // malformed raw text in `.text` (and the underlying JSONParseError
+    // in `.cause`). We import the real class from `ai` so the SDK
+    // client's `NoObjectGeneratedError.isInstance(err)` check works
+    // the same way as in production.
+    //
+    // Constructor requires response/usage/finishReason — minimal placeholders.
+    const makeNoObjectError = (text: string) => new NoObjectGeneratedError({
+      message: 'No object generated',
+      text,
+      cause: new Error('JSONParseError'),
+      response: { id: 'test', timestamp: new Date(), modelId: 'test', headers: {} },
+      usage: {
+        inputTokens: 10,
+        inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+        outputTokens: 20,
+        outputTokenDetails: { textTokens: 20, reasoningTokens: undefined },
+        totalTokens: 30,
+      },
+      finishReason: 'stop',
+    });
+
+    it('returns err.text when Output.json() throws NoObjectGeneratedError on malformed JSON', async () => {
+      // Setup: model returns malformed JSON with finish_reason:'stop'.
+      // AI SDK's parseCompleteOutput (Output.json() / Output.object()
+      // both call it) throws NoObjectGeneratedError with text=<raw>.
+      const MALFORMED = '{"entities": [{"name": "A", "mentions_in_source": ["x"},]}';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(makeNoObjectError(MALFORMED));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      // Path 2 contract: caller receives the RAW malformed text
+      // (not undefined, not thrown) so parseJsonResponse can repair it.
+      const result = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(result).toBe(MALFORMED);
+      // Exactly one generateText call — no retry, no probe. The error
+      // is recovered inline, not via a chain. Without Path 2, the
+      // NoObjectGeneratedError propagates and the user sees
+      // "Failed to connect" — the parse-failure repair path is bypassed.
+      expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns err.text when Output.object() (schema path) throws NoObjectGeneratedError', async () => {
+      // Schema path also throws NoObjectGeneratedError — same contract.
+      const MALFORMED = '{"name": "broken", "extra": ';  // truncated
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(makeNoObjectError(MALFORMED));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const schema = { type: 'object', properties: { name: { type: 'string' } } } as const;
+      const result = await client.createMessage({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object', schema },
+      });
+
+      expect(result).toBe(MALFORMED);
+      expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT trigger 3-tier demotion chain on NoObjectGeneratedError (different error class)', async () => {
+      // The 3-tier chain demotes on APICallError + statusCode===400.
+      // NoObjectGeneratedError is AISDKError, not APICallError. It must
+      // NOT demote — it must recover inline (Path 2). Otherwise the
+      // chain would consume the error and either retry (wasting HTTP
+      // calls) or roll back the cache (wrong — the demoted mode isn't
+      // the cause; the JSON parse failure is).
+      const MALFORMED = '{"key": "value"';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(makeNoObjectError(MALFORMED));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessage({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(result).toBe(MALFORMED);
+      // Exactly 1 call: no chain, no retry. (Without Path 2, this test
+      // would throw — the catch block's `APICallError.isInstance(err)`
+      // gate would fail and the error would propagate via
+      // `throw mapAiSdkError(err)`.)
+      expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    });
+
+    it('caller-side parseJsonResponse can repair the returned text (integration check)', async () => {
+      // Verifies the upstream invariant: when Path 2 returns the raw
+      // malformed text, parseJsonResponse's repair logic can do its
+      // job. We test the shape — the actual repair lives in
+      // `parseJsonResponse.ts`; what we pin here is that the text
+      // reaches the caller intact (not truncated, not transformed,
+      // not wrapped in an error).
+      const MALFORMED_WITH_TRUNCATION =
+        '{"candidates": [{"path": "a.md", "relevance": 0.9}, {"path": "b.md", "relevance": 0.8';  // missing close brackets
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(makeNoObjectError(MALFORMED_WITH_TRUNCATION));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const result = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'select' }],
+        response_format: { type: 'json_object' },
+      });
+
+      // Strict equality on the raw text — any transformation (e.g.
+      // truncating at position N, wrapping in an error message) would
+      // defeat parseJsonResponse's greedy-regex + LLM repair path.
+      expect(result).toBe(MALFORMED_WITH_TRUNCATION);
     });
   });
 });

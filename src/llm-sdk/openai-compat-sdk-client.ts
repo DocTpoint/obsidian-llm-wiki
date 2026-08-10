@@ -18,7 +18,7 @@
 // `supportsStructuredOutputs`, `includeUsage`) are set automatically
 // based on the `provider` id we pass in.
 
-import { type LanguageModel, APICallError } from 'ai';
+import { type LanguageModel, APICallError, NoObjectGeneratedError } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { LLMClient, type LLMFinishReason } from '../types';
 import { PREDEFINED_PROVIDERS } from '../types';
@@ -252,6 +252,57 @@ export class OpenAICompatSdkClient implements LLMClient {
       reportFinish(onFinish, result.finishReason, result.usage);
       return result.text;
     } catch (err) {
+      // v1.26.3 PATCH Path 2 fix (DocTpoint CHANGES_REQUESTED
+      // 2026-08-10T12:50:37Z) — catch `NoObjectGeneratedError` from
+      // AI SDK's `parseCompleteOutput` (line 3899 of
+      // `ai@6.0.230/dist/index.mjs`).
+      //
+      // WHY THIS IS A SEPARATE BRANCH (not folded into the APICallError
+      // arm): `NoObjectGeneratedError extends AISDKError`, NOT
+      // `APICallError`. It's thrown by the SDK after `generateText`
+      // succeeds — the wire call returned 200, the model emitted JSON,
+      // but `Output.json()` / `Output.object()` could not parse it
+      // (unclosed array, truncation, malformed structure). The 200 OK
+      // means none of the 400-class probes below apply, but the
+      // caller-side `parseJsonResponse` would still be able to repair
+      // the text if we surfaced it.
+      //
+      // Without this branch, the error propagates to the user as
+      // "Failed to connect to <provider> API" — a JSON-shape problem
+      // misreported as a connectivity/credentials error. The
+      // downstream `parseJsonResponse` + greedy regex + LLM repair
+      // path is bypassed entirely.
+      //
+      // CONTRACT: return `err.text` verbatim (no transformation, no
+      // truncation). Caller-side repair depends on the exact raw
+      // characters the model emitted — any rewrapping (e.g. truncating
+      // at position N, prepending "JSON: ") would defeat the
+      // greedy-regex + LLM repair heuristics. The integration test
+      // `caller-side parseJsonResponse can repair the returned text`
+      // pins this contract.
+      //
+      // SCOPE: only `createMessage` (the path the 16 production callers
+      // use). `createMessageStream` does not consume Output.json() /
+      // Output.object() and does not throw NoObjectGeneratedError, so
+      // it does not need this fix. The schema arm (Phase B migration)
+      // also throws NoObjectGeneratedError on malformed JSON, so this
+      // branch serves both the no-schema (Tier 1) and schema (Tier 0)
+      // paths.
+      if (NoObjectGeneratedError.isInstance(err)) {
+        const text = (err as Error & { text?: unknown }).text;
+        if (typeof text === 'string') {
+          reportFinish(onFinish, 'stop', undefined);
+          return text;
+        }
+        // Defensive fallback: NoObjectGeneratedError without a `.text`
+        // field (shouldn't happen per ai SDK contract, but if it does,
+        // surface the underlying cause so the user sees a real error
+        // instead of a silent "undefined" return). Falling through to
+        // the existing throw path below would otherwise lose this
+        // diagnostic.
+        throw err;
+      }
+
       // v1.23.0 P1.5: URL fallback for custom baseURLs.
       // If user's baseURL is missing /v1, AI-SDK sends to wrong path
       // and gets 404. Try candidate URLs and cache the first working
