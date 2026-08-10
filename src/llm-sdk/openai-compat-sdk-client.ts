@@ -407,11 +407,11 @@ export class OpenAICompatSdkClient implements LLMClient {
         err.statusCode === 400 &&
         response_format !== undefined
       ) {
-        const errBody = err.responseBody ?? err.message ?? '';
-        const currentMode = this.outputModeProber.getMode(this.baseURL);
+        let lastErrBody: string = err.responseBody ?? err.message ?? '';
+        // currentMode is read fresh inside the for-loop body — don't
+        // hoist, the loop re-reads after markMode writes, and a stale
+        // hoist would defeat the chain's per-iteration visibility.
 
-        // Cache write policy (3-tier chain):
-      //
       // Cache write policy (3-tier chain):
       //
       //   markMode BEFORE the retry (tentatively), so that if the retry
@@ -440,7 +440,6 @@ export class OpenAICompatSdkClient implements LLMClient {
       //   iterate so that a retry's error can re-trigger the demotion
       //   branch with the (now-updated) mode.
       let tentativeDemotion: OutputMode | null = null;
-      let lastErrBody: string = errBody;
       // Up to 2 demotions: Tier 0→1, then Tier 1→2.
       for (let chainAttempt = 0; chainAttempt < 2; chainAttempt++) {
         const currentMode = this.outputModeProber.getMode(this.baseURL);
