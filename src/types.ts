@@ -723,6 +723,45 @@ export interface LLMClient {
     onFinish?: (meta: LLMFinishMeta) => void;
   }): Promise<string>;
 
+  // v1.26.3 PATCH Phase B (Issue #443): typed-output variant. Opt-in
+  // for callers that want the AI SDK's `Output.object({schema})`
+  // parsed-object result (Tier 0 success) instead of the raw text.
+  // Returns the same `text` for backward compatibility, plus an
+  // `output` field that's populated when `Output.object` parsed
+  // successfully (Tier 0 on supported backends).
+  //
+  // OPTIONAL — clients that don't implement it fall back to
+  // `createMessage` + caller-side `parseJsonResponse`. Anthropic /
+  // OpenAI / Codex clients do not implement this method yet (their
+  // 3 callers — `seed-selector` etc. — currently use no schema; the
+  // 6 P0 Phase B migrations only touch openai-compat callers).
+  //
+  // When `outputMode === 'text_prompt'` or `json_object`, `output`
+  // is undefined (no SDK parse happened — the model emitted free-form
+  // text) and the caller is expected to run `parseJsonResponse(text)`
+  // to recover the structured object. This matches the existing
+  // 16-callers contract (Tier 1 path).
+  createMessageWithOutput?<T = unknown>(params: {
+    model: string;
+    max_tokens: number;
+    system?: string;
+    messages: Array<{ role: 'user' | 'assistant'; content: string | MessageContentPart[] }>;
+    response_format?: { type: 'json_object'; schema?: Record<string, unknown> };
+    task?: string;
+    enableThinking?: boolean;
+    temperature?: number;
+    top_p?: number;
+    seed?: number;
+    repetition_penalty?: number;
+    onFinish?: (meta: LLMFinishMeta) => void;
+  }): Promise<{
+    text: string;
+    output?: T;
+    outputMode: 'json_schema' | 'json_object' | 'text_prompt';
+    finishReason: LLMFinishReason;
+    usage?: LLMUsage;
+  }>;
+
   createMessageStream?(params: {
     model: string;
     max_tokens: number;

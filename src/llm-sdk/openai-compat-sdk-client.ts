@@ -20,8 +20,14 @@
 
 import { type LanguageModel, APICallError, NoObjectGeneratedError } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { LLMClient, type LLMFinishReason } from '../types';
-import { PREDEFINED_PROVIDERS } from '../types';
+import {
+  LLMClient,
+  PREDEFINED_PROVIDERS,
+  type LLMFinishReason,
+  type LLMFinishMeta,
+  type LLMUsage,
+  type MessageContentPart,
+} from '../types';
 import { obsidianFetchBridge, streamWithFallback } from '../core/obsidian-fetch-bridge';
 import { mapAiSdkError } from './openai-sdk-client';
 import {
@@ -605,6 +611,248 @@ export class OpenAICompatSdkClient implements LLMClient {
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
+      }
+
+      throw mapAiSdkError(err);
+    }
+  }
+
+  /**
+   * v1.26.3 PATCH Phase B (Issue #443) — typed-output variant.
+   *
+   * Returns `{ text, output?, outputMode, finishReason, usage? }` where
+   * `output` is the SDK-parsed object when Tier 0 (json_schema on the
+   * wire via `Output.object({schema, name})`) succeeds. For Tier 1
+   * (json_object) and Tier 2 (text_prompt) successes, `output` is
+   * undefined — the caller falls back to `parseJsonResponse(text)`.
+   *
+   * Why a separate method (not extending `createMessage`):
+   *   - `createMessage` returns `Promise<string>` and is called by 16
+   *     production sites; changing the return type is a breaking change
+   *     to the public LLMClient interface. Adding a sibling method
+   *     keeps both contracts clean.
+   *   - Callers that want the typed object opt in via the optional
+   *     method; callers that don't are unaffected.
+   *   - The 6 P0 Phase B migrations (`seed-selector`, `query-keywords`,
+   *     `merge-triage`, `link-orphan`, `fix-dead-link`, `QueryView`)
+   *     will use this method with Zod-inferred types. The remaining
+   *     10+ callers stay on `createMessage` + parseJsonResponse.
+   *
+   * Implementation: same shape as `createMessage` — Path 2 fix
+   * (NoObjectGeneratedError → `err.text`), 3-tier output-mode demotion
+   * chain on 400, URL fallback on isUrlError. Only the success path
+   * differs: it returns `result.output` (parsed object) in addition
+   * to `result.text` (raw text).
+   *
+   * Backward compat: callers that check `if (client.createMessageWithOutput)`
+   * before calling this method can fall back to `createMessage` for
+   * clients (Anthropic / OpenAI / Codex) that don't implement it yet.
+   */
+  async createMessageWithOutput<T = unknown>(params: {
+    model: string;
+    max_tokens: number;
+    system?: string;
+    messages: Array<{ role: 'user' | 'assistant'; content: string | MessageContentPart[] }>;
+    response_format?: { type: 'json_object'; schema?: Record<string, unknown> };
+    task?: string;
+    enableThinking?: boolean;
+    temperature?: number;
+    top_p?: number;
+    seed?: number;
+    repetition_penalty?: number;
+    onFinish?: (meta: LLMFinishMeta) => void;
+  }): Promise<{
+    text: string;
+    output?: T;
+    outputMode: OutputMode;
+    finishReason: LLMFinishReason;
+    usage?: LLMUsage;
+  }> {
+    const { model, max_tokens, system, messages, response_format, enableThinking, repetition_penalty, temperature, top_p, seed, onFinish } = params;
+
+    const currentMode = this.outputModeProber.getMode(this.baseURL);
+    const outputArgs = buildOutputArgs(response_format, currentMode);
+
+    console.debug(
+      `[OUTPUT-MODE-DEBUG] (typed) baseURL=${this.baseURL} ` +
+      `response_format=${JSON.stringify(response_format)} ` +
+      `mode=${currentMode} ` +
+      `outputArgs=${JSON.stringify(outputArgs)}`,
+    );
+
+    try {
+      const languageModel = this.getProvider(model, this.fetchImpl);
+      const { generateText } = await import('ai');
+      const result = await generateText({
+        model: languageModel,
+        ...(system ? { system } : {}),
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        maxOutputTokens: max_tokens,
+        ...outputArgs,
+        providerOptions: this.buildProviderOptions({
+          enableThinking,
+          repetitionPenalty: repetition_penalty,
+        }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+        ...buildSamplingArgs({ temperature, top_p, seed }),
+      });
+      reportFinish(onFinish, result.finishReason, result.usage);
+      return {
+        text: result.text,
+        output: result.output as T | undefined,
+        outputMode: currentMode,
+        finishReason: result.finishReason,
+        usage: result.usage,
+      };
+    } catch (err) {
+      // v1.26.3 PATCH Path 2 fix (mirrors createMessage):
+      // catch NoObjectGeneratedError → return err.text verbatim so
+      // caller-side parseJsonResponse can repair the malformed JSON.
+      // The contract is identical to createMessage — see the long
+      // comment there for the rationale (parseCompleteOutput throws on
+      // malformed JSON; without this catch, the raw text never reaches
+      // the caller).
+      if (NoObjectGeneratedError.isInstance(err)) {
+        const text = (err as Error & { text?: unknown }).text;
+        if (typeof text === 'string') {
+          reportFinish(onFinish, 'stop', undefined);
+          return {
+            text,
+            output: undefined,
+            outputMode: currentMode,
+            finishReason: 'stop',
+            usage: undefined,
+          };
+        }
+        throw err;
+      }
+
+      // URL fallback (same as createMessage).
+      if (isUrlError(err)) {
+        const mappedErr = mapAiSdkError(err);
+        const resolved = await resolveBaseUrlWithFallback({
+          baseUrl: this.baseURL,
+          testFn: (url) => this.probeBaseURL(url),
+          originalError: mappedErr,
+        });
+        const retryLanguageModel = this.getProvider(model, this.fetchImpl, resolved);
+        const { generateText } = await import('ai');
+        const result = await generateText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          ...outputArgs,
+          providerOptions: this.buildProviderOptions({
+            enableThinking,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        reportFinish(onFinish, result.finishReason, result.usage);
+        return {
+          text: result.text,
+          output: result.output as T | undefined,
+          outputMode: currentMode,
+          finishReason: result.finishReason,
+          usage: result.usage,
+        };
+      }
+
+      // 3-tier demotion chain on 400 (same logic as createMessage).
+      // Only differs in the success branch: returns typed shape instead
+      // of bare string.
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        response_format !== undefined
+      ) {
+        let lastErrBody: string = err.responseBody ?? err.message ?? '';
+        let tentativeDemotion: OutputMode | null = null;
+        for (let chainAttempt = 0; chainAttempt < 2; chainAttempt++) {
+          const iterMode = this.outputModeProber.getMode(this.baseURL);
+          let demotedMode: OutputMode | null = null;
+          if (iterMode === 'json_schema' && OutputModeProber.isJsonSchemaFieldError(lastErrBody)) {
+            demotedMode = 'json_object';
+          } else if (iterMode === 'json_object' && OutputModeProber.isJsonObjectFieldError(lastErrBody)) {
+            demotedMode = 'text_prompt';
+          } else {
+            break;
+          }
+
+          console.debug(
+            `[OUTPUT-MODE-DEMOTE-DEBUG] (typed) baseURL=${this.baseURL} ` +
+            `tier=${iterMode} → tier=${demotedMode}. ` +
+            `responseBody="${lastErrBody.slice(0, 240)}"`,
+          );
+
+          this.outputModeProber.markMode(this.baseURL, demotedMode);
+          tentativeDemotion = demotedMode;
+
+          try {
+            const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+            const { generateText } = await import('ai');
+            const retrySystem =
+              demotedMode === 'text_prompt'
+                ? (system ? `${JSON_ENFORCEMENT_SYSTEM_PREFIX}\n\n${system}` : JSON_ENFORCEMENT_SYSTEM_PREFIX)
+                : system;
+            const result = await generateText({
+              model: retryLanguageModel,
+              ...(retrySystem ? { system: retrySystem } : {}),
+              messages: messages.map((m) => ({ role: m.role, content: m.content })),
+              maxOutputTokens: max_tokens,
+              ...buildOutputArgs(response_format, demotedMode),
+              providerOptions: this.buildProviderOptions({
+                enableThinking,
+                repetitionPenalty: repetition_penalty,
+              }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+              ...buildSamplingArgs({ temperature, top_p, seed }),
+            });
+            reportFinish(onFinish, result.finishReason, result.usage);
+            return {
+              text: result.text,
+              output: result.output as T | undefined,
+              outputMode: demotedMode,
+              finishReason: result.finishReason,
+              usage: result.usage,
+            };
+          } catch (retryErr) {
+            if (APICallError.isInstance(retryErr)) {
+              lastErrBody = retryErr.responseBody ?? retryErr.message ?? '';
+            }
+            console.debug(`[OUTPUT-MODE-DEMOTE-DEBUG] (typed) baseURL=${this.baseURL} retry at tier=${demotedMode} failed.`);
+          }
+        }
+        if (tentativeDemotion !== null) {
+          this.outputModeProber.markMode(this.baseURL, 'json_schema');
+        }
+        throw err;
+      }
+
+      // Token-key probe (coarse any-400 fallback).
+      if (APICallError.isInstance(err) && err.statusCode === 400 && !this.tokenKeyProber.getCachedKey(this.baseURL)) {
+        this.tokenKeyProber.setCachedKey(this.baseURL, 'max_completion_tokens');
+        const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+        const { generateText } = await import('ai');
+        const result = await generateText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          ...outputArgs,
+          providerOptions: this.buildProviderOptions({
+            enableThinking,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        reportFinish(onFinish, result.finishReason, result.usage);
+        return {
+          text: result.text,
+          output: result.output as T | undefined,
+          outputMode: currentMode,
+          finishReason: result.finishReason,
+          usage: result.usage,
+        };
       }
 
       throw mapAiSdkError(err);

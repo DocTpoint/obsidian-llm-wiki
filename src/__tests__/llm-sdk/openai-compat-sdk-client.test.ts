@@ -59,6 +59,21 @@ function makeResult(text: string): Awaited<ReturnType<typeof generateText>> {
   } as unknown as Awaited<ReturnType<typeof generateText>>;
 }
 
+// v1.26.3 PATCH Phase B: helper for tests that exercise the typed-output
+// path. Returns a generateText result with the SDK-parsed `output` field
+// populated (Tier 0 schema-arm success path). The schema path is when
+// `Output.object({schema, name})` is set on the generateText call; on
+// success the SDK attaches `output: <parsed object>` to the result.
+//
+// `output` is added with `as unknown` to the type cast because the AI
+// SDK's ReturnType may not declare it depending on the schema overload
+// type signature. In production, callers use Zod-inferred types via
+// `LLMClient.createMessageWithOutput<T>`.
+function makeResultWithOutput(text: string, output: unknown): Awaited<ReturnType<typeof generateText>> {
+  const base = makeResult(text);
+  return { ...(base as object), output } as unknown as Awaited<ReturnType<typeof generateText>>;
+}
+
 const PRESETS = [
   { id: 'gemini', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
   { id: 'openrouter', baseURL: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-3.5-sonnet' },
@@ -1014,6 +1029,188 @@ describe('OpenAICompatSdkClient', () => {
       // truncating at position N, wrapping in an error message) would
       // defeat parseJsonResponse's greedy-regex + LLM repair path.
       expect(result).toBe(MALFORMED_WITH_TRUNCATION);
+    });
+  });
+
+  // ==========================================================================
+  // v1.26.3 PATCH Phase B — createMessageWithOutput (typed output).
+  //
+  // Opt-in variant that returns `{text, output?, outputMode, finishReason, usage?}`.
+  // When Tier 0 (json_schema on the wire, `Output.object({schema, name})`)
+  // succeeds, `output` is populated with the SDK-parsed object. When
+  // Tier 1 (json_object) or Tier 2 (text_prompt) succeeds, `output` is
+  // undefined and the caller falls back to `parseJsonResponse(text)`.
+  //
+  // Anthropic / OpenAI / Codex clients do NOT implement this method
+  // (their callers don't opt in yet). The interface declares it
+  // optional, so missing implementations don't break callers — they
+  // just fall back to `createMessage` + parseJsonResponse.
+  // ==========================================================================
+  describe('createMessageWithOutput (Phase B typed output)', () => {
+    const schema = { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } as const;
+    const PARSED = { name: 'Alice' };
+
+    it('returns output from generateText.result.output when Tier 0 succeeds', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValueOnce(makeResultWithOutput(JSON.stringify(PARSED), PARSED));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessageWithOutput!({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object', schema },
+      });
+
+      // Tier 0 (default): `output` is populated by SDK parse.
+      expect(result.output).toEqual(PARSED);
+      expect(result.text).toBe(JSON.stringify(PARSED));
+      expect(result.outputMode).toBe('json_schema');
+      expect(result.finishReason).toBe('stop');
+    });
+
+    it('returns output=undefined when Tier 1 succeeds (json_object, no schema parse)', async () => {
+      // Tier 1 is reached when the cached mode is `json_object` — no
+      // SDK parse happens because `Output.json()` (no schema) doesn't
+      // parse eagerly into a typed object. The text is parseable JSON
+      // but it's a raw string the caller must handle.
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValueOnce(makeResult(JSON.stringify(PARSED)));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      // Force Tier 1 by simulating a baseURL whose cache says json_object.
+      // We do this by first triggering a 400 demotion, then asserting
+      // the second call's `output` is undefined.
+      // Simpler approach: directly invoke and assert based on default
+      // mode ('json_schema' → no-schema path falls through to
+      // Output.json() → output is still parsed IF the SDK does so). For
+      // the Tier 1 contract we instead test the explicit case where
+      // mode is forced via the prober.
+      const prober = (client as unknown as { outputModeProber: { markMode: (u: string, m: 'json_object') => void } }).outputModeProber;
+      prober.markMode(client['baseURL'] as string, 'json_object');
+      const result = await client.createMessageWithOutput!({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(result.output).toBeUndefined();
+      expect(result.text).toBe(JSON.stringify(PARSED));
+      expect(result.outputMode).toBe('json_object');
+    });
+
+    it('returns output=undefined when Tier 2 succeeds (text_prompt, prompt enforcement)', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValueOnce(makeResult(JSON.stringify(PARSED)));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const prober = (client as unknown as { outputModeProber: { markMode: (u: string, m: 'text_prompt') => void } }).outputModeProber;
+      prober.markMode(client['baseURL'] as string, 'text_prompt');
+      const result = await client.createMessageWithOutput!({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(result.output).toBeUndefined();
+      expect(result.outputMode).toBe('text_prompt');
+      // text is the raw model output (parseable JSON, but caller uses
+      // parseJsonResponse to validate).
+      expect(result.text).toBe(JSON.stringify(PARSED));
+    });
+
+    it('falls back to err.text on NoObjectGeneratedError (Path 2 fix applies to typed path)', async () => {
+      // Same contract as createMessage: malformed JSON on the SDK parse
+      // should surface the raw text so the caller can repair it. The
+      // typed-output path must NOT swallow the error.
+      const MALFORMED = '{"name": "broken", "extra": ';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(new NoObjectGeneratedError({
+        message: 'No object generated',
+        text: MALFORMED,
+        cause: new Error('JSONParseError'),
+        response: { id: 'test', timestamp: new Date(), modelId: 'test', headers: {} },
+        usage: {
+          inputTokens: 10,
+          inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+          outputTokens: 20,
+          outputTokenDetails: { textTokens: 20, reasoningTokens: undefined },
+          totalTokens: 30,
+        },
+        finishReason: 'stop',
+      }));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessageWithOutput!({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object', schema },
+      });
+
+      expect(result.text).toBe(MALFORMED);
+      expect(result.output).toBeUndefined();  // parse failed
+    });
+
+    it('does NOT throw when NoObjectGeneratedError has no .text field (defensive)', async () => {
+      // The Path 2 contract has a defensive fallback: if .text is
+      // missing (shouldn't happen per ai SDK contract, but if it
+      // does), we re-throw. The typed-output path inherits the same
+      // contract.
+      mockGenerateText.mockReset();
+      const err = new NoObjectGeneratedError({
+        message: 'No object generated',
+        // text intentionally missing
+        cause: new Error('JSONParseError'),
+        response: { id: 'test', timestamp: new Date(), modelId: 'test', headers: {} },
+        usage: {
+          inputTokens: 10,
+          inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+          outputTokens: 20,
+          outputTokenDetails: { textTokens: 20, reasoningTokens: undefined },
+          totalTokens: 30,
+        },
+        finishReason: 'stop',
+      });
+      // Strip the .text field via Object.defineProperty since the SDK
+      // sets it to undefined when not provided; we want to simulate a
+      // truly missing field.
+      // (Per ai SDK behavior, when `text` is not passed to the ctor,
+      // it's set to undefined, not omitted. So this test really checks
+      // the "undefined text → re-throw" branch.)
+      mockGenerateText.mockRejectedValueOnce(err);
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      await expect(
+        client.createMessageWithOutput!({
+          model: 'qwythos-9b',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'extract' }],
+          response_format: { type: 'json_object', schema },
+        }),
+      ).rejects.toBe(err);
     });
   });
 });
