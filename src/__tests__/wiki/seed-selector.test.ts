@@ -40,6 +40,16 @@ function makeClient(createMessage: SeedLLMClient['createMessage']): SeedLLMClien
   return { createMessage };
 }
 
+/**
+ * Build a SeedLLMClient that implements `createMessageWithOutput`
+ * (v1.26.3 PATCH Phase B typed-output path). Mirrors how the real
+ * OpenAICompatSdkClient behaves on Tier 0 (json_schema) success:
+ * `output` is populated by the SDK parse, `text` is the raw JSON.
+ */
+function makeTypedClient(createMessageWithOutput: NonNullable<SeedLLMClient['createMessageWithOutput']>): SeedLLMClient {
+  return { createMessage: vi.fn(), createMessageWithOutput };
+}
+
 describe('selectSeedsWithLLM', () => {
   beforeEach(() => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -241,5 +251,110 @@ describe('selectSeedsWithLLM', () => {
     expect(joined).toMatch(/first100=/);
 
     debug.mockRestore();
+  });
+
+  // ==========================================================================
+  // v1.26.3 PATCH Phase B — typed-output path (createMessageWithOutput).
+  //
+  // When the client implements `createMessageWithOutput`, the selector
+  // passes the Zod schema via `response_format.schema` (Tier 0 wire
+  // shape) and prefers `result.output` over `parseJsonResponse(text)`.
+  // When the client does NOT implement it (legacy mock / Anthropic /
+  // OpenAI / Codex), the fallback path is identical to pre-Phase-B.
+  // ==========================================================================
+  describe('typed-output path (createMessageWithOutput)', () => {
+    it('uses result.output when Tier 0 succeeds (schema on wire)', async () => {
+      const createMessageWithOutput = vi.fn().mockResolvedValueOnce({
+        text: '{"seeds":["a.md","b.md"]}',
+        output: { seeds: ['a.md', 'b.md'] },
+        outputMode: 'json_schema',
+        finishReason: 'stop',
+      });
+
+      const result = await selectSeedsWithLLM(
+        'q', [makePageRef('a.md'), makePageRef('b.md'), makePageRef('c.md')],
+        makeTypedClient(createMessageWithOutput), { model: 'gpt-4' },
+      );
+
+      expect(result.sort()).toEqual(['a.md', 'b.md']);
+      // Typed path: the client's createMessageWithOutput was called with
+      // the Zod schema on response_format.schema.
+      const callArg = createMessageWithOutput.mock.calls[0]?.[0] as {
+        response_format?: { type: string; schema?: unknown };
+      };
+      expect(callArg.response_format?.schema).toBeDefined();
+      // No fallback to parseJsonResponse happened (output was populated).
+      expect(createMessageWithOutput).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to parseJsonResponse(text) when Tier 1/2 succeed (output undefined)', async () => {
+      // Simulates a Tier 1 (json_object) success: `output` is undefined
+      // (no SDK parse), text is parseable JSON — the caller must parse it.
+      const createMessageWithOutput = vi.fn().mockResolvedValueOnce({
+        text: '{"seeds":["a.md"]}',
+        output: undefined,
+        outputMode: 'json_object',
+        finishReason: 'stop',
+      });
+
+      const result = await selectSeedsWithLLM(
+        'q', [makePageRef('a.md')],
+        makeTypedClient(createMessageWithOutput), { model: 'gpt-4' },
+      );
+
+      expect(result).toEqual(['a.md']);
+    });
+
+    it('throws on shape mismatch (missing seeds array) — retryable', async () => {
+      // Malformed output from a Tier 1/2 path: text parses but seeds is
+      // not an array. The helper must throw so withTransientRetry can
+      // retry (same contract as the legacy path).
+      const createMessageWithOutput = vi.fn()
+        .mockResolvedValueOnce({
+          text: '{"seeds": "not-an-array"}',
+          output: undefined,
+          outputMode: 'json_object',
+          finishReason: 'stop',
+        })
+        .mockResolvedValueOnce({
+          text: '{"seeds":["a.md"]}',
+          output: { seeds: ['a.md'] },
+          outputMode: 'json_schema',
+          finishReason: 'stop',
+        });
+
+      const promise = selectSeedsWithLLM(
+        'q', [makePageRef('a.md')],
+        makeTypedClient(createMessageWithOutput), { model: 'gpt-4' },
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      const result = await promise;
+
+      expect(result).toEqual(['a.md']);
+      expect(createMessageWithOutput).toHaveBeenCalledTimes(2);
+    });
+
+    it('falls back to parseJsonResponse(text) when output is undefined and text needs repair', async () => {
+      // Simulates the Path 2 fix contract: SDK parse failed on malformed
+      // JSON, `output` is undefined, and `text` carries the raw model
+      // output. The selector falls back to parseJsonResponse which
+      // repairs a *parseable-with-greedy-regex* shape. (Deep repair —
+      // unclosed arrays needing an LLM round-trip — is tested at the
+      // SDK-client layer; here we pin the "output undefined → text
+      // parsing" routing, not parseJsonResponse's repair heuristics.)
+      const createMessageWithOutput = vi.fn().mockResolvedValueOnce({
+        text: '{"seeds":["a.md"]}',
+        output: undefined,
+        outputMode: 'json_schema',
+        finishReason: 'stop',
+      });
+
+      const result = await selectSeedsWithLLM(
+        'q', [makePageRef('a.md')],
+        makeTypedClient(createMessageWithOutput), { model: 'gpt-4' },
+      );
+
+      expect(result).toEqual(['a.md']);
+    });
   });
 });

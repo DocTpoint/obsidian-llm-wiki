@@ -79,7 +79,8 @@
 //     ...buildOutputArgs(response_format),
 //   });
 
-import { jsonSchema, Output } from 'ai';
+import { jsonSchema, Output, zodSchema } from 'ai';
+import type { z } from 'zod';
 import type { OutputMode } from './output-mode-prober';
 
 /**
@@ -97,9 +98,30 @@ import type { OutputMode } from './output-mode-prober';
  */
 const OUTPUT_JSON_FROZEN = Object.freeze(Output.json()) as ReturnType<typeof Output.json>;
 
+/**
+ * v1.26.3 PATCH Phase B: discriminates a Zod schema from a raw JSON
+ * Schema object. `'safeParse' in schema` alone cannot narrow a union
+ * with an index-signature side (`Record<string, unknown>` permits any
+ * key), so an explicit type guard is needed for the `Output.object`
+ * adapter choice. Zod schemas expose `safeParse`/`parse` as functions;
+ * a JSON Schema object never does.
+ */
+function isZodSchema(schema: Record<string, unknown> | z.ZodType): schema is z.ZodType {
+  return typeof schema === 'object'
+    && schema !== null
+    && 'safeParse' in schema
+    && typeof (schema as unknown as { safeParse?: unknown }).safeParse === 'function';
+}
+
 export interface ResponseFormatWithSchema {
   type: 'json_object';
-  schema?: Record<string, unknown>;
+  // v1.26.3 PATCH Phase B: the schema can be either a raw JSON Schema
+  // object (existing callers, passed through `jsonSchema()`) or a Zod
+  // schema (Phase B migrations, passed through `zodSchema()`). Zod is
+  // the single source of truth for Phase B callers — the same Zod
+  // schema validates the Tier 1/2 fallback `parseJsonResponse` result
+  // AND drives the Tier 0 wire shape via the SDK's schema adapter.
+  schema?: Record<string, unknown> | z.ZodType;
 }
 
 /**
@@ -171,5 +193,18 @@ export function buildOutputArgs(
   if (!('schema' in response_format) || response_format.schema === undefined) {
     return { output: OUTPUT_JSON_FROZEN };
   }
-  return { output: Output.object({ schema: jsonSchema(response_format.schema), name }) };
+  // v1.26.3 PATCH Phase B: a Zod schema (Phase B callers) is adapted
+  // via `zodSchema()`; a raw JSON Schema (legacy callers) via
+  // `jsonSchema()`. Both return a `Schema` the AI SDK accepts on
+  // `Output.object`. The discriminator is `safeParse` (Zod's method) —
+  // a JSON Schema object has no `.safeParse` method.
+  const schema = response_format.schema;
+  // v1.26.3 PATCH Phase B: a Zod schema (Phase B callers) is adapted
+  // via `zodSchema()`; a raw JSON Schema (legacy callers) via
+  // `jsonSchema()`. Both return a `Schema` the AI SDK accepts on
+  // `Output.object`. `isZodSchema` narrows the union.
+  const adapted = isZodSchema(schema)
+    ? zodSchema(schema)
+    : jsonSchema(schema);
+  return { output: Output.object({ schema: adapted, name }) };
 }

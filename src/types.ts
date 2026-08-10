@@ -1,6 +1,7 @@
 // Core Wiki data structures
 
 import { App } from 'obsidian';
+import type { z } from 'zod';
 import type { RejectionReason } from './core/source-requirements';
 
 /**
@@ -746,7 +747,11 @@ export interface LLMClient {
     max_tokens: number;
     system?: string;
     messages: Array<{ role: 'user' | 'assistant'; content: string | MessageContentPart[] }>;
-    response_format?: { type: 'json_object'; schema?: Record<string, unknown> };
+    // v1.26.3 PATCH Phase B: `schema` accepts either a raw JSON Schema
+    // (legacy callers) or a Zod schema (Phase B migrations — the Zod
+    // schema is the single source of truth for both the Tier 0 wire
+    // shape and the Tier 1/2 fallback parseJsonResponse validation).
+    response_format?: { type: 'json_object'; schema?: Record<string, unknown> | z.ZodType };
     task?: string;
     enableThinking?: boolean;
     temperature?: number;
