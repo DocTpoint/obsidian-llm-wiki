@@ -45,7 +45,7 @@
 //   field, all models on the gateway get demoted; not the case here).
 //   Mirrors the [[reasoning-strip-probe]] design.
 
-import { classifyFieldError, REJECTION_VERBS } from './shared-rejection-verbs';
+import { classifyFieldError } from './shared-rejection-verbs';
 
 /**
  * The three output-mode tiers, ordered strongest → weakest.
