@@ -11,6 +11,7 @@ import {
   buildOrphanLinkUpdate,
   normalizeOrphanPagePath,
 } from '../../core/orphan-matcher';
+import { LinkOrphanSchema, type LinkOrphan } from '../../llm-sdk/output-schemas';
 
 export async function linkOrphanPage(
   ctx: EngineContext,
@@ -32,26 +33,44 @@ export async function linkOrphanPage(
   const client = ctx.getClient();
   if (!client) return [];
 
-  const response = await client.createMessage({
-    model: resolveModelForTask(ctx.settings, 'lint'),
-    max_tokens: TOKENS_LINT_ORPHAN_FIX,
-    system: await buildSystemPrompt(
-      ctx.settings,
-      ctx.getSchemaContext,
-      'lint'
-    ),
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
-    ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
-  });
-
-  const result = (await parseJsonResponse(response)) as {
-    related_pages?: Array<{
-      page_path: string;
-      link_text: string;
-      link_target: string;
-    }>;
-  } | null;
+  // v1.26.3 PATCH Phase B (Issue #443): typed-output path. Prefer
+  // `result.output` when the client implements createMessageWithOutput
+  // and the Tier 0 (json_schema) parse succeeds; fall back to
+  // parseJsonResponse(text) otherwise. The downstream page-path
+  // validation is unchanged — it runs on whatever shape was recovered.
+  let result: LinkOrphan | null;
+  if (client.createMessageWithOutput) {
+    const typedResult = await client.createMessageWithOutput<LinkOrphan>({
+      task: 'link-orphan',
+      model: resolveModelForTask(ctx.settings, 'lint'),
+      max_tokens: TOKENS_LINT_ORPHAN_FIX,
+      system: await buildSystemPrompt(
+        ctx.settings,
+        ctx.getSchemaContext,
+        'lint'
+      ),
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object', schema: LinkOrphanSchema },
+      ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
+    });
+    result = typedResult.output && typeof typedResult.output === 'object'
+      ? typedResult.output
+      : await parseJsonResponse(typedResult.text);
+  } else {
+    const response = await client.createMessage({
+      model: resolveModelForTask(ctx.settings, 'lint'),
+      max_tokens: TOKENS_LINT_ORPHAN_FIX,
+      system: await buildSystemPrompt(
+        ctx.settings,
+        ctx.getSchemaContext,
+        'lint'
+      ),
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
+    });
+    result = await parseJsonResponse(response);
+  }
 
   if (!result?.related_pages?.length) return [];
 
