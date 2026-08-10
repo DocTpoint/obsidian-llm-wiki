@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { APICallError } from 'ai';
 import { ReasoningStripProber } from '../../llm-sdk/reasoning-strip-probe';
-import { JsonObjectStripProber } from '../../llm-sdk/json-object-strip-probe';
+import { OutputModeProber } from '../../llm-sdk/output-mode-prober';
 
 // v1.26.0 Batch 6: per-baseURL "strip reasoningEffort" cache, plus the
 // message-match classifier that decides whether a 400 is reasoning-related
@@ -131,7 +131,7 @@ describe('ReasoningStripProber.isReasoningFieldError — two-marker (verb + fiel
 // ("Provider returned error") — it does NOT include the provider's
 // actual error body. The provider body lives in `err.responseBody`.
 // Both `ReasoningStripProber.isReasoningFieldError` and
-// `JsonObjectStripProber.isJsonObjectFieldError` MUST be called
+// `OutputModeProber.isJsonObjectFieldError` MUST be called
 // with `err.responseBody`, NOT `err.message`. The previous tests
 // passed raw strings to the classifier in isolation, which masked
 // the bug — no test simulated the real APICallError shape.
@@ -159,7 +159,7 @@ describe('Classifier input contract: responseBody vs message (regression guard f
     expect(ReasoningStripProber.isReasoningFieldError(err.responseBody ?? '')).toBe(true);
   });
 
-  it('JsonObjectStripProber matches the responseBody (LM Studio json_object 400)', () => {
+  it('OutputModeProber.isJsonObjectFieldError matches the responseBody (LM Studio json_object 400)', () => {
     // Real LM Studio 0.4.20 response body (DocTpoint Issue #443 comment 1
     // 2026-08-09 + user E2E 2026-08-10 on qwythos-9b-claude-mythos-5-1m-mlx).
     const err = new APICallError({
@@ -173,9 +173,9 @@ describe('Classifier input contract: responseBody vs message (regression guard f
 
     // The bug: classifier was called with err.message → no match → strip
     // never fired → 400 propagated to user.
-    expect(JsonObjectStripProber.isJsonObjectFieldError(err.message ?? '')).toBe(false);
+    expect(OutputModeProber.isJsonObjectFieldError(err.message ?? '')).toBe(false);
     // The fix: classifier is called with err.responseBody → real body
     // contains "must be" + "response_format" → true → strip fires.
-    expect(JsonObjectStripProber.isJsonObjectFieldError(err.responseBody ?? '')).toBe(true);
+    expect(OutputModeProber.isJsonObjectFieldError(err.responseBody ?? '')).toBe(true);
   });
 });
