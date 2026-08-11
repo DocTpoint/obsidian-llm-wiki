@@ -11,12 +11,12 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { ConversationIngestor } from '../../wiki/conversation-ingest';
-import { SourceAnalysisLLMSchema } from '../../llm-sdk/output-schemas';
+import { SourceAnalysisLLMSchema, ConversationDedupStatusLLMSchema } from '../../llm-sdk/output-schemas';
 
 // Minimal stub for the orchestrator + WikiEngine required by the
 // ConversationIngestor constructor. We only exercise the extraction LLM
 // call, so most collaborators can return empty values.
-function makeContextStub(llmClient: unknown) {
+function makeContextStub(llmClient: unknown, opts: { indexMd?: string | null } = {}) {
   const ctx = {
     app: { vault: { getMarkdownFiles: () => [] } } as never,
     settings: {
@@ -29,7 +29,9 @@ function makeContextStub(llmClient: unknown) {
       model: 'mock-model',
     },
     getClient: () => llmClient,
-    tryReadFile: async () => null, // index.md absent → skip dedup, go straight to extract
+    // Default: index.md absent (skip dedup). Tests that want to exercise
+    // save-dedup pass `indexMd: '...'` to force checkDedup → LLM call.
+    tryReadFile: async (_path: string) => opts.indexMd ?? null,
     buildSystemPrompt: async () => undefined,
     onProgress: undefined,
     onDone: undefined,
@@ -136,6 +138,81 @@ describe('ConversationIngestor — typed-output migration (#443 expanded scope)'
     const ingestor = new ConversationIngestor(ctx, pageFactory, orch);
     try {
       await ingestor.ingestConversation({ messages: [{ role: 'user', content: 'Sample conversation', timestamp: Date.now() }] });
+    } catch {
+      // ignore downstream stub failures
+    }
+
+    expect(legacySpy).toHaveBeenCalled();
+  });
+});
+
+// === Commit 5 — save-dedup migration ===
+// The save-dedup call runs before extract when an existing wiki index is
+// present. It asks the LLM whether this conversation is already covered.
+// Migrating it eliminates the silent-success + parse-failure corner where
+// dedupStatus returns 'entirely_new' (fallback) instead of the model's
+// actual verdict on cloud cohort.
+describe('ConversationIngestor.checkDedup — typed-output migration', () => {
+  it('passes ConversationDedupStatusLLMSchema on the wire (legacy client)', async () => {
+    const spy = vi.fn(async (_params: unknown) => '{"status":"entirely_new"}');
+    const client = { createMessage: spy };
+    const { ctx, orch, pageFactory, wikiEngine } = makeContextStub(client, {
+      indexMd: '# Existing Wiki\n\n- entities: [Alice]\n',
+    });
+
+    const ingestor = new ConversationIngestor(ctx, pageFactory, orch);
+    try {
+      await ingestor.ingestConversation({ messages: [{ role: 'user', content: 'A conversation', timestamp: Date.now() }] });
+    } catch {
+      // ignore downstream stub failures
+    }
+
+    expect(spy).toHaveBeenCalled();
+    const dedupCall = spy.mock.calls.find(
+      (c) => (c[0] as { task?: string }).task === 'conversation-save-dedup'
+    );
+    expect(dedupCall).toBeDefined();
+    const args = dedupCall![0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBe(ConversationDedupStatusLLMSchema);
+  });
+
+  it('uses createMessageWithOutput for save-dedup when client implements it', async () => {
+    const typedSpy = vi.fn(async (_params: unknown) => ({
+      text: '{"status":"partial_overlap"}',
+      output: { status: 'partial_overlap' },
+      outputMode: 'json_schema',
+      finishReason: 'stop',
+    }));
+    const legacySpy = vi.fn();
+    const client = { createMessage: legacySpy, createMessageWithOutput: typedSpy };
+    const { ctx, orch, pageFactory, wikiEngine } = makeContextStub(client, {
+      indexMd: '# Existing Wiki\n\n- entities: [Alice]\n',
+    });
+
+    const ingestor = new ConversationIngestor(ctx, pageFactory, orch);
+    try {
+      await ingestor.ingestConversation({ messages: [{ role: 'user', content: 'A conversation', timestamp: Date.now() }] });
+    } catch {
+      // ignore downstream stub failures
+    }
+
+    expect(typedSpy).toHaveBeenCalled();
+    const dedupCall = typedSpy.mock.calls.find(
+      (c) => (c[0] as { task?: string }).task === 'conversation-save-dedup'
+    );
+    expect(dedupCall).toBeDefined();
+  });
+
+  it('falls back to createMessage when client lacks createMessageWithOutput', async () => {
+    const legacySpy = vi.fn(async (_params: unknown) => '{"status":"entirely_new"}');
+    const client = { createMessage: legacySpy };
+    const { ctx, orch, pageFactory, wikiEngine } = makeContextStub(client, {
+      indexMd: '# Existing Wiki\n\n- entities: [Alice]\n',
+    });
+
+    const ingestor = new ConversationIngestor(ctx, pageFactory, orch);
+    try {
+      await ingestor.ingestConversation({ messages: [{ role: 'user', content: 'A conversation', timestamp: Date.now() }] });
     } catch {
       // ignore downstream stub failures
     }

@@ -16,7 +16,7 @@ import { resolveModelForTask } from '../core/model-resolver';
 import { UNIVERSAL_LINK_CONSTRAINTS } from './prompts/constraints';
 import { TOKENS_CONVERSATION_EXTRACTION, TOKENS_CONVERSATION_PAGE, TOKENS_PAGE_GENERATION, TOKENS_QUERY_SAVE_DEDUP } from '../constants';
 import { PageFactory } from './page-factory';
-import { SourceAnalysisLLMSchema } from '../llm-sdk/output-schemas';
+import { SourceAnalysisLLMSchema, ConversationDedupStatusLLMSchema } from '../llm-sdk/output-schemas';
 
 export interface ConversationOrchestration {
   ensureWikiStructure: () => Promise<void>;
@@ -338,17 +338,25 @@ CRITICAL RULES:
     const client = this.ctx.getClient();
     if (!client) throw new Error('LLM client not initialized');
 
-    const response = await client.createMessage({
-      task: 'conversation-save-dedup',
+    const dedupArgs = {
+      task: 'conversation-save-dedup' as const,
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
       max_tokens: TOKENS_QUERY_SAVE_DEDUP,
       system: await this.ctx.buildSystemPrompt('conversation'),
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
+      messages: [{ role: 'user' as const, content: prompt }],
+      // v1.26.3 PATCH Issue #443 expanded scope: typed-output path. Uses
+      // ConversationDedupStatusLLMSchema ({status: string}) on the wire as
+      // Tier 0 json_schema — LMStudio accepts, no parse-error fallback to
+      // English welcome. Caller falls back to parseJsonResponse on legacy
+      // clients without createMessageWithOutput.
+      response_format: { type: 'json_object' as const, schema: ConversationDedupStatusLLMSchema },
       ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
-    });
+    };
+    const dedupText = client.createMessageWithOutput
+      ? (await client.createMessageWithOutput(dedupArgs)).text
+      : await client.createMessage(dedupArgs);
 
-    const parsed = await parseJsonResponse(response) as { status?: string } | null;
+    const parsed = await parseJsonResponse(dedupText) as { status?: string } | null;
     return parsed?.status || 'entirely_new';
   }
 }
