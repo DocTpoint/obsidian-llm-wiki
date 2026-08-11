@@ -16,6 +16,7 @@ import { resolveModelForTask } from '../core/model-resolver';
 import { UNIVERSAL_LINK_CONSTRAINTS } from './prompts/constraints';
 import { TOKENS_CONVERSATION_EXTRACTION, TOKENS_CONVERSATION_PAGE, TOKENS_PAGE_GENERATION, TOKENS_QUERY_SAVE_DEDUP } from '../constants';
 import { PageFactory } from './page-factory';
+import { SourceAnalysisLLMSchema } from '../llm-sdk/output-schemas';
 
 export interface ConversationOrchestration {
   ensureWikiStructure: () => Promise<void>;
@@ -155,30 +156,39 @@ CRITICAL RULES:
 - If no entities/concepts found, use empty arrays [] (never omit the field)
 - Names should be suitable for [[wiki-links]] referencing (judge appropriate naming based on Wiki index)`;
 
-    const analysis = await client.createMessage({
-      task: 'conversation-extract',
+    const analysisArgs = {
+      task: 'conversation-extract' as const,
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
       max_tokens: TOKENS_CONVERSATION_EXTRACTION,
       system: await this.ctx.buildSystemPrompt('conversation'),
       messages: [{
-        role: 'user',
+        role: 'user' as const,
         content: analysisPrompt
       }],
-      response_format: { type: 'json_object' },
+      response_format: { type: 'json_object' as const, schema: SourceAnalysisLLMSchema },
       ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
-    });
+    };
+    // v1.26.3 PATCH Issue #443 expanded scope: typed-output path. Same
+    // schema (SourceAnalysisLLMSchema) as source-analyzer extract.
+    const analysisText = client.createMessageWithOutput
+      ? (await client.createMessageWithOutput(analysisArgs)).text
+      : await client.createMessage(analysisArgs);
 
-    const parsed = await parseJsonResponse(analysis, async (malformedJson: string) => {
+    const parsed = await parseJsonResponse(analysisText, async (malformedJson: string) => {
       const repairPrompt = `Fix the following malformed JSON. Only fix JSON syntax errors (unescaped quotes, trailing commas, missing brackets). Do NOT change any values or content. Output ONLY the fixed JSON, no other text.\n\n${malformedJson}`;
-      return await client.createMessage({
-        task: 'conversation-extract-retry',
+      const repairArgs = {
+        task: 'conversation-extract-retry' as const,
         model: resolveModelForTask(this.ctx.settings, 'ingest'),
         max_tokens: TOKENS_PAGE_GENERATION,
         system: await this.ctx.buildSystemPrompt('conversation'),
-        messages: [{ role: 'user', content: repairPrompt }],
-        response_format: { type: 'json_object' },
+        messages: [{ role: 'user' as const, content: repairPrompt }],
+        response_format: { type: 'json_object' as const, schema: SourceAnalysisLLMSchema },
         ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
-      });
+      };
+      if (client.createMessageWithOutput) {
+        return (await client.createMessageWithOutput(repairArgs)).text;
+      }
+      return await client.createMessage(repairArgs);
     }) as SourceAnalysis | null;
     if (!parsed) {
       throw new Error('Conversation analysis JSON parsing failed');
