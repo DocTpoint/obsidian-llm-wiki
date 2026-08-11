@@ -15,6 +15,7 @@ import { renderTemplate } from '../../core/template-renderer';
 import { TOKENS_LINT_ALIAS_BATCH, NOTICE_ERROR, NOTICE_RATE_LIMIT } from '../../constants';
 import { buildWikiLanguageDirective } from '../system-prompts';
 import { TagViolation } from './scanners';
+import { AliasGenerationLLMSchema } from '../../llm-sdk/output-schemas';
 
 // Issue #94: Status bar "click to cancel" already exists, but the fix-runner
 // functions in this module previously never received the AbortSignal. Each
@@ -87,13 +88,21 @@ export async function runAliasCompletion(
             body: body.substring(0, 2000),
           });
 
-          const response = await client.createMessage({
+          const aliasArgs = {
+            task: 'lint-alias' as const,
             model: resolveModelForTask(ctx.settings, 'lint'),
             max_tokens: TOKENS_LINT_ALIAS_BATCH,
             system: buildWikiLanguageDirective(ctx.settings),
-            messages: [{ role: 'user', content: prompt }],
-            response_format: { type: 'json_object' }
-          });
+            messages: [{ role: 'user' as const, content: prompt }],
+            // v1.26.3 PATCH Issue #443 expanded scope: typed-output path.
+            // AliasGenerationLLMSchema ({aliases?: string[]}) on the wire as
+            // Tier 0 json_schema — LMStudio accepts, no parse-error fallback
+            // to empty alias list.
+            response_format: { type: 'json_object' as const, schema: AliasGenerationLLMSchema },
+          };
+          const response = client.createMessageWithOutput
+            ? (await client.createMessageWithOutput(aliasArgs)).text
+            : await client.createMessage(aliasArgs);
 
           // v1.24.0: Bug 3 — log provider + raw response shape BEFORE
           // parseJsonResponse so an empty / unparseable result is

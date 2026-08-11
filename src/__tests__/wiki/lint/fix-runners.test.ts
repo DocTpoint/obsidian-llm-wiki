@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Notice, TFile } from 'obsidian';
 import { runAliasCompletion, runDeadLinkFixes, runEmptyPageFixes, runOrphanFixes, runDuplicateMerges, runRetagViolations } from '../../../wiki/lint/fix-runners';
 import type { LintContext } from '../../../wiki/lint/types';
+import { AliasGenerationLLMSchema } from '../../../llm-sdk/output-schemas';
 
 // NoticeMock in setup.ts adds a static `instances` array. Cast the imported
 // Notice to access the mock-side field for test introspection.
@@ -688,5 +689,63 @@ describe('P0-1 second pass — Empty / Orphan / Duplicate runner concurrency', (
     await runEmptyPageFixes(fillOnly, new AbortController().signal, [{ path: 'a.md', content: '' }]);
     // No crash, no batch overrun — sequential-by-default contract holds.
     expect(true).toBe(true);
+  });
+});
+
+// === typed-output migration (v1.26.3 PATCH Issue #443 expanded scope) ===
+// Commit 9 — runAliasCompletion uses createMessageWithOutput when available;
+// falls back to createMessage on legacy clients.
+describe('runAliasCompletion — typed-output migration (#443 expanded scope)', () => {
+  function makeAliasCtx(client: unknown) {
+    return {
+      app: {
+        vault: {
+          adapter: { write: vi.fn().mockResolvedValue(undefined) },
+        },
+      } as unknown as LintContext['app'],
+      llmClient: client,
+      settings: { wikiFolder: 'wiki', language: 'en' } as LintContext['settings'],
+    } as unknown as LintContext;
+  }
+
+  it('passes AliasGenerationLLMSchema on the wire via response_format.schema (legacy client)', async () => {
+    const createMessage = vi.fn().mockResolvedValue('{"aliases":["Foo","Bar"]}');
+    const ctx = makeAliasCtx({ createMessage });
+    await runAliasCompletion(ctx, undefined, [
+      { path: 'wiki/entities/Has.md', content: '---\ntype: entity\n---\n\n# Body', basename: 'Has' },
+    ]);
+    expect(createMessage).toHaveBeenCalled();
+    const calls = createMessage.mock.calls as unknown as Array<[unknown]>;
+    const args = calls[0]?.[0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBe(AliasGenerationLLMSchema);
+  });
+
+  it('uses createMessageWithOutput when the client implements it (Tier 0 path)', async () => {
+    const createMessageWithOutput = vi.fn().mockResolvedValue({
+      text: '{"aliases":["Foo","Bar"]}',
+      output: { aliases: ['Foo', 'Bar'] },
+      outputMode: 'json_schema',
+      finishReason: 'stop',
+    });
+    const createMessage = vi.fn();
+    const ctx = makeAliasCtx({ createMessage, createMessageWithOutput });
+    await runAliasCompletion(ctx, undefined, [
+      { path: 'wiki/entities/Has.md', content: '---\ntype: entity\n---\n\n# Body', basename: 'Has' },
+    ]);
+    expect(createMessageWithOutput).toHaveBeenCalled();
+    expect(createMessage).not.toHaveBeenCalled();
+    const calls = createMessageWithOutput.mock.calls as unknown as Array<[unknown]>;
+    const args = calls[0]?.[0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBe(AliasGenerationLLMSchema);
+  });
+
+  it('falls back to createMessage when the client lacks createMessageWithOutput', async () => {
+    const createMessage = vi.fn().mockResolvedValue('{"aliases":["Foo","Bar"]}');
+    const ctx = makeAliasCtx({ createMessage });
+    const result = await runAliasCompletion(ctx, undefined, [
+      { path: 'wiki/entities/Has.md', content: '---\ntype: entity\n---\n\n# Body', basename: 'Has' },
+    ]);
+    expect(createMessage).toHaveBeenCalled();
+    expect(result.filled).toBe(1);
   });
 });
