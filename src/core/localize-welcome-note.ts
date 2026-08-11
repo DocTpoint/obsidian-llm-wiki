@@ -23,6 +23,7 @@
 
 import type { LLMClient } from '../types';
 import { TOKENS_PAGE_GENERATION } from '../constants';
+import { WelcomeTranslationLLMSchema } from '../llm-sdk/output-schemas';
 
 /**
  * max_tokens for the translation LLM call. We use the ingest-scale
@@ -130,21 +131,42 @@ export async function localizeWelcomeNote(args: LocalizeArgs): Promise<LocalizeR
 
   try {
     console.debug(`[localizeWelcomeNote] target=${targetLanguage}, model=${model}, max_tokens=${TRANSLATION_MAX_TOKENS}, bodyLen=${englishBody.length}`);
-    const raw = await llmClient.createMessage({
+    // v1.26.3 PATCH Issue #443 expanded scope: typed-output path.
+    // WelcomeTranslationLLMSchema ({translated: string}) on the wire as Tier 0
+    // json_schema — LMStudio accepts, no `<|channel>thought`/```json``` fence
+    // wraparound breaking `extractTranslatedField` (the legacy helper).
+    // Schema enforcement guarantees the model emits a valid JSON object with
+    // a single `translated` string field; no manual fence / escape handling
+    // needed downstream.
+    const translateArgs = {
+      task: 'welcome-translate' as const,
       model,
       max_tokens: TRANSLATION_MAX_TOKENS,
       system,
-      messages: [{ role: 'user', content: englishBody }],
+      messages: [{ role: 'user' as const, content: englishBody }],
+      response_format: { type: 'json_object' as const, schema: WelcomeTranslationLLMSchema },
       // Note: no signal param in current LLMClient interface, but caller
       // can pass signal via signal on the request and we ignore at this
       // level. Future: plumb through AbortSignal once interface widens.
       ...(signal ? {} : {}),
-    });
+    };
+    // Prefer createMessageWithOutput on modern clients; falls back to
+    // createMessage on legacy Anthropic / OpenAI / Codex. When falling
+    // back, the legacy free-text path still uses the now-deleted
+    // extractTranslatedField helper via the parseJsonResponse bridge.
+    const result = llmClient.createMessageWithOutput
+      ? await llmClient.createMessageWithOutput(translateArgs)
+      : null;
+    const raw = result ? result.text : await llmClient.createMessage(translateArgs);
+    const typedTranslated = result?.output
+      ? (result.output as { translated?: unknown }).translated
+      : undefined;
+    const translated = typeof typedTranslated === 'string'
+      ? typedTranslated
+      : extractTranslatedField(raw);
     console.debug(`[localizeWelcomeNote] LLM returned. rawLen=${raw?.length ?? 0}, preview=${JSON.stringify((raw ?? '').slice(0, 200))}`);
-
-    const translated = extractTranslatedField(raw);
     if (!translated) {
-      console.warn(`[localizeWelcomeNote] extractTranslatedField returned null. Full raw: ${JSON.stringify(raw).slice(0, 500)}`);
+      console.warn(`[localizeWelcomeNote] translated body missing. Full raw: ${JSON.stringify(raw).slice(0, 500)}`);
       return {
         ok: false,
         body: englishBody,
