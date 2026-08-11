@@ -47,6 +47,7 @@ import { createEmptyAccumulation, mergeBatchResults, buildSourceAnalysis, calcul
 import { decideSourceLemma } from '../core/source-lemma';
 import { getActiveEntityTags, getActiveConceptTags } from '../core/tag-vocab';
 import { SourceAnalysisLLMSchema, LemmaClassifyLLMSchema } from '../llm-sdk/output-schemas';
+import { callLlm } from '../core/llm-dispatch';
 
 // ── Batch response normalization ─────────────────────────────────
 // LLMs often return irregular JSON: omitted empty arrays, non-array truthy
@@ -397,17 +398,12 @@ export class SourceAnalyzer {
             finish.usage = meta.usage;
           },
         };
-        // Tier 0 success path: `result.output` is a typed SourceAnalysisLLM.
-        // Fallback: legacy clients (Anthropic / OpenAI / Codex) without
-        // `createMessageWithOutput` go through the original parseJsonResponse
-        // path, which already handles Tier 1 / Tier 2 malformed JSON.
-        let response: string;
-        if (client.createMessageWithOutput) {
-          const result = await client.createMessageWithOutput(extractArgs);
-          response = result.text;
-        } else {
-          response = await client.createMessage(extractArgs);
-        }
+        // Typed-output dispatch via the centralized helper in core/llm-dispatch:
+        // prefer createMessageWithOutput on modern clients, fall back to
+        // createMessage on legacy Anthropic / OpenAI / Codex. The returned
+        // string is the wire text — Tier 1 / Tier 2 (output undefined) flows
+        // through the existing parseJsonResponse path below.
+        const response = await callLlm(client, extractArgs);
 
         // Surface real token usage (Issue #305 follow-up): the model reports
         // prompt/completion tokens; logging them per batch turns truncation
@@ -471,16 +467,10 @@ export class SourceAnalyzer {
               // reasoning for short-budget calls, full reasoning for
               // repair".
             };
-            // Same typed-output guard as the parent call: prefer
-            // createMessageWithOutput on modern clients, fall back to
-            // createMessage on legacy clients. parseJsonResponse
-            // (the caller of repairFn) only needs the string back, so
-            // either path returns the same shape.
-            if (client.createMessageWithOutput) {
-              const result = await client.createMessageWithOutput(repairArgs);
-              return result.text;
-            }
-            return await client.createMessage(repairArgs);
+            // Same typed-output dispatch as the parent call, via the centralized
+            // core/llm-dispatch helper. parseJsonResponse only needs the
+            // string back, so either branch returns the same shape.
+            return callLlm(client, repairArgs);
           };
         const analysisData = await parseJsonResponse(response, repairFn, { silentOnEmpty: true }) as Partial<SourceAnalysis> | null;
 
@@ -839,9 +829,7 @@ Respond with this JSON object and nothing else: {"kind": "entity"} or {"kind": "
         response_format: { type: 'json_object' as const, schema: LemmaClassifyLLMSchema },
         ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
       };
-      const response = client.createMessageWithOutput
-        ? (await client.createMessageWithOutput(lemmaArgs)).text
-        : await client.createMessage(lemmaArgs);
+      const response = await callLlm(client, lemmaArgs);
       const parsed = (await parseJsonResponse(response, undefined, { silentOnEmpty: true })) as { kind?: unknown } | null;
       const kind = typeof parsed?.kind === 'string' ? parsed.kind.trim().toLowerCase() : '';
       if (kind === 'entity' || kind === 'concept') return kind;

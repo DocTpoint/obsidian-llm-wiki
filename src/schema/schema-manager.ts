@@ -9,6 +9,7 @@ import { resolveModelForTask } from '../core/model-resolver';
 import { TOKENS_SCHEMA_SUGGESTION } from '../constants';
 import { renderTemplate } from '../core/template-renderer';
 import { SchemaSuggestionLLMSchema } from '../llm-sdk/output-schemas';
+import { callLlm } from '../core/llm-dispatch';
 
 const SCHEMA_FILENAME = 'schema/config.md';
 const SUGGESTIONS_FILENAME = 'schema/suggestions.md';
@@ -458,9 +459,7 @@ ${body}`;
         maxTokensPerCall: this.settings.maxTokensPerCall || undefined,
         temperature: this.settings.extractionTemperature,
       };
-      const response = this.client.createMessageWithOutput
-        ? (await this.client.createMessageWithOutput(suggestArgs)).text
-        : await this.client.createMessage(suggestArgs);
+      const response = await callLlm(this.client, suggestArgs);
 
       // v1.22.0 #97: use the dedicated parser to extract new_schema_body
       // (frontmatter-stripped, ready to splice). Legacy v1.21.x responses

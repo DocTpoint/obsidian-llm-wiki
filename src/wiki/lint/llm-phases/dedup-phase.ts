@@ -33,6 +33,7 @@ import { PROMPTS } from '../../../prompts';
 import type { LLMClient } from '../../../types';
 import type { LintPhaseContext, DuplicateResult, ScannerPage } from '../types';
 import { DedupResultLLMSchema } from '../../../llm-sdk/output-schemas';
+import { callLlm } from '../../../core/llm-dispatch';
 import {
   TOKENS_LINT_DEDUP_LLM,
   NOTICE_RATE_LIMIT,
@@ -487,17 +488,10 @@ export async function runDedupPhase(
         );
       };
 
-      // v1.26.3 PATCH Issue #443 expanded scope: typed-output guard.
-      // Prefer createMessageWithOutput on modern clients; falls back to
-      // createMessage on legacy Anthropic / OpenAI / Codex. The retry tier
-      // logic is unchanged — only the wire shape gains schema enforcement.
-      const callOnce = async (): Promise<string> => {
-        if (llm.createMessageWithOutput) {
-          const result = await llm.createMessageWithOutput(llmArgs);
-          return result.text;
-        }
-        return await llm.createMessage(llmArgs);
-      };
+      // v1.26.3 PATCH Issue #443 expanded scope: typed-output dispatch via the
+      // centralized core/llm-dispatch helper. The retry tier logic is
+      // unchanged — only the wire shape gains schema enforcement.
+      const callOnce = () => callLlm(llm, llmArgs);
 
       // Attempt 1: original request.
       const first = await callOnce();

@@ -24,6 +24,8 @@
 import type { LLMClient } from '../types';
 import { TOKENS_PAGE_GENERATION } from '../constants';
 import { WelcomeTranslationLLMSchema } from '../llm-sdk/output-schemas';
+import { callLlm } from './llm-dispatch';
+import { parseJsonResponse } from './json';
 
 /**
  * max_tokens for the translation LLM call. We use the ingest-scale
@@ -133,11 +135,12 @@ export async function localizeWelcomeNote(args: LocalizeArgs): Promise<LocalizeR
     console.debug(`[localizeWelcomeNote] target=${targetLanguage}, model=${model}, max_tokens=${TRANSLATION_MAX_TOKENS}, bodyLen=${englishBody.length}`);
     // v1.26.3 PATCH Issue #443 expanded scope: typed-output path.
     // WelcomeTranslationLLMSchema ({translated: string}) on the wire as Tier 0
-    // json_schema — LMStudio accepts, no `<|channel>thought`/```json``` fence
-    // wraparound breaking `extractTranslatedField` (the legacy helper).
-    // Schema enforcement guarantees the model emits a valid JSON object with
-    // a single `translated` string field; no manual fence / escape handling
-    // needed downstream.
+    // json_schema — LMStudio accepts, no <|channel>thought / ```json``` fence
+    // wraparound to work around. The schema enforces the wire shape; the
+    // legacy `extractTranslatedField` helper (regex fence stripper) is now
+    // dead — parseJsonResponse handles the same variants uniformly with
+    // greedy regex + repair. Single decode path for both modern and legacy
+    // clients.
     const translateArgs = {
       task: 'welcome-translate' as const,
       model,
@@ -150,20 +153,9 @@ export async function localizeWelcomeNote(args: LocalizeArgs): Promise<LocalizeR
       // level. Future: plumb through AbortSignal once interface widens.
       ...(signal ? {} : {}),
     };
-    // Prefer createMessageWithOutput on modern clients; falls back to
-    // createMessage on legacy Anthropic / OpenAI / Codex. When falling
-    // back, the legacy free-text path still uses the now-deleted
-    // extractTranslatedField helper via the parseJsonResponse bridge.
-    const result = llmClient.createMessageWithOutput
-      ? await llmClient.createMessageWithOutput(translateArgs)
-      : null;
-    const raw = result ? result.text : await llmClient.createMessage(translateArgs);
-    const typedTranslated = result?.output
-      ? (result.output as { translated?: unknown }).translated
-      : undefined;
-    const translated = typeof typedTranslated === 'string'
-      ? typedTranslated
-      : extractTranslatedField(raw);
+    const raw = await callLlm(llmClient, translateArgs);
+    const parsed = await parseJsonResponse(raw) as { translated?: unknown } | null;
+    const translated = typeof parsed?.translated === 'string' ? parsed.translated : null;
     console.debug(`[localizeWelcomeNote] LLM returned. rawLen=${raw?.length ?? 0}, preview=${JSON.stringify((raw ?? '').slice(0, 200))}`);
     if (!translated) {
       console.warn(`[localizeWelcomeNote] translated body missing. Full raw: ${JSON.stringify(raw).slice(0, 500)}`);
@@ -186,81 +178,4 @@ export async function localizeWelcomeNote(args: LocalizeArgs): Promise<LocalizeR
       error: message,
     };
   }
-}
-
-/**
- * Extract the `translated` field from an LLM response. Tolerant of
- * common variations:
- *   - Plain JSON: {"translated": "..."}
- *   - Wrapped in prose: "Sure, here is: {..."}
- *   - Stray code fences (rarely, but possible)
- */
-function extractTranslatedField(raw: string): string | null {
-  if (!raw || typeof raw !== 'string') return null;
-
-  // Try direct JSON parse first.
-  try {
-    const obj: unknown = JSON.parse(raw);
-    if (obj && typeof obj === 'object' && 'translated' in obj) {
-      const translated = (obj as Record<string, unknown>).translated;
-      if (typeof translated === 'string') {
-        return translated;
-      }
-    }
-  } catch {
-    // Fall through to prose-wrapped extraction.
-  }
-
-  // Look for the JSON object containing `translated`. We locate the
-  // opening `{` immediately before the `"translated"` key, then walk
-  // the string to find its matching closing `}` (respecting JSON
-  // string escaping so escaped quotes inside the value don't end the
-  // match early).
-  const keyIndex = raw.indexOf('"translated"');
-  if (keyIndex === -1) return null;
-
-  // Find the `{` that starts this object — scan backwards from the key.
-  let openBrace = -1;
-  for (let i = keyIndex - 1; i >= 0; i--) {
-    const ch = raw[i];
-    if (ch === '{') { openBrace = i; break; }
-    if (ch === '}' || ch === ']' || ch === ',') return null;  // key not at object start
-  }
-  if (openBrace === -1) return null;
-
-  // Walk forward from openBrace, tracking string state + escapes, to
-  // find the matching closing `}`.
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  for (let i = openBrace; i < raw.length; i++) {
-    const ch = raw[i];
-    if (escape) { escape = false; continue; }
-    if (inString) {
-      if (ch === '\\') { escape = true; continue; }
-      if (ch === '"') { inString = false; }
-      continue;
-    }
-    if (ch === '"') { inString = true; continue; }
-    if (ch === '{') depth++;
-    if (ch === '}') {
-      depth--;
-      if (depth === 0) {
-        const candidate = raw.slice(openBrace, i + 1);
-        try {
-          const obj: unknown = JSON.parse(candidate);
-          if (obj && typeof obj === 'object' && 'translated' in obj) {
-            const translated = (obj as Record<string, unknown>).translated;
-            if (typeof translated === 'string') {
-              return translated;
-            }
-          }
-        } catch {
-          return null;
-        }
-        return null;
-      }
-    }
-  }
-  return null;
 }

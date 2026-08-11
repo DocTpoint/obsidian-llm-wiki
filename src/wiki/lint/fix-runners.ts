@@ -16,6 +16,7 @@ import { TOKENS_LINT_ALIAS_BATCH, NOTICE_ERROR, NOTICE_RATE_LIMIT } from '../../
 import { buildWikiLanguageDirective } from '../system-prompts';
 import { TagViolation } from './scanners';
 import { AliasGenerationLLMSchema, TagFixLLMSchema } from '../../llm-sdk/output-schemas';
+import { callLlm } from '../../core/llm-dispatch';
 
 // Issue #94: Status bar "click to cancel" already exists, but the fix-runner
 // functions in this module previously never received the AbortSignal. Each
@@ -100,9 +101,7 @@ export async function runAliasCompletion(
             // to empty alias list.
             response_format: { type: 'json_object' as const, schema: AliasGenerationLLMSchema },
           };
-          const response = client.createMessageWithOutput
-            ? (await client.createMessageWithOutput(aliasArgs)).text
-            : await client.createMessage(aliasArgs);
+          const response = await callLlm(client, aliasArgs);
 
           // v1.24.0: Bug 3 — log provider + raw response shape BEFORE
           // parseJsonResponse so an empty / unparseable result is
@@ -573,9 +572,7 @@ Task: Return a JSON object with a single field "tags" that is an array of string
           // vocab post-parse; the schema only constrains the wire shape.
           response_format: { type: 'json_object' as const, schema: TagFixLLMSchema },
         };
-        const response = llmClient.createMessageWithOutput
-          ? (await llmClient.createMessageWithOutput(tagArgs)).text
-          : await llmClient.createMessage(tagArgs);
+        const response = await callLlm(llmClient, tagArgs);
         if (signal?.aborted) {
           throw new DOMException('Lint fix cancelled by user', 'AbortError');
         }

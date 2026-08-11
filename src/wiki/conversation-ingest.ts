@@ -17,6 +17,7 @@ import { UNIVERSAL_LINK_CONSTRAINTS } from './prompts/constraints';
 import { TOKENS_CONVERSATION_EXTRACTION, TOKENS_CONVERSATION_PAGE, TOKENS_PAGE_GENERATION, TOKENS_QUERY_SAVE_DEDUP } from '../constants';
 import { PageFactory } from './page-factory';
 import { SourceAnalysisLLMSchema, ConversationDedupStatusLLMSchema } from '../llm-sdk/output-schemas';
+import { callLlm } from '../core/llm-dispatch';
 
 export interface ConversationOrchestration {
   ensureWikiStructure: () => Promise<void>;
@@ -170,9 +171,7 @@ CRITICAL RULES:
     };
     // v1.26.3 PATCH Issue #443 expanded scope: typed-output path. Same
     // schema (SourceAnalysisLLMSchema) as source-analyzer extract.
-    const analysisText = client.createMessageWithOutput
-      ? (await client.createMessageWithOutput(analysisArgs)).text
-      : await client.createMessage(analysisArgs);
+    const analysisText = await callLlm(client, analysisArgs);
 
     const parsed = await parseJsonResponse(analysisText, async (malformedJson: string) => {
       const repairPrompt = `Fix the following malformed JSON. Only fix JSON syntax errors (unescaped quotes, trailing commas, missing brackets). Do NOT change any values or content. Output ONLY the fixed JSON, no other text.\n\n${malformedJson}`;
@@ -185,10 +184,7 @@ CRITICAL RULES:
         response_format: { type: 'json_object' as const, schema: SourceAnalysisLLMSchema },
         ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
       };
-      if (client.createMessageWithOutput) {
-        return (await client.createMessageWithOutput(repairArgs)).text;
-      }
-      return await client.createMessage(repairArgs);
+      return callLlm(client, repairArgs);
     }) as SourceAnalysis | null;
     if (!parsed) {
       throw new Error('Conversation analysis JSON parsing failed');
@@ -352,9 +348,7 @@ CRITICAL RULES:
       response_format: { type: 'json_object' as const, schema: ConversationDedupStatusLLMSchema },
       ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
     };
-    const dedupText = client.createMessageWithOutput
-      ? (await client.createMessageWithOutput(dedupArgs)).text
-      : await client.createMessage(dedupArgs);
+    const dedupText = await callLlm(client, dedupArgs);
 
     const parsed = await parseJsonResponse(dedupText) as { status?: string } | null;
     return parsed?.status || 'entirely_new';

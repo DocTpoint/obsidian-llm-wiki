@@ -29,6 +29,7 @@ import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { appendAliases, type AliasesContext } from './aliases';
 import { PathResolutionLLMSchema } from '../../llm-sdk/output-schemas';
+import { callLlm } from '../../core/llm-dispatch';
 
 /** Page shape consumed by the dedup candidate pre-filter. */
 export interface DedupCandidatePage {
@@ -228,9 +229,7 @@ export async function resolvePagePath(
       response_format: { type: 'json_object' as const, schema: PathResolutionLLMSchema },
       ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
     };
-    const response = client.createMessageWithOutput
-      ? (await client.createMessageWithOutput(resolveArgs)).text
-      : await client.createMessage(resolveArgs);
+    const response = await callLlm(client, resolveArgs);
 
     const parsed = await parseJsonResult(response);
 
