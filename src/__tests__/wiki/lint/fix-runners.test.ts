@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Notice, TFile } from 'obsidian';
 import { runAliasCompletion, runDeadLinkFixes, runEmptyPageFixes, runOrphanFixes, runDuplicateMerges, runRetagViolations } from '../../../wiki/lint/fix-runners';
 import type { LintContext } from '../../../wiki/lint/types';
-import { AliasGenerationLLMSchema } from '../../../llm-sdk/output-schemas';
+import { AliasGenerationLLMSchema, TagFixLLMSchema } from '../../../llm-sdk/output-schemas';
 
 // NoticeMock in setup.ts adds a static `instances` array. Cast the imported
 // Notice to access the mock-side field for test introspection.
@@ -747,5 +747,83 @@ describe('runAliasCompletion — typed-output migration (#443 expanded scope)', 
     ]);
     expect(createMessage).toHaveBeenCalled();
     expect(result.filled).toBe(1);
+  });
+});
+
+// === Commit 10 — tag-fix ===
+// Top-level describe so this can stand alone. We don't reuse the existing
+// makeRetagCtx helper (which is scoped inside the Issue #85 v7 describe)
+// and instead use makeCtx directly with overrides.
+describe('runRetagViolations — typed-output migration (#443 expanded scope)', () => {
+  const tagMigrationViolation: TagViolation = {
+    path: 'wiki/entities/Alice.md',
+    pageType: 'entity',
+    title: 'Alice',
+    currentTags: ['person', 'bogus'],
+    invalidTags: ['bogus'],
+  };
+
+  // Build a ctx that mimics the Issue #85 v7 fixture closely enough for
+  // runRetagViolations to reach the LLM call. The original makeRetagCtx
+  // scopes TFile + vault.read + getAbstractFileByPath mocks; here we
+  // inline the minimum set needed by the production path.
+  function makeTagMigrationCtx(llmClient: unknown): LintContext {
+    const realTFileMock = Object.assign(new TFile(), {
+      path: tagMigrationViolation.path,
+      basename: 'Alice',
+      extension: 'md',
+      stat: { ctime: 0, mtime: 0, size: 0 },
+    });
+    return makeCtx({
+      llmClient: llmClient as unknown as LintContext['llmClient'],
+      app: {
+        vault: {
+          adapter: { write: vi.fn().mockResolvedValue(undefined) },
+          getAbstractFileByPath: vi.fn().mockReturnValue(realTFileMock),
+          read: vi.fn().mockImplementation(async (f: { path: string }) => {
+            if (typeof (f as { read?: unknown }).read === 'function') {
+              throw new Error('TFile.read is not a function (real Obsidian API)');
+            }
+            return f.path === realTFileMock.path
+              ? '---\ntype: entity\ntitle: Alice\ntags: [person, bogus]\n---\n\nBody of Alice.'
+              : null;
+          }),
+        },
+      } as unknown as LintContext['app'],
+    });
+  }
+
+  it('passes TagFixLLMSchema on the wire via response_format.schema (legacy client)', async () => {
+    const createMessage = vi.fn().mockResolvedValue('{"tags":["entity"]}');
+    const ctx = makeTagMigrationCtx({ createMessage });
+    await runRetagViolations(ctx, undefined, [tagMigrationViolation]);
+    expect(createMessage).toHaveBeenCalled();
+    const calls = createMessage.mock.calls as unknown as Array<[unknown]>;
+    const args = calls[0]?.[0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBe(TagFixLLMSchema);
+  });
+
+  it('uses createMessageWithOutput when the client implements it (Tier 0 path)', async () => {
+    const createMessageWithOutput = vi.fn().mockResolvedValue({
+      text: '{"tags":["entity"]}',
+      output: { tags: ['entity'] },
+      outputMode: 'json_schema',
+      finishReason: 'stop',
+    });
+    const createMessage = vi.fn();
+    const ctx = makeTagMigrationCtx({ createMessage, createMessageWithOutput });
+    await runRetagViolations(ctx, undefined, [tagMigrationViolation]);
+    expect(createMessageWithOutput).toHaveBeenCalled();
+    expect(createMessage).not.toHaveBeenCalled();
+    const calls = createMessageWithOutput.mock.calls as unknown as Array<[unknown]>;
+    const args = calls[0]?.[0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBe(TagFixLLMSchema);
+  });
+
+  it('falls back to createMessage when the client lacks createMessageWithOutput', async () => {
+    const createMessage = vi.fn().mockResolvedValue('{"tags":["entity"]}');
+    const ctx = makeTagMigrationCtx({ createMessage });
+    await runRetagViolations(ctx, undefined, [tagMigrationViolation]);
+    expect(createMessage).toHaveBeenCalled();
   });
 });
