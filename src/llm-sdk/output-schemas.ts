@@ -120,3 +120,167 @@ export const QueryViewValueSchema = z.object({
   reason: z.string().optional(),
 });
 export type QueryViewValue = z.infer<typeof QueryViewValueSchema>;
+
+// ============================================================================
+// v1.26.3 PATCH expanded scope — schemas for the remaining 11 callers
+// (commits 2-11). All schemas use `.passthrough()` per the user's
+// "针对一些格式内容多变的属性，必须留好冗余空间" requirement: an LLM
+// that emits an extra field (e.g. `confidence`, `score`) won't fail
+// validation. Optional fields are marked `.optional()` so models can
+// omit them when they lack the data. Type fields stay as widening
+// `z.string()` (not strict enum) so a model that emits `'region'` or
+// `'topic'` doesn't get rejected.
+// ============================================================================
+
+/**
+ * source-analyzer.ts extract + extract-retry (the repair callback
+ * reuses this schema). Output: a `SourceAnalysis`-shaped object
+ * describing entities, concepts, contradictions, and source metadata.
+ *
+ * Existing cast: `Partial<SourceAnalysis>`. The schema is permissive:
+ * every top-level field is optional except the bare structural shape
+ * (entities / concepts arrays when present must be arrays; nested
+ * `mentions_with_provenance[i].quote` is required because downstream
+ * formatting relies on it).
+ */
+const MentionWithProvenanceItem = z.object({
+  quote: z.string(),
+  translation: z.string().optional(),
+  source_path: z.string(),
+  source_slug: z.string(),
+  extracted_at: z.string(),
+}).passthrough();
+
+const EntityItem = z.object({
+  name: z.string(),
+  type: z.string(), // widening union (was 'person'|'organization'|...|'other')
+  aliases: z.array(z.string()).optional(),
+  summary: z.string().optional(),
+  mentions_in_source: z.array(z.string()).optional(),
+  mentions_with_provenance: z.array(MentionWithProvenanceItem).optional(),
+  related_entities: z.array(z.string()).optional(),
+  related_concepts: z.array(z.string()).optional(),
+}).passthrough();
+
+const ConceptItem = z.object({
+  name: z.string(),
+  type: z.string(), // widening union (was 'theory'|'method'|...|'other')
+  aliases: z.array(z.string()).optional(),
+  summary: z.string().optional(),
+  mentions_in_source: z.array(z.string()).optional(),
+  mentions_with_provenance: z.array(MentionWithProvenanceItem).optional(),
+  related_concepts: z.array(z.string()).optional(),
+  related_entities: z.array(z.string()).optional(),
+}).passthrough();
+
+export const SourceAnalysisLLMSchema = z.object({
+  source_title: z.string().optional(),
+  summary: z.string().optional(),
+  entities: z.array(EntityItem).optional(),
+  concepts: z.array(ConceptItem).optional(),
+  contradictions: z.array(z.object({
+    claim: z.string(),
+    source_page: z.string(),
+    contradicted_by: z.string(),
+    resolution: z.string(),
+  }).passthrough()).optional(),
+  related_pages: z.array(z.string()).optional(),
+  key_points: z.array(z.string()).optional(),
+}).passthrough();
+export type SourceAnalysisLLM = z.infer<typeof SourceAnalysisLLMSchema>;
+
+/**
+ * source-analyzer.ts lemma-classify — "is this extracted lemma an
+ * entity or a concept?" Existing cast: `{ kind?: unknown }`. The
+ * caller filters to `'entity' | 'concept'` post-parse; widening
+ * `z.string()` lets the model emit anything without throwing.
+ */
+export const LemmaClassifyLLMSchema = z.object({
+  kind: z.string(),
+}).passthrough();
+export type LemmaClassifyLLM = z.infer<typeof LemmaClassifyLLMSchema>;
+
+/**
+ * conversation-ingest.ts save-dedup — "is this conversation
+ * entirely new, a partial overlap, or a full match against existing
+ * wiki pages?" Existing cast: `{ status?: string }`. Status is
+ * optional so the caller falls back to `'entirely_new'` if missing.
+ */
+export const ConversationDedupStatusLLMSchema = z.object({
+  status: z.string().optional(),
+}).passthrough();
+export type ConversationDedupStatusLLM = z.infer<typeof ConversationDedupStatusLLMSchema>;
+
+/**
+ * dedup-phase.ts — LLM verdict on whether two candidate pages are
+ * duplicates. Existing cast: `{ duplicates?: DuplicateResult[] }`.
+ * The duplicates array is optional; `target` + `source` + `reason`
+ * mirror the `DuplicateResult` interface in dedup-phase.ts.
+ */
+export const DedupResultLLMSchema = z.object({
+  duplicates: z.array(z.object({
+    target: z.string(),
+    source: z.string(),
+    reason: z.string(),
+  }).passthrough()).optional(),
+}).passthrough();
+export type DedupResultLLM = z.infer<typeof DedupResultLLMSchema>;
+
+/**
+ * schema-manager.ts suggest-update — proposes changes to the user's
+ * schema file. Existing parser: `parseSchemaSuggestion` in
+ * src/schema/parse-suggestion.ts. Three optional fields, all widened
+ * via passthrough.
+ */
+export const SchemaSuggestionLLMSchema = z.object({
+  changes_needed: z.boolean().optional(),
+  new_schema_body: z.string().optional(),
+  suggestions: z.string().optional(),
+}).passthrough();
+export type SchemaSuggestionLLM = z.infer<typeof SchemaSuggestionLLMSchema>;
+
+/**
+ * path-resolution.ts resolve-dedup — does this entity/concept match
+ * an existing page (update) or warrant a new page (create)? Existing
+ * cast: returns a `string` path; the LLM emits an object the caller
+ * unwraps. `decision` widens (caller branches on string match);
+ * `target` is the existing path when decision='update_existing'.
+ */
+export const PathResolutionLLMSchema = z.object({
+  decision: z.string(),
+  target: z.string().optional(),
+}).passthrough();
+export type PathResolutionLLM = z.infer<typeof PathResolutionLLMSchema>;
+
+/**
+ * fix-runners.ts alias-generate — propose alternative names /
+ * abbreviations / translations for a page. Existing cast:
+ * `{ aliases?: string[] }`. Caller dedupes + filters; schema marks
+ * optional so missing aliases becomes `[]` upstream.
+ */
+export const AliasGenerationLLMSchema = z.object({
+  aliases: z.array(z.string()).optional(),
+}).passthrough();
+export type AliasGenerationLLM = z.infer<typeof AliasGenerationLLMSchema>;
+
+/**
+ * fix-runners.ts tag-fix — propose valid active-vocabulary tags for a
+ * page whose frontmatter carries invalid ones. Existing cast:
+ * `{ tags?: string[] }`. Caller filters against the runtime tag vocab
+ * before applying; schema stays permissive.
+ */
+export const TagFixLLMSchema = z.object({
+  tags: z.array(z.string()).optional(),
+}).passthrough();
+export type TagFixLLM = z.infer<typeof TagFixLLMSchema>;
+
+/**
+ * localize-welcome-note.ts — translate an English Welcome note body
+ * into the user's wikiLanguage. The LLM emits the full translated
+ * markdown inside `translated`. Widening passthrough so future fields
+ * (e.g. `notes`) don't break.
+ */
+export const WelcomeTranslationLLMSchema = z.object({
+  translated: z.string(),
+}).passthrough();
+export type WelcomeTranslationLLM = z.infer<typeof WelcomeTranslationLLMSchema>;
