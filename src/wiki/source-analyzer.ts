@@ -46,6 +46,7 @@ import { detectConvergence, checkCumulativeLimits, checkEmptyBatch, formatConver
 import { createEmptyAccumulation, mergeBatchResults, buildSourceAnalysis, calculateBatchStats } from '../core/batch-merger';
 import { decideSourceLemma } from '../core/source-lemma';
 import { getActiveEntityTags, getActiveConceptTags } from '../core/tag-vocab';
+import { SourceAnalysisLLMSchema } from '../llm-sdk/output-schemas';
 
 // ── Batch response normalization ─────────────────────────────────
 // LLMs often return irregular JSON: omitted empty arrays, non-array truthy
@@ -366,13 +367,19 @@ export class SourceAnalyzer {
         // Held in an object rather than a bare `let` so control-flow analysis
         // does not narrow it to its initializer across the callback.
         const finish: { reason: LLMFinishReason; usage?: LLMUsage } = { reason: 'unknown' };
-        const response = await client.createMessage({
-          task: 'extract',
+        // v1.26.3 PATCH (Issue #443): typed-output path. The schema travels on
+        // the wire as `response_format: { type: 'json_schema', json_schema: {...} }`
+        // when the OutputModeProber has cached Tier 0 (json_schema) for this
+        // baseURL — exactly what LMStudio accepts. On Tier 1 / Tier 2, the SDK
+        // drops the schema and falls back to `Output.json()` / no-field; we then
+        // parse `result.text` via the existing parseJsonResponse path.
+        const extractArgs = {
+          task: 'extract' as const,
           model: resolvedModel,
           max_tokens: batchMaxTokens,
           system: systemPrompt,
-          messages: [{ role: 'user', content: finalPrompt }],
-          response_format: { type: 'json_object' },
+          messages: [{ role: 'user' as const, content: finalPrompt }],
+          response_format: { type: 'json_object' as const, schema: SourceAnalysisLLMSchema },
           cacheBreakpoint: staticPrefix.length,
           maxTokensPerCall: retryCap,
           // Extraction never mentioned the thinking setting, so whatever the
@@ -385,8 +392,22 @@ export class SourceAnalyzer {
           // false, so asking for reasoning would fire on every install that
           // never opened the setting.
           ...(this.ctx.settings.disableThinking === true ? { enableThinking: false } : {}),
-          onFinish: (meta) => { finish.reason = meta.finishReason; finish.usage = meta.usage; },
-        });
+          onFinish: (meta: { finishReason: LLMFinishReason; usage?: LLMUsage }) => {
+            finish.reason = meta.finishReason;
+            finish.usage = meta.usage;
+          },
+        };
+        // Tier 0 success path: `result.output` is a typed SourceAnalysisLLM.
+        // Fallback: legacy clients (Anthropic / OpenAI / Codex) without
+        // `createMessageWithOutput` go through the original parseJsonResponse
+        // path, which already handles Tier 1 / Tier 2 malformed JSON.
+        let response: string;
+        if (client.createMessageWithOutput) {
+          const result = await client.createMessageWithOutput(extractArgs);
+          response = result.text;
+        } else {
+          response = await client.createMessage(extractArgs);
+        }
 
         // Surface real token usage (Issue #305 follow-up): the model reports
         // prompt/completion tokens; logging them per batch turns truncation
@@ -418,13 +439,13 @@ export class SourceAnalyzer {
           ? undefined
           : async (malformedJson: string) => {
             const repairPrompt = `Fix the following malformed JSON. Only fix JSON syntax errors (unescaped quotes, trailing commas, missing brackets). Do NOT change any values or content. Output ONLY the fixed JSON, no other text.\n\n${malformedJson}`;
-            return await client.createMessage({
-              task: 'extract-retry',
+            const repairArgs = {
+              task: 'extract-retry' as const,
               model: resolveModelForTask(this.ctx.settings, 'ingest'),
               max_tokens: retryCap, // Repair may need full output if original was truncated at retryCap
               system: await this.ctx.buildSystemPrompt('analyze'),
-              messages: [{ role: 'user', content: repairPrompt }],
-              response_format: { type: 'json_object' },
+              messages: [{ role: 'user' as const, content: repairPrompt }],
+              response_format: { type: 'json_object' as const, schema: SourceAnalysisLLMSchema },
               maxTokensPerCall: retryCap,
               // v1.26.0 Batch 7 follow-up (DocTpoint measurement, PR #411
               // review 2026-08-05 05:38 UTC): eucher's finding that the
@@ -449,7 +470,17 @@ export class SourceAnalyzer {
               // `thinkingPolicy` enum so the user can express "no
               // reasoning for short-budget calls, full reasoning for
               // repair".
-            });
+            };
+            // Same typed-output guard as the parent call: prefer
+            // createMessageWithOutput on modern clients, fall back to
+            // createMessage on legacy clients. parseJsonResponse
+            // (the caller of repairFn) only needs the string back, so
+            // either path returns the same shape.
+            if (client.createMessageWithOutput) {
+              const result = await client.createMessageWithOutput(repairArgs);
+              return result.text;
+            }
+            return await client.createMessage(repairArgs);
           };
         const analysisData = await parseJsonResponse(response, repairFn, { silentOnEmpty: true }) as Partial<SourceAnalysis> | null;
 

@@ -227,3 +227,176 @@ describe('SourceAnalyzer — user-layer tag-vocab dedup (#328 Phase 1 follow-up)
     expect(spy.mock.calls[0][0].messages[0].content).not.toContain('## Active Tag Vocabulary');
   });
 });
+
+// === typed-output migration (v1.26.3 PATCH Issue #443 expanded scope) ===
+// Phase B established the createMessageWithOutput path for 6 P0 callers;
+// this section extends the same pattern to source-analyzer (extract +
+// extract-retry). The mock client from engine-context does not implement
+// createMessageWithOutput, so existing tests exercise the legacy fallback
+// branch (`if (client.createMessageWithOutput)` guard). The tests below
+// pin the wire shape + the typed-output path.
+describe('SourceAnalyzer — typed-output migration (#443 expanded scope)', () => {
+  it('passes the SourceAnalysisLLMSchema on the wire via response_format.schema (legacy client)', async () => {
+    const { ctx } = createMockContext({
+      vaultFiles: { 'sources/test.md': '# Test\nSome content.' },
+      llmResponses: [JSON.stringify({
+        source_title: 'Test',
+        summary: 'A test.',
+        entities: [{ name: 'Foo', type: 'other', summary: 'bar', mentions_in_source: [] }],
+      })],
+    });
+    const spy = vi.spyOn(ctx.getClient()!, 'createMessage');
+    const analyzer = new SourceAnalyzer(ctx);
+    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+    await analyzer.analyzeSource(createMockFile('sources/test.md') as unknown as TFile);
+    expect(spy).toHaveBeenCalled();
+    const call = spy.mock.calls[0][0] as { response_format?: { schema?: unknown } };
+    expect(call.response_format?.schema).toBeDefined();
+    // Schema must round-trip a valid SourceAnalysis payload (sanity check)
+    const parsed = (call.response_format?.schema as { parse: (v: unknown) => unknown }).parse({
+      source_title: 'x',
+      entities: [{ name: 'a', type: 'person' }],
+      concepts: [],
+    });
+    expect(parsed).toBeDefined();
+  });
+
+  it('uses createMessageWithOutput when the client implements it (Tier 0 path)', async () => {
+    const { ctx } = createMockContext({
+      vaultFiles: { 'sources/test.md': '# Test\nSome content.' },
+      // lemma-classify is NOT migrated in this commit — the source-analyzer
+      // also calls it later for each new entity. Provide a 2nd response.
+      llmResponses: [
+        JSON.stringify({
+          source_title: 'Test',
+          summary: 'A test.',
+          entities: [{ name: 'Foo', type: 'other', summary: 'bar', mentions_in_source: [] }],
+        }),
+        '{"kind": "entity"}',
+      ],
+    });
+    const client = ctx.getClient()!;
+    // Add createMessageWithOutput to the mock client — simulates a modern
+    // OpenAICompatSdkClient that has the typed-output method (Phase B).
+    let extractCalls = 0;
+    (client as unknown as { createMessageWithOutput: () => Promise<{ text: string; output?: unknown; outputMode: string; finishReason: string }> }).createMessageWithOutput =
+      async () => {
+        extractCalls++;
+        return {
+          text: JSON.stringify({
+            source_title: 'Test',
+            summary: 'A test.',
+            entities: [{ name: 'Foo', type: 'other', summary: 'bar', mentions_in_source: [] }],
+          }),
+          output: {
+            source_title: 'Test',
+            summary: 'A test.',
+            entities: [{ name: 'Foo', type: 'other', summary: 'bar', mentions_in_source: [] }],
+          },
+          outputMode: 'json_schema',
+          finishReason: 'stop',
+        };
+      };
+    const withOutputSpy = vi.spyOn(client as unknown as { createMessageWithOutput: () => Promise<unknown> }, 'createMessageWithOutput');
+    const legacySpy = vi.spyOn(client, 'createMessage');
+
+    const analyzer = new SourceAnalyzer(ctx);
+    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+    const result = await analyzer.analyzeSource(createMockFile('sources/test.md') as unknown as TFile);
+
+    // extract went through typed path; lemma-classify still uses legacy
+    expect(withOutputSpy).toHaveBeenCalled();
+    expect(extractCalls).toBeGreaterThanOrEqual(1);
+    expect(legacySpy).toHaveBeenCalled(); // lemma-classify
+    expect(result).not.toBeNull();
+    expect(result!.entities).toHaveLength(1);
+    expect(result!.entities[0].name).toBe('Foo');
+  });
+
+  it('falls back to createMessage + parseJsonResponse when the client lacks createMessageWithOutput', async () => {
+    // The default mock client does NOT implement createMessageWithOutput
+    // (this is the legacy Anthropic / OpenAI / Codex client shape). The
+    // code guard `if (client.createMessageWithOutput)` should route the
+    // call to createMessage so existing behavior is preserved.
+    const { ctx } = createMockContext({
+      vaultFiles: { 'sources/test.md': '# Test\nSome content.' },
+      llmResponses: [JSON.stringify({
+        source_title: 'Test',
+        summary: 'A test.',
+        entities: [{ name: 'Foo', type: 'other', summary: 'bar', mentions_in_source: [] }],
+      })],
+    });
+    const client = ctx.getClient()!;
+    expect((client as unknown as { createMessageWithOutput?: unknown }).createMessageWithOutput).toBeUndefined();
+    const legacySpy = vi.spyOn(client, 'createMessage');
+    const analyzer = new SourceAnalyzer(ctx);
+    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+    const result = await analyzer.analyzeSource(createMockFile('sources/test.md') as unknown as TFile);
+
+    expect(legacySpy).toHaveBeenCalled();
+    expect(result).not.toBeNull();
+    expect(result!.entities[0].name).toBe('Foo');
+  });
+
+  it('extract-retry repair callback also passes the SourceAnalysisLLMSchema on the wire', async () => {
+    // Forces a repair path: first call returns malformed JSON, second call
+    // (the repair) must use the same schema as the parent call.
+    const { ctx } = createMockContext({
+      vaultFiles: { 'sources/test.md': '# Test\nSome content.' },
+      llmResponses: [
+        // lemma-classify (not migrated in this commit) — kind=entity
+        '{"kind": "entity"}',
+      ],
+    });
+    const client = ctx.getClient()!;
+    let repairCall: unknown = undefined;
+    let firstExtractCalled = false;
+    // Modern client — both extract and extract-retry go through createMessageWithOutput
+    (client as unknown as { createMessageWithOutput: (params: unknown) => Promise<{ text: string; output?: unknown; outputMode?: string; finishReason?: string }> }).createMessageWithOutput =
+      async (params: unknown) => {
+        const p = params as { task?: string };
+        if (p.task === 'extract') {
+          firstExtractCalled = true;
+          // Malformed-but-closed JSON: braces balance so extractBalancedJson
+          // returns a candidate, but JSON.parse fails on the missing comma,
+          // routing through parseJsonResult → repair callback (NOT the
+          // halve-and-retry branch which only fires on finish_reason='length').
+          return {
+            text: '{"source_title": "Test" "summary": "missing comma" "entities": []}',
+            outputMode: 'text_prompt',
+            finishReason: 'stop',
+          };
+        }
+        if (p.task === 'extract-retry') {
+          repairCall = params;
+          return {
+            text: JSON.stringify({
+              source_title: 'Test',
+              summary: 'Repaired.',
+              entities: [{ name: 'Foo', type: 'other', summary: 'bar', mentions_in_source: [] }],
+            }),
+            output: {
+              source_title: 'Test',
+              summary: 'Repaired.',
+              entities: [{ name: 'Foo', type: 'other', summary: 'bar', mentions_in_source: [] }],
+            },
+            outputMode: 'json_schema',
+            finishReason: 'stop',
+          };
+        }
+        // lemma-classify (not migrated) — uses legacy path
+        return { text: '{"kind": "entity"}', outputMode: 'text_prompt', finishReason: 'stop' };
+      };
+    const analyzer = new SourceAnalyzer(ctx);
+    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+    const result = await analyzer.analyzeSource(createMockFile('sources/test.md') as unknown as TFile);
+    expect(firstExtractCalled).toBe(true);
+    expect(result).not.toBeNull();
+    expect(result!.entities[0].name).toBe('Foo');
+    // The repair call must carry the schema
+    const repairArgs = repairCall as { response_format?: { schema?: unknown }; task?: string };
+    expect(repairArgs).toBeDefined();
+    expect(repairArgs.task).toBe('extract-retry');
+    expect(repairArgs.response_format?.schema).toBeDefined();
+  });
+});
