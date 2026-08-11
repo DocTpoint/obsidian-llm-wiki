@@ -154,8 +154,21 @@ export async function localizeWelcomeNote(args: LocalizeArgs): Promise<LocalizeR
       ...(signal ? {} : {}),
     };
     const raw = await callLlm(llmClient, translateArgs);
+    // Two-tier decode:
+    //   1. parseJsonResponse — strips ``` fences, <think>/<thinking> blocks,
+    //      and extracts the first balanced JSON object. Handles the common
+    //      case and the LMStudio `<|channel>thought` + ```json``` wrap.
+    //   2. extractTranslatedField — key-directed fallback. parseJsonResponse
+    //      returns the FIRST balanced top-level object, which can be the
+    //      WRONG one when the model nests the translation (`{"result":{...}}`)
+    //      or emits a preamble object. The key-directed walk finds the
+    //      `"translated"` key's own object. Restored per code-review P1
+    //      (2026-08-11): without it, 3 legacy response shapes regress to the
+    //      English fallback on createMessage-only clients.
     const parsed = await parseJsonResponse(raw) as { translated?: unknown } | null;
-    const translated = typeof parsed?.translated === 'string' ? parsed.translated : null;
+    const translated = typeof parsed?.translated === 'string'
+      ? parsed.translated
+      : extractTranslatedField(raw);
     console.debug(`[localizeWelcomeNote] LLM returned. rawLen=${raw?.length ?? 0}, preview=${JSON.stringify((raw ?? '').slice(0, 200))}`);
     if (!translated) {
       console.warn(`[localizeWelcomeNote] translated body missing. Full raw: ${JSON.stringify(raw).slice(0, 500)}`);
@@ -178,4 +191,67 @@ export async function localizeWelcomeNote(args: LocalizeArgs): Promise<LocalizeR
       error: message,
     };
   }
+}
+
+/**
+ * Key-directed `translated`-field extraction, used as a fallback when
+ * parseJsonResponse returns the WRONG top-level object (nested `{"result":{...}}`
+ * or a preamble object). Walks from the literal `"translated"` key back to its
+ * owning object's `{`, then brace-balances forward to the matching `}`.
+ *
+ * Why this still exists after the schema migration (code-review P1, 2026-08-11):
+ * Tier 0 schema enforcement produces clean `{"translated": "..."}`, but the
+ * legacy createMessage-only path (Anthropic / OpenAI / Codex) and Tier 1/2
+ * demotion on local backends can still emit prose/nested/duplicated-object
+ * shapes. parseJsonResponse grabs the FIRST balanced object; the key-directed
+ * walk grabs the one that actually carries `translated`.
+ */
+function extractTranslatedField(raw: string): string | null {
+  if (!raw || typeof raw !== 'string') return null;
+
+  const keyIndex = raw.indexOf('"translated"');
+  if (keyIndex === -1) return null;
+
+  // Find the `{` that starts the object containing the key — scan backwards.
+  let openBrace = -1;
+  for (let i = keyIndex - 1; i >= 0; i--) {
+    const ch = raw[i];
+    if (ch === '{') { openBrace = i; break; }
+    if (ch === '}' || ch === ']' || ch === ',') return null;  // key not at object start
+  }
+  if (openBrace === -1) return null;
+
+  // Brace-balance forward from openBrace, tracking string + escape state so
+  // escaped quotes / braces inside the translated body don't end the match.
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = openBrace; i < raw.length; i++) {
+    const ch = raw[i];
+    if (escape) { escape = false; continue; }
+    if (inString) {
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inString = false; }
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{') depth++;
+    if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        const candidate = raw.slice(openBrace, i + 1);
+        try {
+          const obj: unknown = JSON.parse(candidate);
+          if (obj && typeof obj === 'object' && 'translated' in obj) {
+            const t = (obj as Record<string, unknown>).translated;
+            if (typeof t === 'string') return t;
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      }
+    }
+  }
+  return null;
 }

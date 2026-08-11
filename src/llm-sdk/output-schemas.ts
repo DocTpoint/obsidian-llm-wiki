@@ -139,21 +139,26 @@ export type QueryViewValue = z.infer<typeof QueryViewValueSchema>;
  *
  * Existing cast: `Partial<SourceAnalysis>`. The schema is permissive:
  * every top-level field is optional except the bare structural shape
- * (entities / concepts arrays when present must be arrays; nested
- * `mentions_with_provenance[i].quote` is required because downstream
- * formatting relies on it).
+ * (entities / concepts arrays when present must be arrays). Per
+ * code-review P2 (2026-08-11): `type` and the `mentions_with_provenance`
+ * sub-fields are OPTIONAL, not required — downstream
+ * `normalizeBatchResponse` / `coerceToArray` tolerate a missing `type`
+ * (hardcoding `'other'`) and `fillMentionsWithProvenance` synthesizes
+ * provenance from `mentions_in_source` when the structured form is absent.
+ * Making them required on Tier 0 would turn a single entity missing one
+ * field into a whole-response `NoObjectGeneratedError` → repair roundtrip.
  */
 const MentionWithProvenanceItem = z.object({
-  quote: z.string(),
+  quote: z.string().optional(),
   translation: z.string().optional(),
-  source_path: z.string(),
-  source_slug: z.string(),
-  extracted_at: z.string(),
+  source_path: z.string().optional(),
+  source_slug: z.string().optional(),
+  extracted_at: z.string().optional(),
 }).passthrough();
 
 const EntityItem = z.object({
   name: z.string(),
-  type: z.string(), // widening union (was 'person'|'organization'|...|'other')
+  type: z.string().optional(), // widening union; downstream hardcodes 'other' when missing
   aliases: z.array(z.string()).optional(),
   summary: z.string().optional(),
   mentions_in_source: z.array(z.string()).optional(),
@@ -164,7 +169,7 @@ const EntityItem = z.object({
 
 const ConceptItem = z.object({
   name: z.string(),
-  type: z.string(), // widening union (was 'theory'|'method'|...|'other')
+  type: z.string().optional(), // widening union; downstream hardcodes 'other' when missing
   aliases: z.array(z.string()).optional(),
   summary: z.string().optional(),
   mentions_in_source: z.array(z.string()).optional(),

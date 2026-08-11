@@ -250,3 +250,55 @@ describe('localizeWelcomeNote — typed-output migration (#443 expanded scope)',
     expect(result.body).toBe(CHINESE_TRANSLATED);
   });
 });
+
+// === P1 regression guard (code-review 2026-08-11) ===
+// parseJsonResponse returns the FIRST balanced top-level object. When the
+// model nests the translation (`{"result": {...}}`) or emits a preamble
+// object, parseJsonResponse grabs the WRONG object → `.translated` undefined.
+// extractTranslatedField (key-directed walk) is the fallback that still
+// extracts correctly. These tests pin that the two-tier decode keeps the
+// English-fallback regression from the code-review finding.
+describe('localizeWelcomeNote — nested / preamble object fallback (code-review P1)', () => {
+  it('recovers from a nested {"result": {"translated": ...}} response', async () => {
+    const createMessage = vi.fn().mockResolvedValue(
+      JSON.stringify({ result: { translated: CHINESE_TRANSLATED } })
+    );
+    const result = await localizeWelcomeNote(makeArgs({
+      targetLanguage: 'zh',
+      llmClient: { createMessage },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.body).toBe(CHINESE_TRANSLATED);
+  });
+
+  it('recovers from a preamble object + separate translated object', async () => {
+    // Model emits `{"thinking":"done"}` then `{"translated": ...}` on two
+    // lines. parseJsonResponse grabs the first object (no translated key);
+    // extractTranslatedField walks to the second.
+    const createMessage = vi.fn().mockResolvedValue(
+      `{"thinking":"done"}\n${JSON.stringify({ translated: CHINESE_TRANSLATED })}`
+    );
+    const result = await localizeWelcomeNote(makeArgs({
+      targetLanguage: 'zh',
+      llmClient: { createMessage },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.body).toBe(CHINESE_TRANSLATED);
+  });
+
+  it('recovers from a thought preface containing braces before the fenced JSON', async () => {
+    // LMStudio-style `<|channel>thought` that itself mentions a JSON-like
+    // `{a:1}` fragment. parseJsonResponse's extractBalancedJson grabs the
+    // preface's `{a:1}`; greedy regex grabs everything and fails. The
+    // key-directed walk finds the real translated object.
+    const createMessage = vi.fn().mockResolvedValue(
+      `<|channel>thought consider {a:1}\n\n\`\`\`json\n${JSON.stringify({ translated: CHINESE_TRANSLATED })}\n\`\`\``
+    );
+    const result = await localizeWelcomeNote(makeArgs({
+      targetLanguage: 'zh',
+      llmClient: { createMessage },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.body).toBe(CHINESE_TRANSLATED);
+  });
+});
