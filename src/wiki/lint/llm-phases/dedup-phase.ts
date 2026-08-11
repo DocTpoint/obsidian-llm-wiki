@@ -32,6 +32,7 @@ import { renderTemplate } from '../../../core/template-renderer';
 import { PROMPTS } from '../../../prompts';
 import type { LLMClient } from '../../../types';
 import type { LintPhaseContext, DuplicateResult, ScannerPage } from '../types';
+import { DedupResultLLMSchema } from '../../../llm-sdk/output-schemas';
 import {
   TOKENS_LINT_DEDUP_LLM,
   NOTICE_RATE_LIMIT,
@@ -452,11 +453,16 @@ export async function runDedupPhase(
     ): Promise<string> {
       const lintModel = resolveModelForTask(ctx.settings, 'lint');
       const llmArgs = {
+        task: 'lint-dedup' as const,
         model: lintModel,
         max_tokens: TOKENS_LINT_DEDUP_LLM,
         messages: [{ role: 'user' as const, content: prompt }],
         ...(systemPrompt ? { system: systemPrompt } : {}),
-        response_format: { type: 'json_object' as const },
+        // v1.26.3 PATCH Issue #443 expanded scope: typed-output path.
+        // DedupResultLLMSchema ({duplicates?: [{target, source, reason}]})
+        // travels on the wire as Tier 0 json_schema — LMStudio accepts,
+        // no parse-error fallback to empty.
+        response_format: { type: 'json_object' as const, schema: DedupResultLLMSchema },
         // v1.26.0 Batch 7 follow-up (eucher): the previous
         // `enableThinkingOverride ? … : {}` ternary silently sent
         // nothing because `override = false` always picks the empty
@@ -481,8 +487,20 @@ export async function runDedupPhase(
         );
       };
 
+      // v1.26.3 PATCH Issue #443 expanded scope: typed-output guard.
+      // Prefer createMessageWithOutput on modern clients; falls back to
+      // createMessage on legacy Anthropic / OpenAI / Codex. The retry tier
+      // logic is unchanged — only the wire shape gains schema enforcement.
+      const callOnce = async (): Promise<string> => {
+        if (llm.createMessageWithOutput) {
+          const result = await llm.createMessageWithOutput(llmArgs);
+          return result.text;
+        }
+        return await llm.createMessage(llmArgs);
+      };
+
       // Attempt 1: original request.
-      const first = await llm.createMessage(llmArgs);
+      const first = await callOnce();
       logResponse(first, 1, 0);
       if (first.length > 0) return first;
 
@@ -495,7 +513,7 @@ export async function runDedupPhase(
         `prompt_chars=${prompt.length} max_tokens=${TOKENS_LINT_DEDUP_LLM} model=${lintModel}`
       );
       await new Promise(resolve => window.setTimeout(resolve, RETRY_ATTEMPT_2_DELAY_MS));
-      const second = await llm.createMessage(llmArgs);
+      const second = await callOnce();
       logResponse(second, 2, RETRY_ATTEMPT_2_DELAY_MS);
       if (second.length > 0) return second;
 
@@ -506,7 +524,7 @@ export async function runDedupPhase(
         `retrying after ${RETRY_ATTEMPT_3_DELAY_MS}ms delay (likely provider soft-throttle).`
       );
       await new Promise(resolve => window.setTimeout(resolve, RETRY_ATTEMPT_3_DELAY_MS));
-      const third = await llm.createMessage(llmArgs);
+      const third = await callOnce();
       logResponse(third, 3, RETRY_ATTEMPT_3_DELAY_MS);
       return third;
     }

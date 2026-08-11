@@ -16,6 +16,7 @@ import type { DedupPhaseInput } from '../../../../wiki/lint/llm-phases/dedup-pha
 import type { DuplicateCandidate } from '../../../../wiki/lint/duplicate-detection';
 import type { LintPhaseContext, ScannerPage } from '../../../../wiki/lint/types';
 import { LINT_MAX_INPUT_TOKENS, LINT_CANDIDATE_TOKEN_ESTIMATE, LINT_DEDUP_BATCH_SIZE } from '../../../../constants';
+import { DedupResultLLMSchema } from '../../../../llm-sdk/output-schemas';
 
 // ── Pure helper: classifyTiers ─────────────────────────────────
 
@@ -1021,5 +1022,76 @@ describe('runDedupPhase — in-scan concurrency halving (CR-1 regression guard)'
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+// === typed-output migration (v1.26.3 PATCH Issue #443 expanded scope) ===
+// Commit 6 — dedup-phase LLM verify uses createMessageWithOutput when
+// available; falls back to createMessage on legacy clients.
+describe('runDedupPhase — typed-output migration (#443 expanded scope)', () => {
+  it('passes DedupResultLLMSchema on the wire via response_format.schema (legacy client)', async () => {
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/x.md', basename: 'x.md' },
+        { path: 'wiki/entities/X.md', basename: 'X.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/x.md', '---\ntype: entity\n---\n# x\nshared content here'],
+        ['wiki/entities/X.md', '---\ntype: entity\n---\n# X\nshared content here'],
+      ]),
+    };
+    await runDedupPhase(ctx, input, () => {});
+    expect(createMessage).toHaveBeenCalled();
+    const args = createMessage.mock.calls[0]?.[0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBe(DedupResultLLMSchema);
+  });
+
+  it('uses createMessageWithOutput when client implements it (Tier 0 path)', async () => {
+    const createMessageWithOutput = vi.fn().mockResolvedValue({
+      text: '{"duplicates":[]}',
+      output: { duplicates: [] },
+      outputMode: 'json_schema',
+      finishReason: 'stop',
+    });
+    const createMessage = vi.fn();
+    const client = { createMessage, createMessageWithOutput } as unknown as LLMClient;
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/x.md', basename: 'x.md' },
+        { path: 'wiki/entities/X.md', basename: 'X.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/x.md', '---\ntype: entity\n---\n# x\nshared content here'],
+        ['wiki/entities/X.md', '---\ntype: entity\n---\n# X\nshared content here'],
+      ]),
+    };
+    await runDedupPhase(ctx, input, () => {});
+    expect(createMessageWithOutput).toHaveBeenCalled();
+    // legacy path not invoked — typed-output covers all 3 retry tiers
+    expect(createMessage).not.toHaveBeenCalled();
+    const args = createMessageWithOutput.mock.calls[0]?.[0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBe(DedupResultLLMSchema);
+  });
+
+  it('falls back to createMessage when client lacks createMessageWithOutput', async () => {
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    // Confirm the legacy client shape (no createMessageWithOutput)
+    expect((client as unknown as { createMessageWithOutput?: unknown }).createMessageWithOutput).toBeUndefined();
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [
+        { path: 'wiki/entities/x.md', basename: 'x.md' },
+        { path: 'wiki/entities/X.md', basename: 'X.md' },
+      ],
+      pageMap: makePageMap([
+        ['wiki/entities/x.md', '---\ntype: entity\n---\n# x\nshared content here'],
+        ['wiki/entities/X.md', '---\ntype: entity\n---\n# X\nshared content here'],
+      ]),
+    };
+    await runDedupPhase(ctx, input, () => {});
+    expect(createMessage).toHaveBeenCalled();
   });
 });
