@@ -307,7 +307,11 @@ describe('SourceAnalyzer — typed-output migration (#443 expanded scope)', () =
     // extract went through typed path; lemma-classify still uses legacy
     expect(withOutputSpy).toHaveBeenCalled();
     expect(extractCalls).toBeGreaterThanOrEqual(1);
-    expect(legacySpy).toHaveBeenCalled(); // lemma-classify
+    // Commit 3: lemma-classify also goes through createMessageWithOutput now,
+    // so legacy createMessage is no longer called by either path. Free-text
+    // callers (analysis-phase, contradictions, etc.) remain on legacy but
+    // they are NOT invoked during analyzeSource.
+    expect(legacySpy).not.toHaveBeenCalled();
     expect(result).not.toBeNull();
     expect(result!.entities).toHaveLength(1);
     expect(result!.entities[0].name).toBe('Foo');

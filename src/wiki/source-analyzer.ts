@@ -46,7 +46,7 @@ import { detectConvergence, checkCumulativeLimits, checkEmptyBatch, formatConver
 import { createEmptyAccumulation, mergeBatchResults, buildSourceAnalysis, calculateBatchStats } from '../core/batch-merger';
 import { decideSourceLemma } from '../core/source-lemma';
 import { getActiveEntityTags, getActiveConceptTags } from '../core/tag-vocab';
-import { SourceAnalysisLLMSchema } from '../llm-sdk/output-schemas';
+import { SourceAnalysisLLMSchema, LemmaClassifyLLMSchema } from '../llm-sdk/output-schemas';
 
 // ── Batch response normalization ─────────────────────────────────
 // LLMs often return irregular JSON: omitted empty arrays, non-array truthy
@@ -825,15 +825,23 @@ Respond with this JSON object and nothing else: {"kind": "entity"} or {"kind": "
 
     const system = await this.ctx.buildSystemPrompt('analyze');
     try {
-      const response = await client.createMessage({
-        task: 'lemma-classify',
+      // v1.26.3 PATCH Issue #443 expanded scope: typed-output path.
+      // Prefer createMessageWithOutput on modern clients; falls back to
+      // createMessage on legacy Anthropic / OpenAI / Codex. The schema
+      // forces `{"kind": "entity|concept"}` on the wire as Tier 0
+      // json_schema — LMStudio accepts, no parse-error fallback to English.
+      const lemmaArgs = {
+        task: 'lemma-classify' as const,
         model: resolveModelForTask(this.ctx.settings, 'ingest'),
         max_tokens: TOKENS_LEMMA_CLASSIFY,
         system,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
+        messages: [{ role: 'user' as const, content: prompt }],
+        response_format: { type: 'json_object' as const, schema: LemmaClassifyLLMSchema },
         ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
-      });
+      };
+      const response = client.createMessageWithOutput
+        ? (await client.createMessageWithOutput(lemmaArgs)).text
+        : await client.createMessage(lemmaArgs);
       const parsed = (await parseJsonResponse(response, undefined, { silentOnEmpty: true })) as { kind?: unknown } | null;
       const kind = typeof parsed?.kind === 'string' ? parsed.kind.trim().toLowerCase() : '';
       if (kind === 'entity' || kind === 'concept') return kind;
