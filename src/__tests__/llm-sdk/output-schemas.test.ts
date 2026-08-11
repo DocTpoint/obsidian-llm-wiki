@@ -236,18 +236,23 @@ describe('output-schemas (Phase B expanded scope)', () => {
   });
 
   describe('PathResolutionLLMSchema', () => {
-    it('parses {decision: update_existing, target}', () => {
-      const r = PathResolutionLLMSchema.parse({ decision: 'update_existing', target: 'wiki/entities/foo.md' });
-      expect(r.decision).toBe('update_existing');
-      expect(r.target).toBe('wiki/entities/foo.md');
+    it('parses {match: true, path}', () => {
+      const r = PathResolutionLLMSchema.parse({ match: true, path: 'wiki/entities/foo.md' });
+      expect(r.match).toBe(true);
+      expect(r.path).toBe('wiki/entities/foo.md');
     });
-    it('parses {decision: create_new} (no target needed)', () => {
-      const r = PathResolutionLLMSchema.parse({ decision: 'create_new' });
-      expect(r.decision).toBe('create_new');
-      expect(r.target).toBeUndefined();
+    it('parses {match: false} (no path needed)', () => {
+      const r = PathResolutionLLMSchema.parse({ match: false });
+      expect(r.match).toBe(false);
+      expect(r.path).toBeUndefined();
     });
-    it('rejects missing decision (required for branching)', () => {
-      expect(() => PathResolutionLLMSchema.parse({})).toThrow();
+    it('accepts path: null (LLM may emit null for no-match)', () => {
+      const r = PathResolutionLLMSchema.parse({ match: false, path: null });
+      expect(r.path).toBeNull();
+    });
+    it('accepts empty object (caller falls back to slugPath)', () => {
+      const r = PathResolutionLLMSchema.parse({});
+      expect(r.match).toBeUndefined();
     });
   });
 

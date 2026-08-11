@@ -240,15 +240,16 @@ export const SchemaSuggestionLLMSchema = z.object({
 export type SchemaSuggestionLLM = z.infer<typeof SchemaSuggestionLLMSchema>;
 
 /**
- * path-resolution.ts resolve-dedup — does this entity/concept match
- * an existing page (update) or warrant a new page (create)? Existing
- * cast: returns a `string` path; the LLM emits an object the caller
- * unwraps. `decision` widens (caller branches on string match);
- * `target` is the existing path when decision='update_existing'.
+ * path-resolution.ts resolve-dedup — does this entity/concept match an
+ * existing page (update) or warrant a new page (create)? Existing cast:
+ * `parsed.value as { match?: boolean; path?: string | null }` in
+ * path-resolution.ts:246. `match` is the boolean verdict; `path` is the
+ * existing page path when match=true. Both optional — caller branches on
+ * `match` truthiness, falling back to `slugPath` when either is missing.
  */
 export const PathResolutionLLMSchema = z.object({
-  decision: z.string(),
-  target: z.string().optional(),
+  match: z.boolean().optional(),
+  path: z.string().nullable().optional(),
 }).passthrough();
 export type PathResolutionLLM = z.infer<typeof PathResolutionLLMSchema>;
 
