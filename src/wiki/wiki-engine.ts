@@ -19,7 +19,6 @@ import { PROMPTS } from '../prompts';
 import { getText } from '../core/i18n';
 import { formatTaskUsage, snapshotTaskUsage, taskUsageSince } from '../core/llm-task-usage';
 import { TEXTS } from '../texts';
-import { buildIngestStatusBarText } from '../core/status-bar';
 import { renderTemplate } from '../core/template-renderer';
 import { slugify } from '../core/slug';
 import { resolveSourceSlug } from '../core/source-slug';
@@ -669,14 +668,14 @@ export class WikiEngine {
     // real i18n keys; if a future stage is added to STAGE_KEYS it is
     // automatically picked up here.
     const setPdfStage = (stageKey: keyof typeof TEXTS.en) =>
-      this.updateStatusBar(
-        buildIngestStatusBarText(
-          getText(lang, 'ingestionStatusBar'),
-          file.basename,
-          undefined,
-          getText(lang, stageKey),
-        ),
-      );
+      // B2 (v1.26.3 PATCH, DocT CR): emit RAW segments (filename · stage),
+      // NOT a buildIngestStatusBarText result. command-registry routes the
+      // update through composeStatusBarUpdate, which appends the always-
+      // visible base label ("Ingesting... click to cancel") — pre-fix this
+      // emitter already embedded that label, so every PDF stage showed the
+      // cancel affordance twice ("… · Ingesting… · Ingesting…"). Composition
+      // now happens in exactly one place.
+      this.updateStatusBar([file.basename, getText(lang, stageKey)].join(' · '));
     setPdfStage('pdfStageReading');
 
     let conversionResult;
