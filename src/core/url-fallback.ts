@@ -248,14 +248,19 @@ export interface FetchModelsOptions {
   /**
    * Probe function: takes a fully-constructed models URL (e.g.,
    * `https://api.kimi.com/coding/v1/models`) and returns the list of
-   * model IDs from the response, or an empty array if the request
-   * failed with no useful status (404, network error, empty response,
-   * etc.) so the orchestrator can try the next candidate. May ALSO
-   * throw — for non-2xx responses where the status code carries
-   * signal (HTTP 401/403/404/5xx), throwing an Error whose message
-   * matches `^HTTP \d+:` lets the orchestrator preserve the status
-   * for the final fallback throw (B1 fix: the caller's
-   * `classifyFetchError` relies on the status regex matching).
+   * model IDs from the response, or an empty array when the endpoint
+   * answers 2xx with no/empty `data` (a valid "no models" answer) so the
+   * orchestrator can try the next candidate.
+   *
+   * May ALSO throw — every non-2xx response and every transport failure
+   * is a throw, not a `[]`:
+   *   - `HTTP {status}: …` (non-2xx) — the orchestrator preserves the last
+   *     such error and re-throws it, so the caller's `classifyFetchError`
+   *     can route the status to Auth/Endpoint/Server.
+   *   - `Network error: …` (DNS / refused / timeout wrapped by fetchOneUrl)
+   *     — the orchestrator preserves the last such error and re-throws it
+   *     when no HTTP-status error was seen, so a disconnect surfaces as
+   *     Network rather than the misleading 'empty model list'.
    */
   fetchFn: (modelsUrl: string) => Promise<string[]>;
 }
@@ -282,13 +287,18 @@ export async function fetchModelsWithFallback(opts: FetchModelsOptions): Promise
 
   if (!baseUrl) return [];
 
-  // B1 fix (v1.26.4 PATCH follow-up): when fetchFn throws an HTTP-status-
-  // bearing error (e.g., fetchOneUrl throws "HTTP 401: ..." for an invalid
-  // API key), preserve the last such error so the caller can surface the
-  // real status via classifyFetchError. Previously every throw was
-  // swallowed by the `catch { continue }` block, and the final empty
-  // return was indistinguishable from "URL not found".
+  // B1 (v1.26.3 PATCH): when fetchFn throws an HTTP-status-bearing error
+  // (e.g., fetchOneUrl throws "HTTP 401: ..." for an invalid API key),
+  // preserve the last such error so the caller can surface the real status
+  // via classifyFetchError. Previously every throw was swallowed by the
+  // `catch { continue }` block, and the final empty return was
+  // indistinguishable from "URL not found". Also track the last wrapped
+  // network error (DNS / refused / timeout — fetchOneUrl wraps these as
+  // "Network error: ...") so a genuine connectivity failure is re-thrown as
+  // Network instead of collapsing into `[]` → 'empty model list' →
+  // fetchErrorEmpty (DocT CR, B1 row 2).
   let lastHttpError: Error | null = null;
+  let lastNetworkError: Error | null = null;
 
   // Step 0: Check cache — if a previous Test Connection resolved this
   // baseURL, reuse the resolved URL for Fetch Models too. This is
@@ -305,6 +315,8 @@ export async function fetchModelsWithFallback(opts: FetchModelsOptions): Promise
       } catch (err) {
         if (err instanceof Error && /^HTTP \d+/.test(err.message)) {
           lastHttpError = err;
+        } else if (err instanceof Error) {
+          lastNetworkError = err;
         }
         continue;
       }
@@ -344,21 +356,30 @@ export async function fetchModelsWithFallback(opts: FetchModelsOptions): Promise
           return models;
         }
       } catch (err) {
-        // testFn threw — remember HTTP-status errors for the final throw;
-        // network/abort errors fall through to the next candidate.
+        // testFn threw — remember HTTP-status errors (and wrapped network
+        // errors) for the final throw; the other kind falls through to the
+        // next candidate.
         if (err instanceof Error && /^HTTP \d+/.test(err.message)) {
           lastHttpError = err;
+        } else if (err instanceof Error) {
+          lastNetworkError = err;
         }
         continue;
       }
     }
   }
 
-  // B1 fix: surface the last HTTP-status error so the caller's
-  // classifyFetchError sees a real status code instead of falling
-  // through to the default 'Network' branch.
+  // B1 (v1.26.3 PATCH): surface the last HTTP-status error so the caller's
+  // classifyFetchError sees a real status code instead of falling through
+  // to the default 'Network' branch. If no HTTP status was seen but a
+  // genuine network error was (DNS / refused / timeout wrapped as
+  // "Network error: ..." by fetchOneUrl), re-throw that too — a disconnect
+  // must report Network, not the misleading 'empty model list' → Empty.
   if (lastHttpError) {
     throw lastHttpError;
+  }
+  if (lastNetworkError) {
+    throw lastNetworkError;
   }
 
   return [];

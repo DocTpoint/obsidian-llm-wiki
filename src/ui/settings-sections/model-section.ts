@@ -103,22 +103,27 @@ export function renderModelSection(tab: LLMWikiSettingTab, containerEl: HTMLElem
               });
               if (response.status >= 200 && response.status < 300) {
                 const data = response.json as { data?: Array<{ id: string }> };
-                if (data.data?.length) {
-                  return data.data.map((m: { id: string }) => m.id);
-                }
+                // B1 (v1.26.3 PATCH, DocT CR): a 2xx is NEVER an error.
+                // An absent/empty `data` array is a valid "no models"
+                // answer — return [] so the orchestrator tries the next
+                // candidate and the caller's `empty model list` → Empty
+                // path (fetchErrorEmpty's dedicated message) stays
+                // reachable. Previously this fell through to the throw
+                // below, surfacing "HTTP 200: ..." which classifyFetchError
+                // had no branch for → misreported as Network.
+                return data.data?.map((m: { id: string }) => m.id) ?? [];
               }
-              // B1 fix (v1.26.4 PATCH follow-up): non-2xx responses throw
-              // an error carrying the HTTP status. Previously this path
+              // B1 (v1.26.3 PATCH, DocT CR): non-2xx responses throw an
+              // error carrying the HTTP status. Previously this path
               // silently returned [], which caused the orchestrator to
               // synthesize 'All URL candidates failed' — a status-less
               // message that `classifyFetchError` (settings-helpers.ts)
               // could not match, so every auth/endpoint/server failure
               // was misreported as `fetchErrorNetwork`. By embedding the
               // status code in the error message, classifyFetchError's
-              // existing regex `\b(401|403)\b` / `\b(404|405|...)\b` /
-              // `\b5\d\d\b` naturally picks up the right category.
-              // Body is truncated to 200 chars to avoid blowing up the
-              // notice message; full body remains in console for diagnosis.
+              // leading `^HTTP (\d+)` match routes it to the right category.
+              // Body is truncated to 200 chars so the wrapped error does
+              // not blow up the Notice; the full body is not logged.
               const bodySnippet = (response.text ?? '').slice(0, 200);
               throw new Error(`HTTP ${response.status}: ${bodySnippet}`);
             } catch (error) {
@@ -148,12 +153,12 @@ export function renderModelSection(tab: LLMWikiSettingTab, containerEl: HTMLElem
             });
             if (models.length === 0) throw new Error('empty model list');
           } catch (err) {
-            // B1 fix (v1.26.4 PATCH follow-up): preserve the underlying
-            // error message so classifyFetchError can match the HTTP
-            // status. Previously every error path was rewritten to the
-            // status-less 'All URL candidates failed', which the
-            // classifier could not categorize (always fell through to
-            // the default 'Network' branch).
+            // B1 (v1.26.3 PATCH): preserve the underlying error message so
+            // classifyFetchError can match the HTTP status (or the wrapped
+            // "Network error: ..."). Previously every error path was
+            // rewritten to the status-less 'All URL candidates failed',
+            // which the classifier could not categorize (always fell
+            // through to the default 'Network' branch).
             if (err instanceof Error) {
               throw err;
             }
