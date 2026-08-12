@@ -645,9 +645,20 @@ export function enforceFrontmatterConstraints(
   // Non-canonical fields (unknown keys) are passed through verbatim, preserving
   // prior enforce behavior. newLines already excludes type/tags/aliases/created/
   // updated and list items by construction; the filter is defensive.
+  //
+  // `sources:` is canonical but block-style is multi-line — its header line
+  // lands in newLines while its `- ` entries are dropped by the skip above,
+  // leaving a header with no entries. Exclude it here and re-emit the parsed
+  // array via serializeFrontmatter (mirrors extractPassthroughLines, which
+  // also treats sources as known). See #438 B.
   const passthroughLines = newLines.filter(line =>
     !line.startsWith('type:') && !line.startsWith('tags:') && !line.startsWith('aliases:') &&
-    !line.startsWith('created:') && !line.startsWith('updated:'));
+    !line.startsWith('created:') && !line.startsWith('updated:') && !line.startsWith('sources:'));
+
+  // Preserve existing provenance (block OR flow form) across the rewrite.
+  // parseFrontmatter handles both and strips quoting, matching the shape
+  // yamlStringify expects on the serialize side.
+  const preservedSources = parseFrontmatter(content)?.sources;
 
   const hasTags = foundTags || collectedTags.length > 0;
   const dedupedTags: string[] = [];
@@ -679,6 +690,7 @@ export function enforceFrontmatterConstraints(
       type: foundType ? pageType : undefined,
       created: resolveCreated(options, today),
       updated: today,
+      sources: Array.isArray(preservedSources) && preservedSources.length > 0 ? preservedSources : undefined,
       tags: dedupedTags,
       aliases: (foundAliases || collectedAliases.length > 0) ? collectedAliases : undefined,
     },

@@ -347,6 +347,44 @@ describe('enforceFrontmatterConstraints', () => {
     const withoutValue = enforceFrontmatterConstraints(input, 'entity');
     expect(withoutValue).toContain(`created: ${today}`);
   });
+
+  it('#438 B: preserves block-style sources through a constraints pass', () => {
+    const input = [
+      '---',
+      'type: concept',
+      'created: 2026-08-08',
+      'sources:',
+      '  - "[[sources/a_aaa]]"',
+      '  - "[[sources/b_bbb]]"',
+      'tags: [term]',
+      '---',
+      '# X',
+      '',
+      'body',
+    ].join('\n');
+    const result = enforceFrontmatterConstraints(input, 'concept');
+    const parsed = parseFrontmatter(result);
+    // Both source links survive — prior behaviour kept the `sources:` header
+    // but discarded every `- ` entry, then never re-emitted the field (#438 B).
+    expect(parsed?.sources).toEqual(['[[sources/a_aaa]]', '[[sources/b_bbb]]']);
+    expect(parsed?.tags).toEqual(['term']);
+  });
+
+  it('#438 B: preserves flow-style sources through a constraints pass', () => {
+    const input = [
+      '---',
+      'type: concept',
+      'sources: ["[[sources/a_aaa]]", "[[sources/b_bbb]]"]',
+      'tags: [term]',
+      '---',
+      '# X',
+      '',
+      'body',
+    ].join('\n');
+    const result = enforceFrontmatterConstraints(input, 'concept');
+    const parsed = parseFrontmatter(result);
+    expect(parsed?.sources).toEqual(['[[sources/a_aaa]]', '[[sources/b_bbb]]']);
+  });
 });
 
 describe('serializeFrontmatter', () => {
