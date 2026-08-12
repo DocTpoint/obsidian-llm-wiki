@@ -658,7 +658,19 @@ export function enforceFrontmatterConstraints(
   // Preserve existing provenance (block OR flow form) across the rewrite.
   // parseFrontmatter handles both and strips quoting, matching the shape
   // yamlStringify expects on the serialize side.
-  const preservedSources = parseFrontmatter(content)?.sources;
+  //
+  // Filter empty / whitespace-only entries to avoid re-emitting a
+  // `sources:` key whose only entry is `\"\"` — that is the shape the
+  // previous broken constraints pass leaves on disk for the recovery
+  // population (this PR's fix audience). The `aliases` branch has the
+  // same guard at `:452`; mirroring it here is intentional. When
+  // `preservedSources` ends up empty, `serializeFrontmatter` is called
+  // with `sources: undefined` so the key is omitted entirely rather
+  // than emitted as `sources:\\n  - \"\"`.
+  const rawSources = parseFrontmatter(content)?.sources;
+  const preservedSources = Array.isArray(rawSources)
+    ? rawSources.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    : undefined;
 
   const hasTags = foundTags || collectedTags.length > 0;
   const dedupedTags: string[] = [];
