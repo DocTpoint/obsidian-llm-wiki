@@ -20,7 +20,7 @@ export function renderTemplate(
     if (key in vars) {
       return vars[key];
     }
-    console.warn(`[renderTemplate] unknown placeholder: ${match}`);
+    console.debug(`[renderTemplate] unknown placeholder: ${match}`);
     return match;
   });
 }

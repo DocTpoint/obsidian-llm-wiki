@@ -80,5 +80,32 @@ export function wrapWithAdvancedSettings(
       recordTaskUsage(params.task, Date.now() - startedAt);
     }
   };
+
+  // v1.26.3 PATCH Phase B (Issue #443): wrap the typed-output variant the
+  // same way as createMessage. `Object.create(client)` inherits the
+  // prototype implementation; an explicit override here keeps the seam
+  // intact — task accounting + advanced settings injection apply to
+  // Phase B callers (seed-selector / query-keywords / merge-triage /
+  // link-orphan / fix-dead-link / QueryView) identically to the 16
+  // legacy callers. Without this, a typed call would bypass the seam
+  // and record under 'untagged' with no temperature/top_p/seed override.
+  if (client.createMessageWithOutput) {
+    wrapper.createMessageWithOutput = async (params) => {
+      const startedAt = Date.now();
+      console.debug(`[llm] task=${params.task ?? 'untagged'} model=${params.model} max_tokens=${params.max_tokens} (typed)`);
+      try {
+        return await client.createMessageWithOutput!({
+          ...params,
+          ...(capTokens ? { max_tokens: capMaxTokens(params.max_tokens, { maxTokensPerCall: settings.maxTokensPerCall }), maxTokensPerCall: settings.maxTokensPerCall } : {}),
+          ...(params.temperature === undefined && settings.extractionTemperature !== undefined ? { temperature: settings.extractionTemperature } : {}),
+          ...(params.top_p === undefined && settings.extractionTopP !== undefined ? { top_p: settings.extractionTopP } : {}),
+          ...(params.repetition_penalty === undefined && settings.repetitionPenalty !== undefined ? { repetition_penalty: settings.repetitionPenalty } : {}),
+          ...(params.seed === undefined && settings.samplingSeed !== undefined ? { seed: settings.samplingSeed } : {}),
+        });
+      } finally {
+        recordTaskUsage(params.task, Date.now() - startedAt);
+      }
+    };
+  }
   return wrapper;
 }

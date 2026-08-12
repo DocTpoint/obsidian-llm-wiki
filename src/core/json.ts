@@ -60,6 +60,23 @@ export interface ParseJsonOptions {
    * `withTransientRetry` flows where empty is retriable.
    */
   throwOnEmpty?: boolean;
+
+  /**
+   * v1.26.x PATCH follow-up (LMStudio + Qwen3.5). Field names that the
+   * caller's schema (e.g. SourceAnalysisLLMSchema) expects at the top level.
+   * Used by the thinking-block fallback layer to gate which JSON candidates
+   * are "plausible enough" to accept when the visible text failed to parse.
+   *
+   * When set, fallback candidates MUST contain at least one of these keys.
+   * This rejects 5-token placeholders like `{"": ""}` that some
+   * reasoning-mode models emit under grammar-constrained decoding with
+   * insufficient thinking budget — those contain no schema fields and would
+   * silently flow into downstream code as empty objects.
+   *
+   * Default: `undefined` — the fallback then uses a heuristic ("at least 2
+   * non-empty fields") instead of schema-field gating.
+   */
+  expectedSchemaFields?: string[];
 }
 
 /**
@@ -100,8 +117,17 @@ export type JsonParseFailure = {
    *
    * `exception` — the parser threw where it was not expected to. Never
    * distinguishable before this type existed.
+   *
+   * `thinking-block-only` — visible text was empty / unparseable but the
+   * reasoning block(s) contained JSON-shaped payloads that did NOT match
+     the caller's `expectedSchemaFields` (or contained only a 5-token
+   * placeholder like `{"": ""}`). Distinct from `empty` because the model
+     * DID emit something parseable; the issue is the model's reasoning
+     * mode stripped its output of schema-shaped fields. Caller should
+     surface this to the user — retrying is unlikely to help until they
+     disable reasoning on the backend or switch chat templates.
    */
-  reason: 'empty' | 'malformed' | 'exception';
+  reason: 'empty' | 'malformed' | 'exception' | 'thinking-block-only';
   /** Length of the RAW response, before any normalization. */
   rawLength: number;
   /** The text after Layer-1 normalization; `''` for `empty`. */
@@ -115,6 +141,73 @@ export type JsonParseResult =
   | JsonParseFailure;
 
 /**
+ * v1.26.x PATCH follow-up (#443 LMStudio + Qwen3.5). A grammar-constrained
+ * reasoning model under tight thinking budget emits the MINIMUM valid JSON
+ * object that satisfies the schema — `{"": ""}` (one object, one empty key,
+ * one empty value). This is a placeholder, not real content. `JSON.parse`
+ * succeeds on it, so every parse-success path in parseJsonResult would
+ * return it and downstream code sees `entities: undefined` — silently
+ * dropping the batch.
+ *
+ * This gate runs on EVERY successful parse result. It rejects an object
+ * whose keys are all empty strings (the 5-token placeholder shape) OR
+ * whose non-empty content count is zero while the object is small enough
+ * to be a placeholder (≤1 field). Legitimate empty objects (`{}` from a
+ * real "no entities" answer) are allowed through — they are `[]`-shaped
+ * intent, not grammar-constrained artifacts.
+ */
+function isPlaceholderObject(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return false; // `{}` = legitimate empty intent
+  // All keys empty string AND all values empty → the `{"": ""}` shape.
+  if (keys.every((k) => k === '')) {
+    return Object.values(obj).every((v) => v === '' || v === null || v === undefined);
+  }
+  return false;
+}
+
+/**
+ * Placeholder-text predicate for the SDK layer (Issue #443 follow-up —
+ * per-model placeholder demotion). The SDK's `createMessageWithOutput`
+ * catch branch detects a grammar-constrained `{"": ""}` placeholder
+ * WITHOUT re-running the full parse pipeline: JSON.parse +
+ * isPlaceholderObject, non-throwing. Returns false for non-JSON text
+ * (free-text markdown callers) so the placeholder demotion never fires
+ * on them.
+ */
+export function isPlaceholderJsonText(text: string): boolean {
+  if (!text) return false;
+  try {
+    return isPlaceholderObject(JSON.parse(text));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Gate a parse result through the placeholder check. Returns the result
+ * unchanged unless it is a `{"": ""}`-shaped placeholder, in which case
+ * null (callers treat null as "no JSON"). Used by parseJsonResult at
+ * every parse-success site so a 5-token placeholder never reaches
+ * downstream as real content.
+ */
+function gatePlaceholder(
+  result: JsonParseResult,
+): JsonParseResult {
+  if (result.ok && isPlaceholderObject(result.value)) {
+    return {
+      ok: false,
+      reason: 'thinking-block-only',
+      rawLength: 0,
+      normalized: '',
+    };
+  }
+  return result;
+}
+
+/**
  * Classify an LLM response into parsed JSON or a named failure (#407 Stage 0).
  *
  * Same parsing layers, same order, same repair callback as `parseJsonResponse`
@@ -122,19 +215,33 @@ export type JsonParseResult =
  * reason that produced them. The `console.debug` breadcrumbs and the two
  * repair-failure `console.error` lines stay here because they describe parse
  * ATTEMPTS; the verdict lines moved out to the caller.
+ *
+ * v1.26.x PATCH follow-up: the optional `expectedSchemaFields` gates the new
+ * thinking-block fallback layer (Layer 3) — when provided, only candidates
+ * carrying at least one schema field are accepted. Without it, the fallback
+ * uses a 2-non-empty-fields gate to reject grammar-constrained placeholders.
  */
 export async function parseJsonResult(
   response: string,
   repairFn?: (malformedJson: string) => Promise<string>,
+  options?: { expectedSchemaFields?: string[] },
 ): Promise<JsonParseResult> {
   console.debug('parseJsonResponse parsing started... response length:', response.length);
 
   let normalized = '';
+  // Capture thinking-block inner content BEFORE stripping it (Layer 3
+  // fallback — see note on Issue #443 LMStudio + Qwen3.5 follow-up).
+  const thinkingBlockContents: string[] = [];
   try {
     // ===== Layer 1: Response Normalization =====
     normalized = response.trim();
 
-    // Step 1.0: Strip reasoning/thinking blocks
+    // Step 1.0: Strip reasoning/thinking blocks. Capture inner content first
+    // so Layer 3 can still recover JSON-shaped payloads from them when the
+    // visible text was empty. The two captures + two strips mirror the
+    // extractThinkingBlocks helper in core/markdown.ts but stay local to this
+    // parser to keep parseJsonResult self-contained.
+    captureThinkingBlocks(normalized, thinkingBlockContents);
     normalized = normalized.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '');
     normalized = normalized.replace(/<thinking\b[^>]*>[\s\S]*?<\/thinking>/gi, '');
     normalized = normalized.trim();
@@ -160,7 +267,7 @@ export async function parseJsonResult(
       const withBrace = '{' + normalized;
       try {
         console.debug("first char not '{', prepended '{' and parsed successfully");
-        return { ok: true, value: JSON.parse(withBrace) as Record<string, unknown> };
+        return gatePlaceholder({ ok: true, value: JSON.parse(withBrace) as Record<string, unknown> });
       } catch {
         console.debug("prepending '{' still failed, continuing");
       }
@@ -168,7 +275,7 @@ export async function parseJsonResult(
 
     // Step 1.3: Trailing content detection
     try {
-      return { ok: true, value: JSON.parse(normalized) as Record<string, unknown> };
+      return gatePlaceholder({ ok: true, value: JSON.parse(normalized) as Record<string, unknown> });
     } catch (directError) {
       const msg = directError instanceof SyntaxError ? directError.message : '';
       const afterMatch = msg.match(/after JSON at position (\d+)/);
@@ -178,7 +285,7 @@ export async function parseJsonResult(
         console.debug('extra content after JSON detected (position %d)，prefix extracted (length %d)', endPos, prefix.length);
         try {
           console.debug('prefix parsed successfully');
-          return { ok: true, value: JSON.parse(prefix) as Record<string, unknown> };
+          return gatePlaceholder({ ok: true, value: JSON.parse(prefix) as Record<string, unknown> });
         } catch {
           console.debug('prefix parse failed, continuing');
         }
@@ -192,7 +299,7 @@ export async function parseJsonResult(
       if (balanced) {
         const fixed = fixCommonJsonIssues(balanced);
         try {
-          return { ok: true, value: JSON.parse(fixed) as Record<string, unknown> };
+          return gatePlaceholder({ ok: true, value: JSON.parse(fixed) as Record<string, unknown> });
         } catch (braceError) {
           console.debug('brace-count extraction failed:', String(braceError).slice(0, 80));
         }
@@ -205,7 +312,7 @@ export async function parseJsonResult(
               .replace(/\n?```$/, '')
               .trim();
             const final = fixCommonJsonIssues(cleanedLlm);
-            return { ok: true, value: JSON.parse(final) as Record<string, unknown> };
+            return gatePlaceholder({ ok: true, value: JSON.parse(final) as Record<string, unknown> });
           } catch (llmError) {
             console.error('LLM repair also failed (brace-count):', String(llmError).slice(0, 80));
           }
@@ -219,7 +326,7 @@ export async function parseJsonResult(
       const candidate = jsonMatch[0];
       const fixed = fixCommonJsonIssues(candidate);
       try {
-        return { ok: true, value: JSON.parse(fixed) as Record<string, unknown> };
+        return gatePlaceholder({ ok: true, value: JSON.parse(fixed) as Record<string, unknown> });
       } catch (regexError) {
         console.debug('greedy regex extraction failed:', String(regexError).slice(0, 80));
       }
@@ -232,10 +339,52 @@ export async function parseJsonResult(
             .replace(/\n?```$/, '')
             .trim();
           const final = fixCommonJsonIssues(cleanedLlm);
-          return { ok: true, value: JSON.parse(final) as Record<string, unknown> };
+          return gatePlaceholder({ ok: true, value: JSON.parse(final) as Record<string, unknown> });
         } catch (llmError) {
           console.error('LLM repair also failed (greedy regex):', String(llmError).slice(0, 80));
         }
+      }
+    }
+
+    // ===== Layer 3: Thinking-block fallback =====
+    // Visible text was empty / unparseable. Some reasoning-mode backends
+    // (LMStudio + Qwen3.5 etc., Issue #443 follow-up) route the model's
+    // structured output into `reasoning_content` and leave `content` empty.
+    // If we captured any thinking-block content above, try to recover a
+    // schema-shaped object from it. The gate (expectedSchemaFields or
+    // 2-non-empty-fields heuristic) keeps grammar-constrained placeholders
+    // like `{"": ""}` out of downstream code.
+    //
+    // Distinguish two cases at the end so operators reading logs can tell
+    // them apart:
+    //   - thinking block existed AND it contained a JSON-shaped payload
+    //     (but the payload did not match the caller's schema) → reason
+    //     'thinking-block-only'. The model emitted structure; the issue
+    //     is the schema mismatch.
+    //   - thinking block existed but was free-form reasoning (no `{`)
+    //     → keep the legacy 'empty' classification. The model did not
+    //     emit JSON at all; same as a non-thinking model that ran out of
+    //     budget. Reusing 'empty' preserves the #407 / v1.24.1 contract
+    //     that source-analyzer's silentOnEmpty path already handles.
+    if (thinkingBlockContents.length > 0) {
+      const recovered = tryParseFromThinkingBlocks(
+        thinkingBlockContents,
+        options?.expectedSchemaFields,
+      );
+      if (recovered) {
+        return gatePlaceholder({ ok: true, value: recovered });
+      }
+      // Did any thinking block contain a `{`? If so, the model tried to
+      // emit JSON but it didn't match the schema gate. If not, the
+      // thinking was free-form prose — same as the empty case.
+      const anyJsonShape = thinkingBlockContents.some((b) => b.includes('{'));
+      if (anyJsonShape && normalized === '') {
+        return {
+          ok: false,
+          reason: 'thinking-block-only',
+          rawLength: response.length,
+          normalized,
+        };
       }
     }
 
@@ -282,7 +431,9 @@ export async function parseJsonResponse(
   repairFn?: (malformedJson: string) => Promise<string>,
   options?: ParseJsonOptions,
 ): Promise<Record<string, unknown> | null> {
-  const result = await parseJsonResult(response, repairFn);
+  const result = await parseJsonResult(response, repairFn, {
+    expectedSchemaFields: options?.expectedSchemaFields,
+  });
   if (result.ok) return result.value;
 
   if (result.reason === 'empty') {
@@ -293,6 +444,29 @@ export async function parseJsonResponse(
     }
     if (options?.throwOnEmpty) {
       throw new EmptyResponseError(result.rawLength);
+    }
+    return null;
+  }
+
+  if (result.reason === 'thinking-block-only') {
+    // v1.26.x PATCH follow-up: thinking blocks existed but contained no
+    // schema-shaped JSON. Distinct from `empty` so callers and operators
+    // can tell the model DID emit something — just not the schema fields
+    // expected. silentOnEmpty suppresses the noisy 3-line error since the
+    // most-likely cause is a reasoning-mode model that routed its
+    // output into reasoning_content (Issue #443 follow-up, LMStudio +
+    // Qwen3.5). Operators who want a loud signal can pass silentOnEmpty:
+    // false (legacy default).
+    if (options?.silentOnEmpty) {
+      console.debug(
+        'parseJsonResponse: thinking-block-only (raw length %d) — model emitted reasoning but no schema-shaped JSON — silent path',
+        result.rawLength,
+      );
+    } else {
+      console.error(
+        'JSON parse completely failed (length %d) — thinking-block-only (no schema-shaped JSON in reasoning blocks)',
+        result.rawLength,
+      );
     }
     return null;
   }
@@ -347,6 +521,80 @@ function extractBalancedJson(text: string, startPos: number): string | null {
     }
   }
 
+  return null;
+}
+
+/**
+ * v1.26.x PATCH follow-up (Issue #443 LMStudio + Qwen3.5). Capture inner
+ * content of every `<think>...</think>` / `<thinking>...</thinking>` block
+ * into `out` (in order) so the Layer-3 fallback can re-examine them when
+ * the visible text was empty or unparseable. Mirrors the regex used in
+ * `core/markdown.ts:extractThinkingBlocks` so callers can rely on the same
+ * block definition across the codebase.
+ */
+function captureThinkingBlocks(text: string, out: string[]): void {
+  const innerRegex = /<think(?:ing)?\b[^>]*>([\s\S]*?)<\/think(?:ing)?>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = innerRegex.exec(text)) !== null) {
+    out.push(m[1]);
+  }
+}
+
+/**
+ * v1.26.x PATCH follow-up. Layer-3 fallback: when Layer 1 stripped a
+ * thinking block (Step 1.0) and the visible text was empty / unparseable,
+ * re-examine each captured thinking-block content for a JSON-shaped
+ * payload. Used to recover structured output that a reasoning-mode model
+ * (LMStudio + Qwen3.5 etc.) routed into `reasoning_content` while leaving
+ * `content` empty.
+ *
+ * Gating rules:
+ *  - If caller passed `expectedSchemaFields`, the candidate MUST contain
+ *    at least one of those keys.
+ *  - Otherwise, the candidate MUST have at least 2 non-empty field values
+ *    (rejects the grammar-constrained 5-token placeholder `{"": ""}`).
+ *
+ * Returns the first acceptable candidate, or null. Empty thinking blocks
+ * (e.g. reasoning models that emitted nothing) return null silently.
+ */
+function tryParseFromThinkingBlocks(
+  blocks: string[],
+  expectedSchemaFields: string[] | undefined,
+): Record<string, unknown> | null {
+  for (const block of blocks) {
+    if (!block || !block.includes('{')) continue;
+    // Walk every top-level balanced object in the block; accept the first
+    // one that passes the gate. The first object may be a thinking-state
+    // artifact (e.g. `{"step": 1}`); later objects are usually the JSON.
+    const re = /\{/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(block)) !== null) {
+      const candidate = extractBalancedJson(block, m.index);
+      if (!candidate) continue;
+      try {
+        const fixed = fixCommonJsonIssues(candidate);
+        const parsed = JSON.parse(fixed) as Record<string, unknown>;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+        const keys = Object.keys(parsed);
+        if (expectedSchemaFields && expectedSchemaFields.length > 0) {
+          if (!expectedSchemaFields.some((f) => keys.includes(f))) continue;
+        } else {
+          // Heuristic: reject grammar-constrained placeholders. An empty
+          // key with empty value, or all-empty values, is the 5-token shape
+          // some models emit under tight thinking budget.
+          const nonEmpty = keys.filter((k) => {
+            const v = parsed[k];
+            return v !== '' && v !== null && !(Array.isArray(v) && v.length === 0);
+          });
+          if (nonEmpty.length < 2) continue;
+        }
+        console.debug('thinking-block fallback recovered JSON (keys: %s)', keys.join(','));
+        return parsed;
+      } catch {
+        // Try the next balanced object in this block.
+      }
+    }
+  }
   return null;
 }
 

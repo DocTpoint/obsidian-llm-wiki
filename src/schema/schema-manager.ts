@@ -8,6 +8,8 @@ import { capMaxTokens } from '../core/token-cap';
 import { resolveModelForTask } from '../core/model-resolver';
 import { TOKENS_SCHEMA_SUGGESTION } from '../constants';
 import { renderTemplate } from '../core/template-renderer';
+import { SchemaSuggestionLLMSchema } from '../llm-sdk/output-schemas';
+import { callLlm } from '../core/llm-dispatch';
 
 const SCHEMA_FILENAME = 'schema/config.md';
 const SUGGESTIONS_FILENAME = 'schema/suggestions.md';
@@ -438,11 +440,16 @@ ${body}`;
     });
 
     try {
-      const response = await this.client.createMessage({
+      const suggestArgs = {
+        task: 'schema-suggest' as const,
         model: resolveModelForTask(this.settings, 'ingest'),
         max_tokens: capMaxTokens(TOKENS_SCHEMA_SUGGESTION, this.settings),
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
+        messages: [{ role: 'user' as const, content: prompt }],
+        // v1.26.3 PATCH Issue #443 expanded scope: typed-output path.
+        // Uses SchemaSuggestionLLMSchema ({changes_needed?, new_schema_body?,
+        // suggestions?}) on the wire as Tier 0 json_schema. parseSchemaSuggestion
+        // still applies frontmatter-stripping + body extraction post-parse.
+        response_format: { type: 'json_object' as const, schema: SchemaSuggestionLLMSchema },
         // v1.22.0 #97: pass the full LLMClient interface — enableThinking
         // (user-controlled, NEVER hardcoded), maxTokensPerCall (truncation
         // retry), and temperature (custom sampling, per user settings).
@@ -451,7 +458,8 @@ ${body}`;
         ...(this.settings.disableThinking ? { enableThinking: false } : {}),
         maxTokensPerCall: this.settings.maxTokensPerCall || undefined,
         temperature: this.settings.extractionTemperature,
-      });
+      };
+      const response = await callLlm(this.client, suggestArgs);
 
       // v1.22.0 #97: use the dedicated parser to extract new_schema_body
       // (frontmatter-stripped, ready to splice). Legacy v1.21.x responses

@@ -5,7 +5,7 @@
 // parameterizing over their baseURLs.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { APICallError } from 'ai';
+import { APICallError, NoObjectGeneratedError } from 'ai';
 
 vi.mock('ai', async () => {
   const actual = await vi.importActual<typeof import('ai')>('ai');
@@ -56,6 +56,41 @@ function makeResult(text: string): Awaited<ReturnType<typeof generateText>> {
     response: { id: 'resp_test', timestamp: new Date(), modelId: 'test', headers: {}, body: {} },
     providerMetadata: undefined,
     experimental_providerMetadata: undefined,
+  } as unknown as Awaited<ReturnType<typeof generateText>>;
+}
+
+// v1.26.3 PATCH Phase B: helper for tests that exercise the typed-output
+// path. Returns a generateText result with the SDK-parsed `output` field
+// populated (Tier 0 schema-arm success path). The schema path is when
+// `Output.object({schema, name})` is set on the generateText call; on
+// success the SDK attaches `output: <parsed object>` to the result.
+//
+// `output` is added with `as unknown` to the type cast because the AI
+// SDK's ReturnType may not declare it depending on the schema overload
+// type signature. In production, callers use Zod-inferred types via
+// `LLMClient.createMessageWithOutput<T>`.
+function makeResultWithOutput(text: string, output: unknown): Awaited<ReturnType<typeof generateText>> {
+  const base = makeResult(text);
+  return { ...(base as object), output } as unknown as Awaited<ReturnType<typeof generateText>>;
+}
+
+// v1.26.x PATCH follow-up (#443 LMStudio + Qwen3.5): helper for tests that
+// exercise the reasoning_content prepend path. AI SDK's generateText
+// returns `reasoning` as a Promise<string> (or array of {text}) that
+// resolves after the main response — mirroring the streaming variant
+// already covered in the SDK. Tests use this to simulate a backend like
+// LMStudio + Qwen3.5 whose chat template routes structured output into
+// reasoning_content and leaves content empty.
+function makeResultWithReasoning(
+  text: string,
+  reasoning: string | Array<{ text?: string }>,
+  output?: unknown,
+): Awaited<ReturnType<typeof generateText>> {
+  const base = output !== undefined ? makeResultWithOutput(text, output) : makeResult(text);
+  return {
+    ...(base as object),
+    reasoning: Promise.resolve(reasoning),
+    reasoningText: undefined,
   } as unknown as Awaited<ReturnType<typeof generateText>>;
 }
 
@@ -186,19 +221,167 @@ describe('OpenAICompatSdkClient', () => {
     });
   });
 
-  describe('response_format is not forwarded', () => {
-    // #65 reports an error from LM Studio 0.4.15 on `{"type":"json_object"}`,
-    // with no status code given. The fix
-    // for that removed the field outright (5851cc8); the AI-SDK migration
-    // (6be9258) reintroduced it inside `buildProviderOptions`, where the fixed
-    // `openaiCompatible` key hid it again — the field has been built and
-    // discarded ever since, which is why no one noticed it was back.
+  // v1.26.x PATCH follow-up (#443 LMStudio + Qwen3.5):
+  //
+  // AI SDK's `generateText` returns the visible `content` field as
+  // `result.text` and the reasoning (DeepSeek R1 / OpenAI o-series /
+  // LMStudio + Qwen3.5) as a SEPARATE `result.reasoning` Promise that
+  // resolves after the main response. The SDK must prepend the
+  // reasoning content so `parseJsonResponse`'s balanced-JSON finder can
+  // recover JSON-shaped payloads that the backend routed into the
+  // reasoning channel.
+  //
+  // Before this fix, source-analyzer's batch 1 ingested through
+  // `createMessageWithOutput` and saw `text: ''` because the model
+  // output was entirely in reasoning_content (LMStudio chat-template
+  // parser bug + Qwen3.5 thinking mode). parseJsonResponse classified
+  // it as 'empty' even though a complete `{"entities": [...]}` payload
+  // existed in reasoning_content. The user's E2E log on 2026-08-11
+  // showed `Response length: 0` for that exact reason.
+  describe('reasoning_content prepend (Issue #443 follow-up — LMStudio + Qwen3.5)', () => {
+    it('createMessageWithOutput: prepends raw reasoning when no <think> tag is present', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValue(
+        makeResultWithReasoning('', '{"entities":[{"name":"X"}],"concepts":[]}'),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessageWithOutput({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+        response_format: { type: 'json_object', schema: {} },
+      });
+      // The JSON-shaped reasoning payload must survive in the returned
+      // text — NOT be wrapped in <think> tags (those would force
+      // parseJsonResponse to strip them and lose the JSON).
+      expect(result.text).not.toMatch(/^<think>/);
+      expect(result.text).toContain('"entities"');
+      expect(result.text).toContain('"name":"X"');
+      // output should be undefined because Tier 0 schema parse failed
+      // (we passed an empty schema, that's fine — the important thing
+      // is that the text is not empty).
+      expect(result.output).toBeUndefined();
+    });
+
+    it('createMessage (legacy): also prepends reasoning content on the non-typed path', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValue(
+        makeResultWithReasoning('', '{"entities":[{"name":"A"}]}'),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const text = await client.createMessage({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+      });
+      expect(text).toContain('"entities"');
+      expect(text).toContain('"name":"A"');
+    });
+
+    it('does NOT prepend when reasoning is empty (cloud providers unaffected)', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValue(
+        makeResultWithReasoning('{"summary":"ok"}', ''),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const result = await client.createMessageWithOutput({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+      });
+      // Reasoning empty → no prepend → text is exactly the visible text.
+      expect(result.text).toBe('{"summary":"ok"}');
+    });
+
+    it('wraps reasoning in <think> tags when reasoning already contains <think> (DeepSeek R1 compat)', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValue(
+        makeResultWithReasoning(
+          '{"answer":"yes"}',
+          '<think>let me think</think>step',
+        ),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const result = await client.createMessageWithOutput({
+        model: 'deepseek-reasoner',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+      });
+      // Reasoning already wrapped → keep the wrap contract so
+      // extractThinkingBlocks in the Query UI still recognises it.
+      expect(result.text).toMatch(/<think>/);
+      expect(result.text).toMatch(/<\/think>/);
+      expect(result.text).toContain('{"answer":"yes"}');
+    });
+
+    it('handles reasoning as Array<{text}> form', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValue(
+        makeResultWithReasoning('', [
+          { text: '{"a":1}' },
+          { text: '{"b":2}' },
+        ]),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessageWithOutput({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'x' }],
+      });
+      // Both reasoning chunks must be joined and prepended.
+      expect(result.text).toContain('{"a":1}');
+      expect(result.text).toContain('{"b":2}');
+    });
+  });
+
+  describe('response_format: no-schema case sets output=Output.json() for the SDK to encode (Issue #443 elegant fallback)', () => {
+    // v1.26.3 PATCH follow-up (elegant fallback) supersedes Option 1:
     //
-    // Correcting the key would deliver it. It goes for real instead. Nothing
-    // changes on the wire: extraction asks for `json_object` and nothing else,
-    // and the prompt already states the shape. What would justify sending it is
-    // `json_schema`, which is not in this branch.
-    it('leaves it out even when the caller asks for it', async () => {
+    //   Option 1 (shipped in e053cef): buildOutputArgs returned `{}` for
+    //   the no-schema case — `Output.json()` was never invoked, no
+    //   `output` was set, the SDK never saw a `response_format` field.
+    //   Rationale: LM Studio rejects `json_object` with HTTP 400
+    //   (DocTpoint Issue #443 comment 1, 2026-08-09) — skip the field
+    //   to avoid 400. Cost: the 6 cloud providers (deepseek / openrouter
+    //   / kimi / glm / gemini / minimax) lose the server-side type hint
+    //   that reduces parse-failure class of issues.
+    //
+    //   Elegant fallback (this follow-up): buildOutputArgs returns
+    //   `{ output: Output.json() }` for the no-schema case. The SDK
+    //   encodes `response_format: { type: 'json_object' }` on the wire
+    //   for every openai-compat provider. The 6 cloud providers accept
+    //   it (server-side type hint restored). The local-server cohort
+    //   (LM Studio / Ollama / `custom`) that rejects the field is
+    //   caught by the json-object-strip 400-retry at the client
+    //   level (json-object-strip-probe.ts) — the cost is one 400 per
+    //   unique baseURL, then cache hit and the wire field is dropped
+    //   silently thereafter. No provider is hardcoded in the helper.
+    //
+    // This test pins the SDK-client call-site boundary: `output` IS
+    // set (so the SDK encodes `json_object` on the wire). The
+    // wire-body assertion in `openai-compat-request-body.test.ts`
+    // pins what the SDK actually sends.
+    it('sets top-level output=Output.json() when caller asks for json_object without schema', async () => {
       const client = new OpenAICompatSdkClient({
         apiKey: 'sk-test',
         baseURL: 'https://api.deepseek.com/v1',
@@ -213,6 +396,13 @@ describe('OpenAICompatSdkClient', () => {
 
       const call = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
       expect(call.providerOptions).toEqual({});
+      // Issue #443 elegant-fallback contract: no-schema case → `output`
+      // is set (the SDK encodes it as `json_object` on the wire). The
+      // strip probe at the client level handles backends that 400 on
+      // the field (LM Studio is the measured case). The wire-body test
+      // in `openai-compat-request-body.test.ts` pins the actual wire
+      // shape: `{type:'json_object'}`.
+      expect(call.output).toBeDefined();
     });
   });
 
@@ -302,12 +492,17 @@ describe('OpenAICompatSdkClient', () => {
       // First call to this baseURL: 400 then retry success
       mockGenerateText
         .mockRejectedValueOnce(new APICallError({
-          message: 'Invalid value for reasoning_effort',
+          // v1.26.3 PATCH follow-up: simulate the real AI SDK APICallError
+          // shape — `message` is the AI SDK template, `responseBody` is
+          // the provider's actual body. The reasoning-strip classifier
+          // now checks responseBody (not message). This matches what
+          // the wire produces in production.
+          message: 'Provider returned error',
           statusCode: 400,
           responseHeaders: {},
           url: 'https://api.deepseek.com/v1',
           requestBodyValues: {},
-          responseBody: '{}',
+          responseBody: '{"error":{"message":"Invalid value for reasoning_effort"}}',
         }))
         .mockResolvedValueOnce(makeResult('hello-1'));
       // Second call: should NOT 400 again — strip is cached, the call
@@ -351,12 +546,13 @@ describe('OpenAICompatSdkClient', () => {
       // triggers it) but it does not add reasoningEffort either.
       mockGenerateText.mockReset();
       mockGenerateText.mockRejectedValue(new APICallError({
-        message: 'Invalid value for reasoning_effort',
+        // Real AI SDK shape — see comment above (line 325-333).
+        message: 'Provider returned error',
         statusCode: 400,
         responseHeaders: {},
         url: 'https://api.deepseek.com/v1',
         requestBodyValues: {},
-        responseBody: '{}',
+        responseBody: '{"error":{"message":"Invalid value for reasoning_effort"}}',
       }));
 
       const client = new OpenAICompatSdkClient({
@@ -364,6 +560,11 @@ describe('OpenAICompatSdkClient', () => {
         baseURL: 'https://api.deepseek.com/v1',
         provider: 'deepseek',
       });
+      // v1.26.3 PATCH follow-up: the AI SDK's APICallError.message is
+      // a fixed template ("Provider returned error"). The real
+      // provider body is in responseBody. Assert the body carries
+      // the reasoning_effort marker (the actual content the user
+      // cares about), not the message string.
       await expect(
         client.createMessage({
           model: 'deepseek-chat',
@@ -371,7 +572,9 @@ describe('OpenAICompatSdkClient', () => {
           messages: [{ role: 'user', content: 'hi' }],
           // enableThinking intentionally not set
         }),
-      ).rejects.toThrow(/reasoning_effort/);
+      ).rejects.toMatchObject({
+        responseBody: expect.stringContaining('reasoning_effort'),
+      });
       // The original call AND the token-key retry fire (any 400 →
       // token-key retry) — but no reasoningEffort is added in either
       // call because enableThinking !== false.
@@ -389,12 +592,16 @@ describe('OpenAICompatSdkClient', () => {
       mockGenerateText.mockReset();
       mockGenerateText
         .mockRejectedValueOnce(new APICallError({
-          message: 'Invalid value for max_tokens',
+          // Real AI SDK APICallError shape — responseBody carries the
+          // provider's actual body, message is the AI SDK template.
+          // The body mentions max_tokens only (no reasoning field
+          // marker), so the reasoning-strip probe must NOT fire.
+          message: 'Provider returned error',
           statusCode: 400,
           responseHeaders: {},
           url: 'https://api.deepseek.com/v1',
           requestBodyValues: {},
-          responseBody: '{}',
+          responseBody: '{"error":{"message":"Invalid value for max_tokens"}}',
         }))
         .mockResolvedValueOnce(makeResult('hello'));
 
@@ -413,6 +620,966 @@ describe('OpenAICompatSdkClient', () => {
       // Two calls — token-key retry path (different from reasoning-strip).
       // We don't assert which retry fired, only that the 400 was handled.
       expect(mockGenerateText).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // v1.26.3 PATCH Phase A4 — 3-tier output-mode demotion chain (replaces
+  // the v1.26.2 2-tier json-object-strip describe block). The legacy
+  // block tested "strip output on json_object 400" — the new chain
+  // demotes one tier per matched classifier. The two tests below cover
+  // the LM Studio 400 body verbatim (the regression guard from the
+  // 2026-08-10 E2E that surfaced the err.message vs err.responseBody
+  // bug). They now assert the 3-call demotion path: json_schema → 400 →
+  // json_object → 400 → text_prompt → success.
+  describe('output-mode 3-tier demotion (LM Studio regression guard)', () => {
+    it('demotes json_schema → json_object → text_prompt on the LM Studio body', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(new APICallError({
+          // v1.26.2 used `err.message` for the classifier — both probes
+          // were silently broken until the 2026-08-10 E2E surfaced it.
+          // We use the real AI SDK shape here (message=template,
+          // responseBody=provider body) to pin the v1.26.2 fix.
+          message: 'Provider returned error',
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'http://localhost:1234/v1',
+          requestBodyValues: {},
+          responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
+        }))
+        .mockRejectedValueOnce(new APICallError({
+          message: 'Provider returned error',
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'http://localhost:1234/v1',
+          requestBodyValues: {},
+          responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
+        }))
+        .mockResolvedValueOnce(makeResult('hello'));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'lm-studio',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const text = await client.createMessage({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(text).toBe('hello');
+      // 3 calls: Tier 0 (json_schema) → Tier 1 (json_object) → Tier 2 (text_prompt)
+      expect(mockGenerateText).toHaveBeenCalledTimes(3);
+
+      // Tier 0 call: Output.json() (no schema → A3 fallback)
+      const call1 = mockGenerateText.mock.calls[0][0] as { output?: { name?: string } };
+      expect(call1.output?.name).toBe('json');
+
+      // Tier 1 call: same Output.json() (json_object wire)
+      const call2 = mockGenerateText.mock.calls[1][0] as { output?: { name?: string } };
+      expect(call2.output?.name).toBe('json');
+
+      // Tier 2 call: output is undefined, JSON enforcement prefix injected
+      const call3 = mockGenerateText.mock.calls[2][0] as { output?: { name?: string }; system?: string };
+      expect(call3.output?.name).toBeUndefined();
+      expect(call3.system).toContain('CRITICAL: Your reply MUST be a single valid JSON object');
+    });
+
+    it('caches the demoted mode per baseURL — second call goes directly to Tier 2', async () => {
+      mockGenerateText.mockReset();
+      // First invocation: 3 calls (Tier 0 → Tier 1 → Tier 2)
+      mockGenerateText
+        .mockRejectedValueOnce(new APICallError({
+          message: 'Provider returned error',
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'http://localhost:1234/v1',
+          requestBodyValues: {},
+          responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
+        }))
+        .mockRejectedValueOnce(new APICallError({
+          message: 'Provider returned error',
+          statusCode: 400,
+          responseHeaders: {},
+          url: 'http://localhost:1234/v1',
+          requestBodyValues: {},
+          responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
+        }))
+        .mockResolvedValueOnce(makeResult('hello-1'));
+      // Second invocation: cache hit at Tier 2 — 1 call, no output
+      mockGenerateText.mockResolvedValueOnce(makeResult('hello-2'));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'lm-studio',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+
+      // First invocation: 3 generateText calls (chain to Tier 2)
+      const text1 = await client.createMessage({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object' },
+      });
+      expect(text1).toBe('hello-1');
+      expect(mockGenerateText).toHaveBeenCalledTimes(3);
+
+      // Second invocation: cache hit at Tier 2 — 1 generateText call, no output
+      const text2 = await client.createMessage({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object' },
+      });
+      expect(text2).toBe('hello-2');
+      expect(mockGenerateText).toHaveBeenCalledTimes(4);
+
+      const fourthCall = mockGenerateText.mock.calls[3][0] as { output?: { name?: string }; system?: string };
+      expect(fourthCall.output?.name).toBeUndefined();
+      // No system was passed by the caller on the second invocation,
+      // and the cache-hit path doesn't add the JSON prefix (the prefix
+      // is only injected on Tier 2 RETRY, not on subsequent cache-hit
+      // calls). This is intentional: on cache hits the model already
+      // emits well-formed JSON because the previous retry succeeded.
+      expect(fourthCall.system).toBeUndefined();
+    });
+
+    it('does NOT trigger strip on non-400 errors (e.g., 500, 401, 429)', async () => {
+      // The strip retry is gated on statusCode === 400 + a json_object /
+      // response_format field marker. Other status codes must NOT
+      // trigger the strip — the existing token-key / URL-fallback paths
+      // handle those, and silently disabling `json_object` for a
+      // 500/401/429 would be a wrong cache decision.
+      for (const statusCode of [500, 401, 429] as const) {
+        mockGenerateText.mockReset();
+        mockGenerateText.mockRejectedValue(new APICallError({
+          // Real AI SDK shape — generic server error. No json_object /
+          // response_format field marker in the body, so even on 400
+          // the strip would not fire. statusCode guards the first
+          // gate, field marker guards the second.
+          message: 'Provider returned error',
+          statusCode,
+          responseHeaders: {},
+          url: 'https://api.deepseek.com/v1',
+          requestBodyValues: {},
+          responseBody: '{"error":{"message":"server error"}}',
+        }));
+
+        const client = new OpenAICompatSdkClient({
+          apiKey: 'sk-test',
+          baseURL: 'https://api.deepseek.com/v1',
+          provider: 'deepseek',
+        });
+        await expect(
+          client.createMessage({
+            model: 'deepseek-chat',
+            max_tokens: 100,
+            messages: [{ role: 'user', content: 'hi' }],
+            response_format: { type: 'json_object' },
+          })
+        ).rejects.toThrow();
+        // Single call: no retry, no strip probe. (Token-key fallback
+        // would fire for some 400s, but for 500/401/429 it doesn't —
+        // and even if it did, that's a different retry path that does
+        // not omit `output`.)
+        expect(mockGenerateText.mock.calls.length, `statusCode=${statusCode}`).toBeLessThanOrEqual(2);
+      }
+    });
+
+    it('does NOT trigger strip when caller did not pass response_format', async () => {
+      // No response_format → no `output` set → no json_object on the
+      // wire → the 400 must not be misclassified as a json_object
+      // rejection. Mirrors the reasoning-strip "no override → no field"
+      // pattern.
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValue(new APICallError({
+        // Real AI SDK shape — body carries reasoning_effort, no
+        // json_object marker. Reasoning-strip probe fires (because
+        // the message identifies reasoning_effort as the cause);
+        // json-object-strip does NOT (caller did not pass
+        // response_format, and body has no json_object marker).
+        message: 'Provider returned error',
+        statusCode: 400,
+        responseHeaders: {},
+        url: 'https://api.deepseek.com/v1',
+        requestBodyValues: {},
+        responseBody: '{"error":{"message":"Invalid value for \'reasoning_effort\'"}}',
+      }));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      // The 400 here mentions reasoning_effort (not json_object), so
+      // the reasoning-strip retry fires — but the json-object-strip
+      // does NOT (the strip cache stays empty for this baseURL).
+      // v1.26.3 PATCH follow-up: AI SDK's APICallError.message is a
+      // fixed template; the real body is in responseBody. Assert the
+      // body content (what the user cares about), not the message
+      // string. Also assert the reasoning-strip branch fired (call
+      // count = 2: original + retry without reasoning_effort), which
+      // is the actual behavior we want to pin.
+      await expect(
+        client.createMessage({
+          model: 'deepseek-chat',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'hi' }],
+          // response_format intentionally not set
+        }),
+      ).rejects.toMatchObject({
+        responseBody: expect.stringContaining('reasoning_effort'),
+      });
+      // Reasoning-strip retry fired (1 = original, 2 = retry without
+      // reasoning_effort). Json-object-strip did NOT fire — total calls
+      // is exactly 2, not 3.
+      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ==========================================================================
+  // v1.26.3 PATCH Phase A4 — 3-tier output-mode demotion chain
+  //
+  // The chain:
+  //   Tier 0 (json_schema) + 400 with json_schema-rejection  →  retry Tier 1 (json_object)
+  //   Tier 1 (json_object)  + 400 with json_object-rejection  →  retry Tier 2 (text_prompt)
+  //   Tier 2 (text_prompt)  + 400  →  fall through (no further demotion)
+  //
+  // The mode cache is committed AFTER the demoted retry succeeds (not
+  // before). A transient retry failure must not permanently downgrade
+  // a baseURL.
+  //
+  // The 6 P0 callers' Phase B migration will exercise Tier 0
+  // (json_schema on the wire). For now, all callers pass no schema →
+  // they start at the no-schema Tier 0 path and immediately fall back
+  // to Tier 1 (json_object) when response_format has no schema. So
+  // Tier 0 demotion is exercised via a test that supplies a schema.
+  // ==========================================================================
+
+  describe('Phase A4 — 3-tier output-mode demotion chain', () => {
+    const makeTier0Rejection = () => new APICallError({
+      message: 'Provider returned error',
+      statusCode: 400,
+      responseHeaders: {},
+      url: 'https://custom.example.com/v1',
+      requestBodyValues: {},
+      responseBody: '{"error":{"message":"Unsupported value: response_format.json_schema"}}',
+    });
+
+    const makeTier1Rejection = () => new APICallError({
+      message: 'Provider returned error',
+      statusCode: 400,
+      responseHeaders: {},
+      url: 'http://localhost:1234/v1',
+      requestBodyValues: {},
+      responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
+    });
+
+    it('Tier 0 → Tier 1: schema-rejection 400 demotes to json_object, then succeeds', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(makeTier0Rejection())  // 1st call: json_schema rejected
+        .mockResolvedValueOnce(makeResult('ok'));  // 2nd call: json_object works
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://custom.example.com/v1',
+        provider: 'custom',
+      });
+      const schema = { type: 'object', properties: { name: { type: 'string' } } } as const;
+      const result = await client.createMessage({
+        model: 'any-model',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object', schema },
+      });
+      expect(result).toBe('ok');
+      // 2 calls: original (json_schema) + retry (json_object)
+      expect(mockGenerateText).toHaveBeenCalledTimes(2);
+      // 2nd call's output should be Output.json() (name='json'),
+      // not Output.object() (name='object')
+      const secondCallArgs = mockGenerateText.mock.calls[1][0] as { output?: { name?: string } };
+      expect(secondCallArgs.output?.name).toBe('json');
+    });
+
+    it('Tier 0 → Tier 1 → Tier 2: schema-rejection, then object-rejection, then succeeds with text_prompt', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(makeTier0Rejection())  // Tier 0 rejected
+        .mockRejectedValueOnce(makeTier1Rejection())  // Tier 1 rejected
+        .mockResolvedValueOnce(makeResult('ok'));  // Tier 2 works
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const schema = { type: 'object', properties: { name: { type: 'string' } } } as const;
+      const result = await client.createMessage({
+        model: 'any-model',
+        max_tokens: 100,
+        system: 'You are a helper.',
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object', schema },
+      });
+      expect(result).toBe('ok');
+      // 3 calls: json_schema → json_object → text_prompt
+      expect(mockGenerateText).toHaveBeenCalledTimes(3);
+      // Last call: no output, JSON enforcement prefix injected
+      const lastCallArgs = mockGenerateText.mock.calls[2][0] as {
+        output?: { name?: string };
+        system?: string;
+      };
+      expect(lastCallArgs.output?.name).toBeUndefined();
+      expect(lastCallArgs.system).toContain('CRITICAL: Your reply MUST be a single valid JSON object');
+    });
+
+    it('Tier 2 is the floor: object-rejection after Tier 2 is reached does NOT trigger another retry', async () => {
+      // After two demotions, cache says text_prompt. A subsequent call
+      // on the same baseURL should NOT re-probe — it should emit Tier 2
+      // directly. We test this with a single client instance: the cache
+      // lives for the lifetime of the client.
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(makeTier0Rejection())
+        .mockRejectedValueOnce(makeTier1Rejection())
+        .mockResolvedValueOnce(makeResult('ok'))
+        .mockResolvedValueOnce(makeResult('ok2'));  // 2nd call: cache hit, Tier 2 directly
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const schema = { type: 'object', properties: { name: { type: 'string' } } } as const;
+      // First call: Tier 0 → 1 → 2 (3 generateText calls)
+      await client.createMessage({
+        model: 'any-model',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object', schema },
+      });
+      // Second call: should hit cache at Tier 2 — only 1 generateText call
+      await client.createMessage({
+        model: 'any-model',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi again' }],
+        response_format: { type: 'json_object', schema },
+      });
+      // Total: 4 generateText calls (3 for first call's chain + 1 for
+      // second call's cache-hit).
+      expect(mockGenerateText).toHaveBeenCalledTimes(4);
+      // 4th call: no output (Tier 2)
+      const lastCallArgs = mockGenerateText.mock.calls[3][0] as { output?: { name?: string } };
+      expect(lastCallArgs.output?.name).toBeUndefined();
+    });
+
+    it('tentative markMode is rolled back when the chain exhausts without success', async () => {
+      // v1.26.3 PATCH Phase A4 — the chain tentatively writes the
+      // demoted mode BEFORE each retry so the next iteration's
+      // classifier check sees the demoted mode. If the chain exhausts
+      // (all tiers rejected), we roll back so a transient retry
+      // failure doesn't permanently downgrade the baseURL.
+      //
+      // Setup: Tier 0 reject → Tier 1 retry rejects → Tier 2 retry
+      // rejects → chain exhausted → all tentative writes rolled back.
+      mockGenerateText.mockReset();
+      mockGenerateText
+        .mockRejectedValueOnce(makeTier0Rejection())   // Tier 0 reject
+        .mockRejectedValueOnce(makeTier0Rejection())   // Tier 1 retry reject
+        .mockRejectedValueOnce(makeTier0Rejection());  // Tier 2 retry reject
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://custom.example.com/v1',
+        provider: 'custom',
+      });
+      const schema = { type: 'object', properties: { name: { type: 'string' } } } as const;
+      // First call: chain exhausts, error propagates
+      await expect(
+        client.createMessage({
+          model: 'any-model',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'hi' }],
+          response_format: { type: 'json_object', schema },
+        }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      // 3 generateText calls (Tier 0 → Tier 1 → Tier 2)
+      expect(mockGenerateText).toHaveBeenCalledTimes(3);
+      // Second call: cache rolled back to json_schema — re-probes from Tier 0
+      mockGenerateText.mockResolvedValueOnce(makeResult('ok'));
+      const result = await client.createMessage({
+        model: 'any-model',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        response_format: { type: 'json_object', schema },
+      });
+      expect(result).toBe('ok');
+      // 2nd call succeeds with 1 generateText call (Tier 0 directly)
+      expect(mockGenerateText).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  // ==========================================================================
+  // v1.26.3 PATCH Path 2 fix: catch NoObjectGeneratedError from AI SDK
+  // and return the raw text so caller-side parseJsonResponse + greedy
+  // regex + LLM repair runs.
+  //
+  // Background (DocTpoint CHANGES_REQUESTED, 2026-08-10T12:50:37Z):
+  //
+  //   Both `Output.json()` (no-schema path) and `Output.object()`
+  //   (schema path) call `parseCompleteOutput` after the model finishes
+  //   (`ai@6.0.230/dist/index.mjs:3899`). On malformed JSON — common
+  //   on the cloud cohort (deepseek / openrouter / glm / kimi / minimax
+  //   / gemini) when the model emits unclosed arrays — the SDK throws
+  //   `NoObjectGeneratedError`. Without a catch in the SDK client,
+  //   the raw text NEVER reaches the caller-side `parseJsonResponse`,
+  //   so the existing repair path (greedy regex + LLM repair) is dead.
+  //   Users see "Failed to connect to <provider> API" — a JSON-shape
+  //   problem misreported as a connectivity/credentials error.
+  //
+  //   This describe block pins the fix: the client catches
+  //   NoObjectGeneratedError, returns `err.text`, and the caller-side
+  //   parseJsonResponse can do its job on the malformed JSON.
+  // ==========================================================================
+
+  describe('NoObjectGeneratedError path (Path 2 fix — Issue #443 regression)', () => {
+    // Real shape from `ai@6.0.230/dist/index.mjs` (line 3899):
+    // `parseCompleteOutput` throws NoObjectGeneratedError with the
+    // malformed raw text in `.text` (and the underlying JSONParseError
+    // in `.cause`). We import the real class from `ai` so the SDK
+    // client's `NoObjectGeneratedError.isInstance(err)` check works
+    // the same way as in production.
+    //
+    // Constructor requires response/usage/finishReason — minimal placeholders.
+    const makeNoObjectError = (
+      text: string,
+      body?: Record<string, unknown>,
+    ) => new NoObjectGeneratedError({
+      message: 'No object generated',
+      text,
+      cause: new Error('JSONParseError'),
+      response: {
+        id: 'test',
+        timestamp: new Date(),
+        modelId: 'test',
+        headers: {},
+        body: body ?? {},
+      } as unknown as ConstructorParameters<typeof NoObjectGeneratedError>[0]['response'],
+      usage: {
+        inputTokens: 10,
+        inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+        outputTokens: 20,
+        outputTokenDetails: { textTokens: 20, reasoningTokens: undefined },
+        totalTokens: 30,
+      },
+      finishReason: 'stop',
+    });
+
+    it('returns err.text when Output.json() throws NoObjectGeneratedError on malformed JSON', async () => {
+      // Setup: model returns malformed JSON with finish_reason:'stop'.
+      // AI SDK's parseCompleteOutput (Output.json() / Output.object()
+      // both call it) throws NoObjectGeneratedError with text=<raw>.
+      const MALFORMED = '{"entities": [{"name": "A", "mentions_in_source": ["x"},]}';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(makeNoObjectError(MALFORMED));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      // Path 2 contract: caller receives the RAW malformed text
+      // (not undefined, not thrown) so parseJsonResponse can repair it.
+      const result = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(result).toBe(MALFORMED);
+      // Exactly one generateText call — no retry, no probe. The error
+      // is recovered inline, not via a chain. Without Path 2, the
+      // NoObjectGeneratedError propagates and the user sees
+      // "Failed to connect" — the parse-failure repair path is bypassed.
+      expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns err.text when Output.object() (schema path) throws NoObjectGeneratedError', async () => {
+      // Schema path also throws NoObjectGeneratedError — same contract.
+      const MALFORMED = '{"name": "broken", "extra": ';  // truncated
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(makeNoObjectError(MALFORMED));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const schema = { type: 'object', properties: { name: { type: 'string' } } } as const;
+      const result = await client.createMessage({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object', schema },
+      });
+
+      expect(result).toBe(MALFORMED);
+      expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT trigger 3-tier demotion chain on NoObjectGeneratedError (different error class)', async () => {
+      // The 3-tier chain demotes on APICallError + statusCode===400.
+      // NoObjectGeneratedError is AISDKError, not APICallError. It must
+      // NOT demote — it must recover inline (Path 2). Otherwise the
+      // chain would consume the error and either retry (wasting HTTP
+      // calls) or roll back the cache (wrong — the demoted mode isn't
+      // the cause; the JSON parse failure is).
+      const MALFORMED = '{"key": "value"';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(makeNoObjectError(MALFORMED));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessage({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(result).toBe(MALFORMED);
+      // Exactly 1 call: no chain, no retry. (Without Path 2, this test
+      // would throw — the catch block's `APICallError.isInstance(err)`
+      // gate would fail and the error would propagate via
+      // `throw mapAiSdkError(err)`.)
+      expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    });
+
+    it('caller-side parseJsonResponse can repair the returned text (integration check)', async () => {
+      // Verifies the upstream invariant: when Path 2 returns the raw
+      // malformed text, parseJsonResponse's repair logic can do its
+      // job. We test the shape — the actual repair lives in
+      // `parseJsonResponse.ts`; what we pin here is that the text
+      // reaches the caller intact (not truncated, not transformed,
+      // not wrapped in an error).
+      const MALFORMED_WITH_TRUNCATION =
+        '{"candidates": [{"path": "a.md", "relevance": 0.9}, {"path": "b.md", "relevance": 0.8';  // missing close brackets
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(makeNoObjectError(MALFORMED_WITH_TRUNCATION));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const result = await client.createMessage({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'select' }],
+        response_format: { type: 'json_object' },
+      });
+
+      // Strict equality on the raw text — any transformation (e.g.
+      // truncating at position N, wrapping in an error message) would
+      // defeat parseJsonResponse's greedy-regex + LLM repair path.
+      expect(result).toBe(MALFORMED_WITH_TRUNCATION);
+    });
+
+    // Issue #443 follow-up (LMStudio + Qwen3.5). When the model emits
+    // `{"": ""}` under grammar-constrained decoding, Output.object
+    // throws NoObjectGeneratedError. err.text is empty (only the
+    // visible content field is captured) — the JSON-shaped payload
+    // lives in err.response.body.choices[0].message.reasoning_content.
+    // The SDK must reach in there and prepend it so the caller's
+    // parseJsonResponse thinking-block fallback (Layer 3) can recover
+    // the structured output.
+    it('createMessage: recovers reasoning_content from err.response.body when err.text is empty', async () => {
+      const reasoningContent =
+        '{"source_title": "Developer policies", "entities": [{"name": "Obsidian"}]}';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(
+        makeNoObjectError('', {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: '',
+              reasoning_content: reasoningContent,
+              tool_calls: [],
+            },
+          }],
+        }),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const text = await client.createMessage({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+        response_format: { type: 'json_object', schema: {} },
+      });
+      // The reasoning payload must reach the caller — not be wrapped in
+      // <think> tags (those would force parseJsonResponse's block-strip
+      // to discard it).
+      expect(text).toContain('"source_title"');
+      expect(text).toContain('"entities"');
+      expect(text).not.toMatch(/^<think>/);
+    });
+
+    it('createMessageWithOutput: recovers reasoning_content from err.response.body when err.text is empty', async () => {
+      const reasoningContent = '{"entities":[{"name":"X"}],"summary":"yes"}';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(
+        makeNoObjectError('', {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: '',
+              reasoning_content: reasoningContent,
+              tool_calls: [],
+            },
+          }],
+        }),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessageWithOutput({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+        response_format: { type: 'json_object', schema: {} },
+      });
+      expect(result.text).toContain('"entities"');
+      expect(result.text).toContain('"summary"');
+      expect(result.output).toBeUndefined(); // Tier 0 failed → caller parses text
+    });
+
+    it('createMessage: degrades to err.text when err.response.body lacks reasoning_content', async () => {
+      // Defensive: if the body shape is unexpected (e.g. cloud provider
+      // without reasoning_content), do not crash — just surface err.text.
+      const FALLBACK_TEXT = '{"placeholder":"yes"}';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(
+        makeNoObjectError(FALLBACK_TEXT, {
+          choices: [{ message: { role: 'assistant', content: '', tool_calls: [] } }],
+        }),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const text = await client.createMessage({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+        response_format: { type: 'json_object' },
+      });
+      expect(text).toBe(FALLBACK_TEXT);
+    });
+
+    // ==========================================================================
+    // Issue #443 follow-up (2026-08-11 E2E): per-model placeholder demotion.
+    //
+    // When LMStudio + Qwen3.5 emits `{"": ""}` under grammar-constrained
+    // decoding (thinking mode cannot co-exist with the json_schema grammar,
+    // so the model bails with the 5-token minimum-valid-object), the 400
+    // demotion chain never fires (no 400 — the backend accepted the wire).
+    // The placeholder is a SEMANTIC failure, not a protocol failure.
+    //
+    // The demotion target is text_prompt DIRECTLY (skipping json_object):
+    // the placeholder's root cause is grammar-constrained decoding, and
+    // json_object's Output.json() still applies a (weak) grammar — only
+    // text_prompt drops it. The cache write is PER-MODEL so a healthy
+    // sibling model on the same gateway (gemma-4-12b) is never demoted.
+    // ==========================================================================
+    describe('createMessageWithOutput: placeholder → text_prompt demotion (per-model, Issue #443 follow-up)', () => {
+      const PLACEHOLDER = '{"": ""}';
+      const baseURL = 'http://localhost:1234/v1';
+
+      const makePlaceholderError = () =>
+        makeNoObjectError('', {
+          choices: [{ message: { role: 'assistant', content: '', reasoning_content: PLACEHOLDER, tool_calls: [] } }],
+        });
+
+      it('demotes to text_prompt and retries once when reasoning_content is a placeholder', async () => {
+        mockGenerateText.mockReset();
+        mockGenerateText.mockRejectedValueOnce(makePlaceholderError());
+        // Second call (text_prompt retry) succeeds with real content.
+        mockGenerateText.mockResolvedValueOnce(makeResult('{"entities":[{"name":"X"}],"concepts":[]}'));
+
+        const client = new OpenAICompatSdkClient({ apiKey: 'sk-test', baseURL, provider: 'lmstudio' });
+        const result = await client.createMessageWithOutput({
+          model: 'qwen3.5-9b',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'analyze' }],
+          response_format: { type: 'json_object', schema: {} },
+        });
+
+        // Two generateText calls: the placeholder failure, then the demoted retry.
+        expect(mockGenerateText).toHaveBeenCalledTimes(2);
+        const firstCall = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
+        const secondCall = mockGenerateText.mock.calls[1][0] as Record<string, unknown>;
+        // Tier 0 first attempt: Output.object on the wire.
+        expect(firstCall.output).toBeDefined();
+        // Demoted retry: text_prompt → buildOutputArgs returns {} (no output arg).
+        expect(secondCall.output).toBeUndefined();
+        // JSON-shape enforcement prefix injected into the retry system prompt.
+        expect(String(secondCall.system)).toContain('MUST be a single valid JSON object');
+
+        // Success path returns the retry's text + the demoted outputMode.
+        expect(result.text).toContain('"entities"');
+        expect(result.outputMode).toBe('text_prompt');
+        expect(result.output).toBeUndefined();
+
+        // Cache committed per-model: qwen3.5-9b is demoted...
+        const prober = (client as unknown as { outputModeProber: { getMode: (u: string, m: string) => string } }).outputModeProber;
+        expect(prober.getMode(baseURL, 'qwen3.5-9b')).toBe('text_prompt');
+        // ...but gemma on the same gateway stays at the strongest tier.
+        expect(prober.getMode(baseURL, 'gemma-4-12b')).toBe('json_schema');
+      });
+
+      it('returns the raw placeholder text when the text_prompt retry also fails', async () => {
+        mockGenerateText.mockReset();
+        mockGenerateText.mockRejectedValueOnce(makePlaceholderError());
+        mockGenerateText.mockRejectedValueOnce(makePlaceholderError());
+
+        const client = new OpenAICompatSdkClient({ apiKey: 'sk-test', baseURL, provider: 'lmstudio' });
+        const result = await client.createMessageWithOutput({
+          model: 'qwen3.5-9b',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'analyze' }],
+          response_format: { type: 'json_object', schema: {} },
+        });
+
+        // Two calls attempted; no crash — raw placeholder text surfaced so the
+        // caller's parseJsonResponse placeholder gate can diagnose it.
+        expect(mockGenerateText).toHaveBeenCalledTimes(2);
+        expect(result.text).toContain('{"": ""}');
+        expect(result.output).toBeUndefined();
+        // No cache write on failed retry (mirror the 400 chain's "success-only" policy).
+        const prober = (client as unknown as { outputModeProber: { getMode: (u: string, m: string) => string } }).outputModeProber;
+        expect(prober.getMode(baseURL, 'qwen3.5-9b')).toBe('json_schema');
+      });
+
+      it('does NOT demote when reasoning_content is a real object (non-placeholder)', async () => {
+        mockGenerateText.mockReset();
+        // Full valid JSON in reasoning_content — the "good" #443 path that
+        // must keep working unchanged: recover + return, no retry.
+        mockGenerateText.mockRejectedValueOnce(
+          makeNoObjectError('', {
+            choices: [{ message: { role: 'assistant', content: '', reasoning_content: '{"entities":[{"name":"X"}],"concepts":[]}', tool_calls: [] } }],
+          }),
+        );
+
+        const client = new OpenAICompatSdkClient({ apiKey: 'sk-test', baseURL, provider: 'lmstudio' });
+        const result = await client.createMessageWithOutput({
+          model: 'qwen3.5-9b',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'analyze' }],
+          response_format: { type: 'json_object', schema: {} },
+        });
+
+        // Exactly one call — no demotion retry for a real payload.
+        expect(mockGenerateText).toHaveBeenCalledTimes(1);
+        expect(result.text).toContain('"entities"');
+        expect(result.outputMode).toBe('json_schema');
+      });
+    });
+  });
+
+  // ==========================================================================
+  // v1.26.3 PATCH Phase B — createMessageWithOutput (typed output).
+  //
+  // Opt-in variant that returns `{text, output?, outputMode, finishReason, usage?}`.
+  // When Tier 0 (json_schema on the wire, `Output.object({schema, name})`)
+  // succeeds, `output` is populated with the SDK-parsed object. When
+  // Tier 1 (json_object) or Tier 2 (text_prompt) succeeds, `output` is
+  // undefined and the caller falls back to `parseJsonResponse(text)`.
+  //
+  // Anthropic / OpenAI / Codex clients do NOT implement this method
+  // (their callers don't opt in yet). The interface declares it
+  // optional, so missing implementations don't break callers — they
+  // just fall back to `createMessage` + parseJsonResponse.
+  // ==========================================================================
+  describe('createMessageWithOutput (Phase B typed output)', () => {
+    const schema = { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } as const;
+    const PARSED = { name: 'Alice' };
+
+    it('returns output from generateText.result.output when Tier 0 succeeds', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValueOnce(makeResultWithOutput(JSON.stringify(PARSED), PARSED));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessageWithOutput!({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object', schema },
+      });
+
+      // Tier 0 (default): `output` is populated by SDK parse.
+      expect(result.output).toEqual(PARSED);
+      expect(result.text).toBe(JSON.stringify(PARSED));
+      expect(result.outputMode).toBe('json_schema');
+      expect(result.finishReason).toBe('stop');
+    });
+
+    it('returns output=undefined when Tier 1 succeeds (json_object, no schema parse)', async () => {
+      // Tier 1 is reached when the cached mode is `json_object` — no
+      // SDK parse happens because `Output.json()` (no schema) doesn't
+      // parse eagerly into a typed object. The text is parseable JSON
+      // but it's a raw string the caller must handle.
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValueOnce(makeResult(JSON.stringify(PARSED)));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      // Force Tier 1 by simulating a baseURL whose cache says json_object.
+      // We do this by first triggering a 400 demotion, then asserting
+      // the second call's `output` is undefined.
+      // Simpler approach: directly invoke and assert based on default
+      // mode ('json_schema' → no-schema path falls through to
+      // Output.json() → output is still parsed IF the SDK does so). For
+      // the Tier 1 contract we instead test the explicit case where
+      // mode is forced via the prober.
+      const prober = (client as unknown as { outputModeProber: { markMode: (u: string, m: string, mode: 'json_object') => void } }).outputModeProber;
+      prober.markMode(client['baseURL'] as string, 'deepseek-chat', 'json_object');
+      const result = await client.createMessageWithOutput!({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(result.output).toBeUndefined();
+      expect(result.text).toBe(JSON.stringify(PARSED));
+      expect(result.outputMode).toBe('json_object');
+    });
+
+    it('returns output=undefined when Tier 2 succeeds (text_prompt, prompt enforcement)', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValueOnce(makeResult(JSON.stringify(PARSED)));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const prober = (client as unknown as { outputModeProber: { markMode: (u: string, m: string, mode: 'text_prompt') => void } }).outputModeProber;
+      prober.markMode(client['baseURL'] as string, 'qwythos-9b', 'text_prompt');
+      const result = await client.createMessageWithOutput!({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(result.output).toBeUndefined();
+      expect(result.outputMode).toBe('text_prompt');
+      // text is the raw model output (parseable JSON, but caller uses
+      // parseJsonResponse to validate).
+      expect(result.text).toBe(JSON.stringify(PARSED));
+    });
+
+    it('falls back to err.text on NoObjectGeneratedError (Path 2 fix applies to typed path)', async () => {
+      // Same contract as createMessage: malformed JSON on the SDK parse
+      // should surface the raw text so the caller can repair it. The
+      // typed-output path must NOT swallow the error.
+      const MALFORMED = '{"name": "broken", "extra": ';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(new NoObjectGeneratedError({
+        message: 'No object generated',
+        text: MALFORMED,
+        cause: new Error('JSONParseError'),
+        response: { id: 'test', timestamp: new Date(), modelId: 'test', headers: {} },
+        usage: {
+          inputTokens: 10,
+          inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+          outputTokens: 20,
+          outputTokenDetails: { textTokens: 20, reasoningTokens: undefined },
+          totalTokens: 30,
+        },
+        finishReason: 'stop',
+      }));
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessageWithOutput!({
+        model: 'qwythos-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object', schema },
+      });
+
+      expect(result.text).toBe(MALFORMED);
+      expect(result.output).toBeUndefined();  // parse failed
+    });
+
+    it('does NOT throw when NoObjectGeneratedError has no .text field (defensive)', async () => {
+      // The Path 2 contract has a defensive fallback: if .text is
+      // missing (shouldn't happen per ai SDK contract, but if it
+      // does), we re-throw. The typed-output path inherits the same
+      // contract.
+      mockGenerateText.mockReset();
+      const err = new NoObjectGeneratedError({
+        message: 'No object generated',
+        // text intentionally missing
+        cause: new Error('JSONParseError'),
+        response: { id: 'test', timestamp: new Date(), modelId: 'test', headers: {} },
+        usage: {
+          inputTokens: 10,
+          inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+          outputTokens: 20,
+          outputTokenDetails: { textTokens: 20, reasoningTokens: undefined },
+          totalTokens: 30,
+        },
+        finishReason: 'stop',
+      });
+      // Strip the .text field via Object.defineProperty since the SDK
+      // sets it to undefined when not provided; we want to simulate a
+      // truly missing field.
+      // (Per ai SDK behavior, when `text` is not passed to the ctor,
+      // it's set to undefined, not omitted. So this test really checks
+      // the "undefined text → re-throw" branch.)
+      mockGenerateText.mockRejectedValueOnce(err);
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      await expect(
+        client.createMessageWithOutput!({
+          model: 'qwythos-9b',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'extract' }],
+          response_format: { type: 'json_object', schema },
+        }),
+      ).rejects.toBe(err);
     });
   });
 });

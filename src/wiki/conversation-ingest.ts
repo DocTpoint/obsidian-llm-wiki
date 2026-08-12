@@ -16,6 +16,8 @@ import { resolveModelForTask } from '../core/model-resolver';
 import { UNIVERSAL_LINK_CONSTRAINTS } from './prompts/constraints';
 import { TOKENS_CONVERSATION_EXTRACTION, TOKENS_CONVERSATION_PAGE, TOKENS_PAGE_GENERATION, TOKENS_QUERY_SAVE_DEDUP } from '../constants';
 import { PageFactory } from './page-factory';
+import { SourceAnalysisLLMSchema, ConversationDedupStatusLLMSchema } from '../llm-sdk/output-schemas';
+import { callLlm } from '../core/llm-dispatch';
 
 export interface ConversationOrchestration {
   ensureWikiStructure: () => Promise<void>;
@@ -155,30 +157,34 @@ CRITICAL RULES:
 - If no entities/concepts found, use empty arrays [] (never omit the field)
 - Names should be suitable for [[wiki-links]] referencing (judge appropriate naming based on Wiki index)`;
 
-    const analysis = await client.createMessage({
-      task: 'conversation-extract',
+    const analysisArgs = {
+      task: 'conversation-extract' as const,
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
       max_tokens: TOKENS_CONVERSATION_EXTRACTION,
       system: await this.ctx.buildSystemPrompt('conversation'),
       messages: [{
-        role: 'user',
+        role: 'user' as const,
         content: analysisPrompt
       }],
-      response_format: { type: 'json_object' },
+      response_format: { type: 'json_object' as const, schema: SourceAnalysisLLMSchema },
       ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
-    });
+    };
+    // v1.26.3 PATCH Issue #443 expanded scope: typed-output path. Same
+    // schema (SourceAnalysisLLMSchema) as source-analyzer extract.
+    const analysisText = await callLlm(client, analysisArgs);
 
-    const parsed = await parseJsonResponse(analysis, async (malformedJson: string) => {
+    const parsed = await parseJsonResponse(analysisText, async (malformedJson: string) => {
       const repairPrompt = `Fix the following malformed JSON. Only fix JSON syntax errors (unescaped quotes, trailing commas, missing brackets). Do NOT change any values or content. Output ONLY the fixed JSON, no other text.\n\n${malformedJson}`;
-      return await client.createMessage({
-        task: 'conversation-extract-retry',
+      const repairArgs = {
+        task: 'conversation-extract-retry' as const,
         model: resolveModelForTask(this.ctx.settings, 'ingest'),
         max_tokens: TOKENS_PAGE_GENERATION,
         system: await this.ctx.buildSystemPrompt('conversation'),
-        messages: [{ role: 'user', content: repairPrompt }],
-        response_format: { type: 'json_object' },
+        messages: [{ role: 'user' as const, content: repairPrompt }],
+        response_format: { type: 'json_object' as const, schema: SourceAnalysisLLMSchema },
         ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
-      });
+      };
+      return callLlm(client, repairArgs);
     }) as SourceAnalysis | null;
     if (!parsed) {
       throw new Error('Conversation analysis JSON parsing failed');
@@ -328,17 +334,23 @@ CRITICAL RULES:
     const client = this.ctx.getClient();
     if (!client) throw new Error('LLM client not initialized');
 
-    const response = await client.createMessage({
-      task: 'conversation-save-dedup',
+    const dedupArgs = {
+      task: 'conversation-save-dedup' as const,
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
       max_tokens: TOKENS_QUERY_SAVE_DEDUP,
       system: await this.ctx.buildSystemPrompt('conversation'),
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
+      messages: [{ role: 'user' as const, content: prompt }],
+      // v1.26.3 PATCH Issue #443 expanded scope: typed-output path. Uses
+      // ConversationDedupStatusLLMSchema ({status: string}) on the wire as
+      // Tier 0 json_schema — LMStudio accepts, no parse-error fallback to
+      // English welcome. Caller falls back to parseJsonResponse on legacy
+      // clients without createMessageWithOutput.
+      response_format: { type: 'json_object' as const, schema: ConversationDedupStatusLLMSchema },
       ...(this.ctx.settings.disableThinking ? { enableThinking: false } : {}),
-    });
+    };
+    const dedupText = await callLlm(client, dedupArgs);
 
-    const parsed = await parseJsonResponse(response) as { status?: string } | null;
+    const parsed = await parseJsonResponse(dedupText) as { status?: string } | null;
     return parsed?.status || 'entirely_new';
   }
 }

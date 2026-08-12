@@ -20,8 +20,14 @@ import {
 } from '../../prompts/seed-selection';
 import { resolveModelForTask } from '../../../core/model-resolver';
 import { TOKENS_QUERY_SEED_SELECT, QUERY_SEED_LLM_MAX_CANDIDATES } from '../../../constants';
+import { SeedSelectorSchema, type SeedSelector } from '../../../llm-sdk/output-schemas';
+import type { z } from 'zod';
 
-/** Minimal LLMClient surface — only `createMessage` is required for seed selection. */
+/** Minimal LLMClient surface — typed-output is OPTIONAL. Test mocks may not
+ *  implement `createMessageWithOutput` (they pre-date v1.26.3 PATCH Phase B).
+ *  The helper falls back to `createMessage` + parseJsonResponse when the
+ *  typed method is missing.
+ */
 export interface SeedLLMClient {
   createMessage(params: {
     model: string;
@@ -31,6 +37,14 @@ export interface SeedLLMClient {
     response_format?: { type: 'json_object' | 'text' };
     enableThinking?: boolean;
   }): Promise<string>;
+  createMessageWithOutput?<T = unknown>(params: {
+    model: string;
+    max_tokens: number;
+    system?: string;
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+    response_format?: { type: 'json_object'; schema?: Record<string, unknown> | z.ZodType };
+    enableThinking?: boolean;
+  }): Promise<{ text: string; output?: T; outputMode: 'json_schema' | 'json_object' | 'text_prompt' }>;
 }
 
 /** Settings surface used by seed selector — disableThinking / model only.
@@ -44,6 +58,86 @@ export interface SeedSelectorSettings {
   model: string;
   queryModel?: string;
   disableThinking?: boolean;
+}
+
+/**
+ * v1.26.3 PATCH Phase B (Issue #443): typed-output path for seed
+ * selection. Uses `createMessageWithOutput` if the client implements
+ * it; falls back to `createMessage` + parseJsonResponse for legacy
+ * clients (Anthropic / OpenAI / Codex / pre-Phase-B mocks).
+ *
+ * Returns the parsed `seeds` array — empty array is a valid answer
+ * (the prompt's task 4 says "no relevant pages → []"). Throws on
+ * shape mismatch so `withTransientRetry` can retry.
+ */
+async function selectSeedsWithTypedOutput(
+  client: SeedLLMClient,
+  model: string,
+  system: string,
+  userPrompt: string,
+  disableThinking: boolean | undefined,
+): Promise<string[]> {
+  // Debug log: response length + first 100 chars AFTER the call.
+  // Critical for diagnosing empty-body / truncated / unexpected-shape
+  // responses that previously caused silent seed-selector failures.
+  // JSON.stringify escapes control chars (matches fix-runners.ts style).
+  const logResponse = (response: string) => {
+    console.debug(
+      `[LLM response] Seed selection: length=${response.length}, ` +
+      `first100=${JSON.stringify(response.slice(0, 100))}`,
+    );
+  };
+
+  // OPT-IN path: client implements the typed-output method.
+  if (client.createMessageWithOutput) {
+    const result = await client.createMessageWithOutput<SeedSelector>({
+      model,
+      max_tokens: TOKENS_QUERY_SEED_SELECT,
+      system,
+      messages: [{ role: 'user', content: userPrompt }],
+      response_format: { type: 'json_object', schema: SeedSelectorSchema },
+      ...(disableThinking ? { enableThinking: false } : {}),
+    });
+    // Tier 0 success: `output` is populated by SDK parse.
+    if (result.output && Array.isArray(result.output.seeds)) {
+      logResponse(result.text);
+      return result.output.seeds;
+    }
+    // Tier 1 / Tier 2 success: `output` is undefined, fall back to
+    // parsing the raw text. This is the same code path the legacy
+    // createMessage flow takes — it MUST stay identical so behavior
+    // is unchanged for callers that haven't migrated.
+    logResponse(result.text);
+    const parsed = await parseJsonResponse(result.text, undefined, {
+      silentOnEmpty: true,
+      throwOnEmpty: true,
+    }) as SeedSelector | null;
+    if (!parsed || !Array.isArray(parsed.seeds)) {
+      throw new Error('parseJsonResponse returned null or non-array seeds');
+    }
+    return parsed.seeds;
+  }
+
+  // LEGACY path: client doesn't implement createMessageWithOutput.
+  // Identical to pre-Phase-B behavior — Tier 1 (json_object) wire shape,
+  // caller-side parseJsonResponse.
+  const response = await client.createMessage({
+    model,
+    max_tokens: TOKENS_QUERY_SEED_SELECT,
+    system,
+    messages: [{ role: 'user', content: userPrompt }],
+    response_format: { type: 'json_object' },
+    ...(disableThinking ? { enableThinking: false } : {}),
+  });
+  logResponse(response);
+  const parsed = await parseJsonResponse(response, undefined, {
+    silentOnEmpty: true,
+    throwOnEmpty: true,
+  }) as SeedSelector | null;
+  if (!parsed || !Array.isArray(parsed.seeds)) {
+    throw new Error('parseJsonResponse returned null or non-array seeds');
+  }
+  return parsed.seeds;
 }
 
 /**
@@ -92,33 +186,14 @@ export async function selectSeedsWithLLM(
       // v1.24.0 #208: log resolved query model for e2e verification.
       const queryModel = resolveModelForTask(settings, 'query');
       console.debug('[selectSeedsWithLLM] query model:', queryModel);
-      const response = await client.createMessage({
-        model: queryModel,
-        max_tokens: TOKENS_QUERY_SEED_SELECT,
-        system: SEED_SELECTION_SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: buildSeedSelectionUserPrompt(query, pagesList),
-        }],
-        response_format: { type: 'json_object' },
-        ...(settings.disableThinking ? { enableThinking: false } : {}),
-      });
-      // Debug log: response length + first 100 chars AFTER the call.
-      // Critical for diagnosing empty-body / truncated / unexpected-shape
-      // responses that previously caused silent seed-selector failures.
-      // JSON.stringify escapes control chars (matches fix-runners.ts style).
-      console.debug(
-        `[LLM response] Seed selection: length=${response.length}, ` +
-        `first100=${JSON.stringify(response.slice(0, 100))}`,
+      const userPrompt = buildSeedSelectionUserPrompt(query, pagesList);
+      return selectSeedsWithTypedOutput(
+        client,
+        queryModel,
+        SEED_SELECTION_SYSTEM_PROMPT,
+        userPrompt,
+        settings.disableThinking,
       );
-      const parsed = await parseJsonResponse(response, undefined, {
-        silentOnEmpty: true,
-        throwOnEmpty: true,
-      }) as { seeds?: string[] } | null;
-      if (!parsed || !Array.isArray(parsed.seeds)) {
-        throw new Error('parseJsonResponse returned null or non-array seeds');
-      }
-      return parsed.seeds;
     },
     label: 'Seed selection',
     isAuthError: (error) => {

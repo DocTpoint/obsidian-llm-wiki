@@ -15,6 +15,8 @@ import { renderTemplate } from '../../core/template-renderer';
 import { TOKENS_LINT_ALIAS_BATCH, NOTICE_ERROR, NOTICE_RATE_LIMIT } from '../../constants';
 import { buildWikiLanguageDirective } from '../system-prompts';
 import { TagViolation } from './scanners';
+import { AliasGenerationLLMSchema, TagFixLLMSchema } from '../../llm-sdk/output-schemas';
+import { callLlm } from '../../core/llm-dispatch';
 
 // Issue #94: Status bar "click to cancel" already exists, but the fix-runner
 // functions in this module previously never received the AbortSignal. Each
@@ -87,13 +89,19 @@ export async function runAliasCompletion(
             body: body.substring(0, 2000),
           });
 
-          const response = await client.createMessage({
+          const aliasArgs = {
+            task: 'lint-alias' as const,
             model: resolveModelForTask(ctx.settings, 'lint'),
             max_tokens: TOKENS_LINT_ALIAS_BATCH,
             system: buildWikiLanguageDirective(ctx.settings),
-            messages: [{ role: 'user', content: prompt }],
-            response_format: { type: 'json_object' }
-          });
+            messages: [{ role: 'user' as const, content: prompt }],
+            // v1.26.3 PATCH Issue #443 expanded scope: typed-output path.
+            // AliasGenerationLLMSchema ({aliases?: string[]}) on the wire as
+            // Tier 0 json_schema — LMStudio accepts, no parse-error fallback
+            // to empty alias list.
+            response_format: { type: 'json_object' as const, schema: AliasGenerationLLMSchema },
+          };
+          const response = await callLlm(client, aliasArgs);
 
           // v1.24.0: Bug 3 — log provider + raw response shape BEFORE
           // parseJsonResponse so an empty / unparseable result is
@@ -552,12 +560,19 @@ Task: Return a JSON object with a single field "tags" that is an array of string
 `;
 
         const systemPrompt = ctx.buildSystemPrompt ? await ctx.buildSystemPrompt('lint') : undefined;
-        const response = await llmClient.createMessage({
+        const tagArgs = {
+          task: 'lint-tag-fix' as const,
           model: resolveModelForTask(ctx.settings, 'lint'),
           max_tokens: 256,
           ...(systemPrompt ? { system: systemPrompt } : {}),
-          messages: [{ role: 'user', content: prompt }],
-        });
+          messages: [{ role: 'user' as const, content: prompt }],
+          // v1.26.3 PATCH Issue #443 expanded scope: typed-output path.
+          // TagFixLLMSchema ({tags?: string[]}) on the wire as Tier 0
+          // json_schema. The caller still filters against the active tag
+          // vocab post-parse; the schema only constrains the wire shape.
+          response_format: { type: 'json_object' as const, schema: TagFixLLMSchema },
+        };
+        const response = await callLlm(llmClient, tagArgs);
         if (signal?.aborted) {
           throw new DOMException('Lint fix cancelled by user', 'AbortError');
         }

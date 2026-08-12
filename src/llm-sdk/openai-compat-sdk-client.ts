@@ -18,9 +18,17 @@
 // `supportsStructuredOutputs`, `includeUsage`) are set automatically
 // based on the `provider` id we pass in.
 
-import { type LanguageModel, APICallError } from 'ai';
+import { type LanguageModel, APICallError, NoObjectGeneratedError } from 'ai';
+import type { z } from 'zod';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { LLMClient, type LLMFinishReason } from '../types';
+import {
+  LLMClient,
+  PREDEFINED_PROVIDERS,
+  type LLMFinishReason,
+  type LLMFinishMeta,
+  type LLMUsage,
+  type MessageContentPart,
+} from '../types';
 import { obsidianFetchBridge, streamWithFallback } from '../core/obsidian-fetch-bridge';
 import { mapAiSdkError } from './openai-sdk-client';
 import {
@@ -30,8 +38,13 @@ import {
 } from '../core/url-fallback';
 import { TokenKeyProber } from './token-key-probe';
 import { ReasoningStripProber } from './reasoning-strip-probe';
+import { OutputModeProber, type OutputMode } from './output-mode-prober';
 import { reportFinish } from './finish-reason';
 import { buildSamplingArgs } from './sampling-args';
+import { buildOutputArgs } from './output-args';
+import { JSON_ENFORCEMENT_SYSTEM_PREFIX } from './json-prompt-prefix';
+import { prependReasoningForParse } from '../core/markdown';
+import { isPlaceholderJsonText } from '../core/json';
 
 export interface OpenAICompatSdkClientOptions {
   apiKey: string;
@@ -69,12 +82,41 @@ export class OpenAICompatSdkClient implements LLMClient {
    */
   private readonly reasoningStripProber = new ReasoningStripProber();
 
+  /**
+   * v1.26.3 PATCH Phase A2 — 3-tier output-mode state machine
+   * (replaces the v1.26.2 JsonObjectStripProber). Per-baseURL cache
+   * stores the strongest mode the backend accepts (default =
+   * 'json_schema'). On 400 with a structured-output rejection, the
+   * catch-block demotes one tier and retries; the demotion is
+   * committed to the cache AFTER the retry succeeds. See
+   * [[OutputModeProber]] for the tier ordering and classifier
+   * contract.
+   */
+  private readonly outputModeProber = new OutputModeProber();
+
+  /**
+   * v1.26.3 PATCH (Issue #443): whether the openai-compat SDK provider
+   * should be created with `supportsStructuredOutputs: true`. Reads
+   * from `PREDEFINED_PROVIDERS` (the canonical per-provider config
+   * table at `src/types.ts`) so adding a new compat provider that
+   * accepts `json_schema` is a one-field config change instead of
+   * editing the SDK client. Local servers (LM Studio / Ollama /
+   * self-hosted `custom`) accept this form; cloud compat servers
+   * (openrouter / deepseek / kimi / glm) accept `json_object` and
+   * do NOT receive `json_schema` (they may 400 on it). The openai /
+   * anthropic / codex paths go through their own SDK clients and
+   * are unaffected by this flag.
+   */
+  private readonly supportsStructuredOutputs: boolean;
+
   constructor(opts: OpenAICompatSdkClientOptions) {
     this.apiKey = opts.apiKey;
     this.baseURL = opts.baseURL;
     this.provider = opts.provider;
     this.fetchImpl = opts.fetch ?? obsidianFetchBridge;
     this.streamFetchImpl = opts.streamFetch ?? streamWithFallback;
+    this.supportsStructuredOutputs
+      = PREDEFINED_PROVIDERS[opts.provider]?.supportsStructuredOutputs ?? false;
   }
 
   /**
@@ -104,6 +146,15 @@ export class OpenAICompatSdkClient implements LLMClient {
       // don't return usage unless asked. AI-SDK's default is true for
       // OpenAI; we set it explicitly to ensure consistent token tracking.
       includeUsage: true,
+      // v1.26.3 PATCH (Issue #443): when true AND a schema is supplied
+      // on the call's `response_format`, the SDK encodes
+      // `response_format: { type: 'json_schema', json_schema: { ... } }`
+      // on the wire. Without a schema, the SDK falls back to
+      // `json_object` — same shape the 15 non-pilot call sites
+      // produce today. The flag is sourced from
+      // `PREDEFINED_PROVIDERS[provider].supportsStructuredOutputs` and
+      // cached on the instance in the constructor.
+      supportsStructuredOutputs: this.supportsStructuredOutputs,
       // v1.23.0 P1.5 follow-up: token-key probe hook. Read the
       // current cached key for this baseURL at request time — this
       // closure captures `this` so each request consults the latest
@@ -151,7 +202,45 @@ export class OpenAICompatSdkClient implements LLMClient {
   }
 
   async createMessage(params: LLMClient['createMessage'] extends (p: infer P) => unknown ? P : never): Promise<string> {
-    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, seed, enableThinking, onFinish } = params;
+    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, seed, enableThinking, response_format, onFinish } = params;
+
+    // v1.26.3 PATCH (Issue #443): translate the public `response_format`
+    // shape into the AI SDK's `output` mechanism via `buildOutputArgs`
+    // (see `src/llm-sdk/output-args.ts` for the contract). Build once
+    // and spread at every generateText call site below — the URL
+    // fallback and reasoning-strip retry paths both reuse the same
+    // args. Without this shared object, a future retry path can
+    // silently omit `output` and re-introduce the v1.26.1 bug #443
+    // is closing.
+    //
+    // v1.26.3 PATCH follow-up (elegant fallback): if the per-baseURL
+    // strip cache says "this backend rejects json_object", skip the
+    // helper's `Output.json()` emission entirely — pass `{}` so no
+    // `response_format` field reaches the wire. The prober itself is
+    // stateless w.r.t. the response_format — the override happens here
+    // at the call site: getMode() returns the strongest mode the
+    // backend has accepted (default 'json_schema'); buildOutputArgs
+    // then dispatches based on the mode.
+    //
+    // v1.26.3 PATCH Phase A4: the previous 2-tier shouldStrip boolean
+    // is gone. The 3-tier mode ('json_schema' / 'json_object' /
+    // 'text_prompt') is consulted instead, and the demotion happens in
+    // the catch-block below.
+    const currentMode = this.outputModeProber.getMode(this.baseURL, model);
+    const outputArgs = buildOutputArgs(response_format, currentMode);
+
+    // [DEBUG-LOG v1.26.3 E2E] visible entry-point trace: response_format
+    // requested by caller, current mode from the prober, and the
+    // final outputArgs that will reach the wire.
+    //   - outputArgs has no `output` key     → Tier 2 (text_prompt)
+    //   - output.output.name === 'object'    → Tier 0 (json_schema with schema)
+    //   - output.output.name === 'json'      → Tier 1 (json_object, or Tier 0 with no schema)
+    console.debug(
+      `[OUTPUT-MODE-DEBUG] baseURL=${this.baseURL} ` +
+      `response_format=${JSON.stringify(response_format)} ` +
+      `mode=${currentMode} ` +
+      `outputArgs=${JSON.stringify(outputArgs)}`,
+    );
 
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
@@ -162,6 +251,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         ...(system ? { system } : {}),
         messages: messages.map((m) => ({ role: m.role, content: m.content })),
         maxOutputTokens: max_tokens,
+        ...outputArgs,
         providerOptions: this.buildProviderOptions({
           enableThinking,
           repetitionPenalty: repetition_penalty,
@@ -169,8 +259,111 @@ export class OpenAICompatSdkClient implements LLMClient {
         ...buildSamplingArgs({ temperature, top_p, seed }),
       });
       reportFinish(onFinish, result.finishReason, result.usage);
-      return result.text;
+      // Issue #443 follow-up (v1.26.x PATCH) — mirror createMessageWithOutput:
+      // LMStudio + Qwen3.5 routes structured output into `reasoning_content`
+      // and leaves the visible `content` empty. `generateText` returns the
+      // visible text only — reasoning arrives via the separate
+      // `result.reasoning` promise. Prepend it so parseJsonResponse's
+      // balanced-JSON finder can reach the JSON-shaped payload.
+      let reasoningContent = '';
+      try {
+        // AI SDK 6.0.230: `result.reasoning` is a sync getter returning
+        // Array<ReasoningOutput> in the DefaultGenerateTextResult class
+        // (line 5096-5098 of ai/dist/index.mjs). The .d.ts signature
+        // misleadingly declares `PromiseLike<Array<ReasoningOutput>>` —
+        // there is no actual Promise to await. `await` on a non-Thenable
+        // value wraps it in a resolved Promise immediately, so the code
+        // path still works; the cast below silences the await-thenable
+        // lint without changing runtime behaviour.
+        const reasoningRaw = await (result.reasoning as unknown as Promise<unknown>);
+        const reasoningArr: ReadonlyArray<{ text?: string }> = Array.isArray(reasoningRaw)
+          ? (reasoningRaw as ReadonlyArray<{ text?: string }>)
+          : typeof reasoningRaw === 'string'
+            ? [{ text: reasoningRaw }]
+            : [];
+        reasoningContent = reasoningArr.map((r) => r.text ?? '').join('');
+      } catch {
+        /* No reasoning field on this provider. */
+      }
+      const finalText = reasoningContent
+        ? prependReasoningForParse(reasoningContent, result.text)
+        : result.text;
+      return finalText;
     } catch (err) {
+      // v1.26.3 PATCH Path 2 fix (DocTpoint CHANGES_REQUESTED
+      // 2026-08-10T12:50:37Z) — catch `NoObjectGeneratedError` from
+      // AI SDK's `parseCompleteOutput` (line 3899 of
+      // `ai@6.0.230/dist/index.mjs`).
+      //
+      // WHY THIS IS A SEPARATE BRANCH (not folded into the APICallError
+      // arm): `NoObjectGeneratedError extends AISDKError`, NOT
+      // `APICallError`. It's thrown by the SDK after `generateText`
+      // succeeds — the wire call returned 200, the model emitted JSON,
+      // but `Output.json()` / `Output.object()` could not parse it
+      // (unclosed array, truncation, malformed structure). The 200 OK
+      // means none of the 400-class probes below apply, but the
+      // caller-side `parseJsonResponse` would still be able to repair
+      // the text if we surfaced it.
+      //
+      // Without this branch, the error propagates to the user as
+      // "Failed to connect to <provider> API" — a JSON-shape problem
+      // misreported as a connectivity/credentials error. The
+      // downstream `parseJsonResponse` + greedy regex + LLM repair
+      // path is bypassed entirely.
+      //
+      // CONTRACT: return `err.text` verbatim (no transformation, no
+      // truncation). Caller-side repair depends on the exact raw
+      // characters the model emitted — any rewrapping (e.g. truncating
+      // at position N, prepending "JSON: ") would defeat the
+      // greedy-regex + LLM repair heuristics. The integration test
+      // `caller-side parseJsonResponse can repair the returned text`
+      // pins this contract.
+      //
+      // SCOPE: only `createMessage` (the path the 16 production callers
+      // use). `createMessageStream` does not consume Output.json() /
+      // Output.object() and does not throw NoObjectGeneratedError, so
+      // it does not need this fix. The schema arm (Phase B migration)
+      // also throws NoObjectGeneratedError on malformed JSON, so this
+      // branch serves both the no-schema (Tier 1) and schema (Tier 0)
+      // paths.
+      if (NoObjectGeneratedError.isInstance(err)) {
+        const text = (err as Error & { text?: unknown }).text;
+        if (typeof text === 'string') {
+          reportFinish(onFinish, 'stop', undefined);
+          // Issue #443 follow-up (mirrors createMessageWithOutput):
+          // when parseCompleteOutput throws on the JSON-shaped payload
+          // that LMStudio + Qwen3.5 routes into reasoning_content,
+          // `err.text` is empty (only the visible content is captured).
+          // Reach into err.response.body for reasoning_content and
+          // prepend it so parseJsonResponse's thinking-block fallback
+          // (Layer 3) can recover the structured payload.
+          let reasoningContent = '';
+          try {
+            const body = (err as Error & {
+              response?: { body?: { choices?: Array<{ message?: { reasoning_content?: unknown } }> } };
+            }).response?.body;
+            const reasoningFromBody = body?.choices?.[0]?.message?.reasoning_content;
+            if (typeof reasoningFromBody === 'string' && reasoningFromBody) {
+              reasoningContent = reasoningFromBody;
+            } else if (Array.isArray(reasoningFromBody)) {
+              reasoningContent = reasoningFromBody.map((r) => (r as { text?: string }).text || '').join('');
+            }
+          } catch {
+            /* response body shape unexpected */
+          }
+          return reasoningContent
+            ? prependReasoningForParse(reasoningContent, text)
+            : text;
+        }
+        // Defensive fallback: NoObjectGeneratedError without a `.text`
+        // field (shouldn't happen per ai SDK contract, but if it does,
+        // surface the underlying cause so the user sees a real error
+        // instead of a silent "undefined" return). Falling through to
+        // the existing throw path below would otherwise lose this
+        // diagnostic.
+        throw err;
+      }
+
       // v1.23.0 P1.5: URL fallback for custom baseURLs.
       // If user's baseURL is missing /v1, AI-SDK sends to wrong path
       // and gets 404. Try candidate URLs and cache the first working
@@ -189,6 +382,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           ...(system ? { system } : {}),
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
           maxOutputTokens: max_tokens,
+          ...outputArgs,
           providerOptions: this.buildProviderOptions({
             enableThinking,
             repetitionPenalty: repetition_penalty,
@@ -242,8 +436,19 @@ export class OpenAICompatSdkClient implements LLMClient {
         err.statusCode === 400 &&
         enableThinking === false &&
         !this.reasoningStripProber.shouldStrip(this.baseURL) &&
-        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+        ReasoningStripProber.isReasoningFieldError(err.responseBody ?? err.message ?? '')
       ) {
+        // [DEBUG-LOG v1.26.3 E2E] reasoning-strip probe matched — the
+        // classifier returned true on err.responseBody. If this never
+        // fires during a real 400, the classifier still misreads the
+        // field; the responseBody excerpt proves what the provider
+        // actually said.
+        console.debug(
+          `[REASONING-STRIP-DEBUG] baseURL=${this.baseURL} ` +
+          `classifier matched. statusCode=${err.statusCode} ` +
+          `responseBody="${(err.responseBody ?? '').slice(0, 240)}" ` +
+          `→ retrying with enableThinking=true (no reasoningEffort on wire)`,
+        );
         const retryLanguageModel = this.getProvider(model, this.fetchImpl);
         const { generateText } = await import('ai');
         // Retry without reasoningEffort — pass enableThinking=true so
@@ -257,6 +462,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           ...(system ? { system } : {}),
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
           maxOutputTokens: max_tokens,
+          ...outputArgs,
           providerOptions: this.buildProviderOptions({
             enableThinking: true,
             repetitionPenalty: repetition_penalty,
@@ -267,8 +473,161 @@ export class OpenAICompatSdkClient implements LLMClient {
         // retry above throws, this line never runs and the cache is
         // untouched; the outer catch propagates the error.
         this.reasoningStripProber.markStrip(this.baseURL);
+        console.debug(`[REASONING-STRIP-DEBUG] baseURL=${this.baseURL} cache committed (markStrip). Future calls on this baseURL will skip the probe.`);
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
+      }
+
+      // v1.26.3 PATCH follow-up (Issue #443 elegant fallback): Layer-3
+      // 400-retry for `json_object` / `response_format` field rejection.
+      //
+      // LM Studio is the measured case (DocTpoint Issue #443 comment 1,
+      // 2026-08-09: 29 ms, `'response_format.type' must be 'json_schema'
+      // or 'text'`). The SDK's `Output.json()` arm encodes
+      // `response_format: { type: 'json_object' }` on the wire for every
+      // openai-compat provider — most accept it (the 6 cloud providers
+      // documented in their respective json_mode guides), but local
+      // servers may not. On 400 with a json_object/response_format field
+      // marker, retry exactly once with `output` omitted (i.e. no
+      // `response_format` on the wire at all), and cache the strip
+      // decision so subsequent calls skip the probe.
+      //
+      // v1.26.3 PATCH Phase A4 — 3-tier output-mode demotion chain.
+      //
+      // Replaces the v1.26.2 2-tier json-object-strip branch. The
+      // chain demotes one tier weaker per matched 400:
+      //
+      //   currentMode='json_schema' + isJsonSchemaFieldError(err)  →  retry at 'json_object'
+      //   currentMode='json_object'  + isJsonObjectFieldError(err)  →  retry at 'text_prompt'
+      //   currentMode='text_prompt'                              →  no demotion (floor)
+      //
+      // Order matters: this block runs AFTER the reasoning-strip branch
+      // above (so a 400 with a reasoning-field marker goes to the
+      // reasoning path first) and BEFORE the token-key branch below
+      // (token-key is coarse — any 400 → swap max_tokens — and would
+      // otherwise swallow a structured-output 400, mark the baseURL as
+      // max_completion_tokens, and skip the mode demotion entirely).
+      //
+      // Guards:
+      //   - response_format must have been passed on the call site. If
+      //     the caller did not opt in, no response_format was on the
+      //     wire, no mode demotion applies. Mirrors the reasoning-strip
+      //     `enableThinking === false` guard.
+
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        response_format !== undefined
+      ) {
+        let lastErrBody: string = err.responseBody ?? err.message ?? '';
+        // currentMode is read fresh inside the for-loop body — don't
+        // hoist, the loop re-reads after markMode writes, and a stale
+        // hoist would defeat the chain's per-iteration visibility.
+
+      // Cache write policy (3-tier chain):
+      //
+      //   markMode BEFORE the retry (tentatively), so that if the retry
+      //   ALSO throws, the catch block sees the demoted mode and
+      //   progresses to the next tier instead of looping back to Tier
+      //   0. If the retry succeeds, the cache is already at the
+      //   correct value — no extra write needed. If the retry fails,
+      //   the NEXT tier's demotion branch runs; if THAT retry also
+      //   fails, we UNDO the tentative write before propagating so a
+      //   transient retry failure does not permanently downgrade the
+      //   baseURL. This mirrors the v1.26.2 strip-probe "commit AFTER
+      //   retry success" intent but is structured for a multi-step
+      //   chain rather than a single retry.
+      //
+      // Why tentatively-write instead of tracking retry state in a
+      //   local variable: the chain is a sequence of independent
+      //   catch → retry cycles that recurse through the SAME catch
+      //   block. Each cycle needs to see the mode corresponding to
+      //   the LAST attempt, not the original. Writing to the cache is
+      //   the simplest way to make the "current mode" state visible
+      //   across these cycles.
+      //
+      // Implementation note — why an inner for-loop instead of nested
+      //   catches: nested catches can't re-enter their parent's catch
+      //   (the throw exits the entire catch block). The chain needs to
+      //   iterate so that a retry's error can re-trigger the demotion
+      //   branch with the (now-updated) mode.
+      let tentativeDemotion: OutputMode | null = null;
+      // Up to 2 demotions: Tier 0→1, then Tier 1→2.
+      for (let chainAttempt = 0; chainAttempt < 2; chainAttempt++) {
+        const currentMode = this.outputModeProber.getMode(this.baseURL, model);
+
+        // Determine target tier based on current mode and last error body.
+        let demotedMode: OutputMode | null = null;
+        if (currentMode === 'json_schema' && OutputModeProber.isJsonSchemaFieldError(lastErrBody)) {
+          demotedMode = 'json_object';
+        } else if (currentMode === 'json_object' && OutputModeProber.isJsonObjectFieldError(lastErrBody)) {
+          demotedMode = 'text_prompt';
+        } else {
+          // No demotion applies at this level. Break out cleanly —
+          // either the 400 doesn't match any classifier (chain
+          // doesn't apply) or we've exhausted the floor.
+          break;
+        }
+
+        // [DEBUG-LOG v1.26.3 E2E] demotion step.
+        console.debug(
+          `[OUTPUT-MODE-DEMOTE-DEBUG] baseURL=${this.baseURL} ` +
+          `tier=${currentMode} → tier=${demotedMode}. ` +
+          `responseBody="${lastErrBody.slice(0, 240)}"`,
+        );
+
+        // Tentative write BEFORE retry so the next iteration sees the
+        // demoted mode if the retry throws.
+        this.outputModeProber.markMode(this.baseURL, model, demotedMode);
+        tentativeDemotion = demotedMode;
+
+        try {
+          const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+          const { generateText } = await import('ai');
+          // Tier 2 retry injects the JSON enforcement prefix; Tier 1
+          // does not (Output.json() is a wire-shape constraint; no
+          // prompt change needed).
+          const retrySystem =
+            demotedMode === 'text_prompt'
+              ? (system ? `${JSON_ENFORCEMENT_SYSTEM_PREFIX}\n\n${system}` : JSON_ENFORCEMENT_SYSTEM_PREFIX)
+              : system;
+          const result = await generateText({
+            model: retryLanguageModel,
+            ...(retrySystem ? { system: retrySystem } : {}),
+            messages: messages.map((m) => ({ role: m.role, content: m.content })),
+            maxOutputTokens: max_tokens,
+            ...buildOutputArgs(response_format, demotedMode),
+            providerOptions: this.buildProviderOptions({
+              enableThinking,
+              repetitionPenalty: repetition_penalty,
+            }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+            ...buildSamplingArgs({ temperature, top_p, seed }),
+          });
+          console.debug(`[OUTPUT-MODE-DEMOTE-DEBUG] baseURL=${this.baseURL} retry succeeded. Cache committed: mode=${demotedMode}.`);
+          reportFinish(onFinish, result.finishReason, result.usage);
+          return result.text;
+        } catch (retryErr) {
+          // Retry at the demoted tier also failed. Update lastErrBody
+          // for the next iteration's classifier check (the loop will
+          // decide whether to demote one more tier or break).
+          if (APICallError.isInstance(retryErr)) {
+            lastErrBody = retryErr.responseBody ?? retryErr.message ?? '';
+          }
+          console.debug(`[OUTPUT-MODE-DEMOTE-DEBUG] baseURL=${this.baseURL} retry at tier=${demotedMode} failed. Continuing chain.`);
+        }
+      }
+      // Chain exhausted without success. Roll back any tentative
+      // writes so a transient retry failure doesn't poison the cache.
+      if (tentativeDemotion !== null) {
+        this.outputModeProber.markMode(this.baseURL, model, 'json_schema');
+        console.debug(`[OUTPUT-MODE-DEMOTE-DEBUG] baseURL=${this.baseURL} chain exhausted without success. Rolling back tentative writes; cache reset to json_schema.`);
+      }
+      // Re-throw the original 400 so the caller sees the same
+      // APICallError that started the chain. The token-key probe
+      // below is a coarse "any 400" mechanism — we don't want it to
+      // trigger on a structured-output-rejection 400 (that's already
+      // been correctly diagnosed above).
+      throw err;
       }
 
       // v1.23.0 P1.5 follow-up: token-key probe-then-retry fallback.
@@ -282,9 +641,10 @@ export class OpenAICompatSdkClient implements LLMClient {
       // baseURL — means the first retry already happened (and failed),
       // so retrying again would loop.
       //
-      // Runs AFTER the reasoning-strip branch above: the reasoning
-      // branch handles a more specific 400 case (the message clearly
-      // names a reasoning-related field). Token-key is the broader
+      // Runs AFTER the reasoning-strip + json-object-strip branches
+      // above: those branches handle more specific 400 cases (the
+      // error message clearly names a reasoning-related field, or
+      // `json_object` / `response_format`). Token-key is the broader
       // catch-all for any other 400.
       if (APICallError.isInstance(err) && err.statusCode === 400 && !this.tokenKeyProber.getCachedKey(this.baseURL)) {
         // The default wire format is `max_tokens`. If the gateway
@@ -297,6 +657,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           ...(system ? { system } : {}),
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
           maxOutputTokens: max_tokens,
+          ...outputArgs,
           providerOptions: this.buildProviderOptions({
             enableThinking,
             repetitionPenalty: repetition_penalty,
@@ -305,6 +666,357 @@ export class OpenAICompatSdkClient implements LLMClient {
         });
         reportFinish(onFinish, result.finishReason, result.usage);
         return result.text;
+      }
+
+      throw mapAiSdkError(err);
+    }
+  }
+
+  /**
+   * v1.26.3 PATCH Phase B (Issue #443) — typed-output variant.
+   *
+   * Returns `{ text, output?, outputMode, finishReason, usage? }` where
+   * `output` is the SDK-parsed object when Tier 0 (json_schema on the
+   * wire via `Output.object({schema, name})`) succeeds. For Tier 1
+   * (json_object) and Tier 2 (text_prompt) successes, `output` is
+   * undefined — the caller falls back to `parseJsonResponse(text)`.
+   *
+   * Why a separate method (not extending `createMessage`):
+   *   - `createMessage` returns `Promise<string>` and is called by 16
+   *     production sites; changing the return type is a breaking change
+   *     to the public LLMClient interface. Adding a sibling method
+   *     keeps both contracts clean.
+   *   - Callers that want the typed object opt in via the optional
+   *     method; callers that don't are unaffected.
+   *   - The 6 P0 Phase B migrations (`seed-selector`, `query-keywords`,
+   *     `merge-triage`, `link-orphan`, `fix-dead-link`, `QueryView`)
+   *     will use this method with Zod-inferred types. The remaining
+   *     10+ callers stay on `createMessage` + parseJsonResponse.
+   *
+   * Implementation: same shape as `createMessage` — Path 2 fix
+   * (NoObjectGeneratedError → `err.text`), 3-tier output-mode demotion
+   * chain on 400, URL fallback on isUrlError. Only the success path
+   * differs: it returns `result.output` (parsed object) in addition
+   * to `result.text` (raw text).
+   *
+   * Backward compat: callers that check `if (client.createMessageWithOutput)`
+   * before calling this method can fall back to `createMessage` for
+   * clients (Anthropic / OpenAI / Codex) that don't implement it yet.
+   */
+  async createMessageWithOutput<T = unknown>(params: {
+    model: string;
+    max_tokens: number;
+    system?: string;
+    messages: Array<{ role: 'user' | 'assistant'; content: string | MessageContentPart[] }>;
+    response_format?: { type: 'json_object'; schema?: Record<string, unknown> | z.ZodType };
+    task?: string;
+    enableThinking?: boolean;
+    temperature?: number;
+    top_p?: number;
+    seed?: number;
+    repetition_penalty?: number;
+    onFinish?: (meta: LLMFinishMeta) => void;
+  }): Promise<{
+    text: string;
+    output?: T;
+    outputMode: OutputMode;
+    finishReason: LLMFinishReason;
+    usage?: LLMUsage;
+  }> {
+    const { model, max_tokens, system, messages, response_format, enableThinking, repetition_penalty, temperature, top_p, seed, onFinish } = params;
+
+    const currentMode = this.outputModeProber.getMode(this.baseURL, model);
+    const outputArgs = buildOutputArgs(response_format, currentMode);
+
+    console.debug(
+      `[OUTPUT-MODE-DEBUG] (typed) baseURL=${this.baseURL} ` +
+      `response_format=${JSON.stringify(response_format)} ` +
+      `mode=${currentMode} ` +
+      `outputArgs=${JSON.stringify(outputArgs)}`,
+    );
+
+    try {
+      const languageModel = this.getProvider(model, this.fetchImpl);
+      const { generateText } = await import('ai');
+      const result = await generateText({
+        model: languageModel,
+        ...(system ? { system } : {}),
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        maxOutputTokens: max_tokens,
+        ...outputArgs,
+        providerOptions: this.buildProviderOptions({
+          enableThinking,
+          repetitionPenalty: repetition_penalty,
+        }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+        ...buildSamplingArgs({ temperature, top_p, seed }),
+      });
+      reportFinish(onFinish, result.finishReason, result.usage);
+      // Issue #443 follow-up (v1.26.x PATCH) — LMStudio + Qwen3.5 routes the
+      // structured output into `reasoning_content` and leaves the visible
+      // `content` empty. AI SDK's `generateText` does not include reasoning
+      // in `result.text` (it goes into the separate `result.reasoning`
+      // promise, mirroring the streaming pattern at line 1078). Without
+      // this prepend, `result.text` is `''` and parseJsonResponse sees
+      // empty body — losing the JSON-shaped reasoning payload. Mirrors
+      // the streaming variant at line 1078–1093.
+      let reasoningContent = '';
+      try {
+        // See createMessage comment for the PromiseLike<Array<...>> vs
+        // sync-getter mismatch in the AI SDK 6.0.230 type signature.
+        const reasoningRaw = await (result.reasoning as unknown as Promise<unknown>);
+        const reasoningArr: ReadonlyArray<{ text?: string }> = Array.isArray(reasoningRaw)
+          ? (reasoningRaw as ReadonlyArray<{ text?: string }>)
+          : typeof reasoningRaw === 'string'
+            ? [{ text: reasoningRaw }]
+            : [];
+        reasoningContent = reasoningArr.map((r) => r.text ?? '').join('');
+      } catch {
+        /* No reasoning field on this provider. */
+      }
+      const text = reasoningContent
+        ? prependReasoningForParse(reasoningContent, result.text)
+        : result.text;
+      return {
+        text,
+        output: result.output as T | undefined,
+        outputMode: currentMode,
+        finishReason: result.finishReason,
+        usage: result.usage,
+      };
+    } catch (err) {
+      // v1.26.3 PATCH Path 2 fix (mirrors createMessage):
+      // catch NoObjectGeneratedError → return err.text verbatim so
+      // caller-side parseJsonResponse can repair the malformed JSON.
+      // The contract is identical to createMessage — see the long
+      // comment there for the rationale (parseCompleteOutput throws on
+      // malformed JSON; without this catch, the raw text never reaches
+      // the caller).
+      if (NoObjectGeneratedError.isInstance(err)) {
+        const text = (err as Error & { text?: unknown }).text;
+        if (typeof text === 'string') {
+          reportFinish(onFinish, 'stop', undefined);
+          // Issue #443 follow-up: when Output.object's parseCompleteOutput
+          // throws (e.g. LMStudio + Qwen3.5 emits `{"": ""}` under grammar
+          // constraint), `err.text` only contains the visible `content`
+          // field (often empty). The JSON-shaped reasoning payload lives
+          // in `err.response.body.choices[0].message.reasoning_content` —
+          // AI SDK does not promote it onto the error. Reach in via the
+          // response body and prepend it so parseJsonResponse's
+          // thinking-block fallback (Layer 3) can recover the structured
+          // payload.
+          let reasoningContent = '';
+          try {
+            const body = (err as Error & {
+              response?: { body?: { choices?: Array<{ message?: { reasoning_content?: unknown } }> } };
+            }).response?.body;
+            const reasoningFromBody = body?.choices?.[0]?.message?.reasoning_content;
+            if (typeof reasoningFromBody === 'string' && reasoningFromBody) {
+              reasoningContent = reasoningFromBody;
+            } else if (Array.isArray(reasoningFromBody)) {
+              reasoningContent = reasoningFromBody.map((r) => (r as { text?: string }).text || '').join('');
+            }
+          } catch {
+            /* response body shape unexpected */
+          }
+          const finalText = reasoningContent
+            ? prependReasoningForParse(reasoningContent, text)
+            : text;
+
+          // v1.26.3 PATCH follow-up (Issue #443 E2E 2026-08-11): per-model
+          // placeholder → text_prompt demotion. When LMStudio + Qwen3.5 emits
+          // `{"": ""}` under grammar-constrained decoding (thinking mode
+          // collides with the json_schema grammar, model bails with the
+          // 5-token minimum-valid-object), the 400 demotion chain never fires
+          // (no 400 — the backend accepted the wire). The placeholder is a
+          // SEMANTIC failure, not a protocol failure.
+          //
+          // Demote DIRECTLY to text_prompt (skipping json_object): the root
+          // cause is grammar-constrained decoding, and json_object's
+          // Output.json() still applies a (weak) grammar — only text_prompt
+          // drops it. The cache write is PER-MODEL so a healthy sibling model
+          // on the same gateway (gemma-4-12b) is never demoted.
+          if (isPlaceholderJsonText(finalText)) {
+            console.debug(
+              `[OUTPUT-MODE-PLACEHOLDER-DEMOTE] baseURL=${this.baseURL} model=${model} placeholder detected, retrying at tier=text_prompt`,
+            );
+            try {
+              const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+              const { generateText } = await import('ai');
+              const retrySystem = system
+                ? `${JSON_ENFORCEMENT_SYSTEM_PREFIX}\n\n${system}`
+                : JSON_ENFORCEMENT_SYSTEM_PREFIX;
+              const retryResult = await generateText({
+                model: retryLanguageModel,
+                ...(retrySystem ? { system: retrySystem } : {}),
+                messages: messages.map((m) => ({ role: m.role, content: m.content })),
+                maxOutputTokens: max_tokens,
+                ...buildOutputArgs(response_format, 'text_prompt'),
+                providerOptions: this.buildProviderOptions({
+                  enableThinking,
+                  repetitionPenalty: repetition_penalty,
+                }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+                ...buildSamplingArgs({ temperature, top_p, seed }),
+              });
+              reportFinish(onFinish, retryResult.finishReason, retryResult.usage);
+              // Cache committed per-model ONLY on retry success (mirror the
+              // 400 chain's success-only policy) — a transient failure must
+              // not permanently downgrade the model.
+              this.outputModeProber.markMode(this.baseURL, model, 'text_prompt');
+              console.debug(
+                `[OUTPUT-MODE-PLACEHOLDER-DEMOTE] baseURL=${this.baseURL} model=${model} retry succeeded. Cache committed: text_prompt`,
+              );
+              return {
+                text: retryResult.text,
+                output: retryResult.output as T | undefined,
+                outputMode: 'text_prompt',
+                finishReason: retryResult.finishReason,
+                usage: retryResult.usage,
+              };
+            } catch {
+              console.debug(
+                `[OUTPUT-MODE-PLACEHOLDER-DEMOTE] baseURL=${this.baseURL} model=${model} retry failed. Returning raw placeholder text.`,
+              );
+            }
+          }
+
+          return {
+            text: finalText,
+            output: undefined,
+            outputMode: currentMode,
+            finishReason: 'stop',
+            usage: undefined,
+          };
+        }
+        throw err;
+      }
+
+      // URL fallback (same as createMessage).
+      if (isUrlError(err)) {
+        const mappedErr = mapAiSdkError(err);
+        const resolved = await resolveBaseUrlWithFallback({
+          baseUrl: this.baseURL,
+          testFn: (url) => this.probeBaseURL(url),
+          originalError: mappedErr,
+        });
+        const retryLanguageModel = this.getProvider(model, this.fetchImpl, resolved);
+        const { generateText } = await import('ai');
+        const result = await generateText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          ...outputArgs,
+          providerOptions: this.buildProviderOptions({
+            enableThinking,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        reportFinish(onFinish, result.finishReason, result.usage);
+        return {
+          text: result.text,
+          output: result.output as T | undefined,
+          outputMode: currentMode,
+          finishReason: result.finishReason,
+          usage: result.usage,
+        };
+      }
+
+      // 3-tier demotion chain on 400 (same logic as createMessage).
+      // Only differs in the success branch: returns typed shape instead
+      // of bare string.
+      if (
+        APICallError.isInstance(err) &&
+        err.statusCode === 400 &&
+        response_format !== undefined
+      ) {
+        let lastErrBody: string = err.responseBody ?? err.message ?? '';
+        let tentativeDemotion: OutputMode | null = null;
+        for (let chainAttempt = 0; chainAttempt < 2; chainAttempt++) {
+          const iterMode = this.outputModeProber.getMode(this.baseURL, model);
+          let demotedMode: OutputMode | null = null;
+          if (iterMode === 'json_schema' && OutputModeProber.isJsonSchemaFieldError(lastErrBody)) {
+            demotedMode = 'json_object';
+          } else if (iterMode === 'json_object' && OutputModeProber.isJsonObjectFieldError(lastErrBody)) {
+            demotedMode = 'text_prompt';
+          } else {
+            break;
+          }
+
+          console.debug(
+            `[OUTPUT-MODE-DEMOTE-DEBUG] (typed) baseURL=${this.baseURL} ` +
+            `tier=${iterMode} → tier=${demotedMode}. ` +
+            `responseBody="${lastErrBody.slice(0, 240)}"`,
+          );
+
+          this.outputModeProber.markMode(this.baseURL, model, demotedMode);
+          tentativeDemotion = demotedMode;
+
+          try {
+            const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+            const { generateText } = await import('ai');
+            const retrySystem =
+              demotedMode === 'text_prompt'
+                ? (system ? `${JSON_ENFORCEMENT_SYSTEM_PREFIX}\n\n${system}` : JSON_ENFORCEMENT_SYSTEM_PREFIX)
+                : system;
+            const result = await generateText({
+              model: retryLanguageModel,
+              ...(retrySystem ? { system: retrySystem } : {}),
+              messages: messages.map((m) => ({ role: m.role, content: m.content })),
+              maxOutputTokens: max_tokens,
+              ...buildOutputArgs(response_format, demotedMode),
+              providerOptions: this.buildProviderOptions({
+                enableThinking,
+                repetitionPenalty: repetition_penalty,
+              }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+              ...buildSamplingArgs({ temperature, top_p, seed }),
+            });
+            reportFinish(onFinish, result.finishReason, result.usage);
+            return {
+              text: result.text,
+              output: result.output as T | undefined,
+              outputMode: demotedMode,
+              finishReason: result.finishReason,
+              usage: result.usage,
+            };
+          } catch (retryErr) {
+            if (APICallError.isInstance(retryErr)) {
+              lastErrBody = retryErr.responseBody ?? retryErr.message ?? '';
+            }
+            console.debug(`[OUTPUT-MODE-DEMOTE-DEBUG] (typed) baseURL=${this.baseURL} retry at tier=${demotedMode} failed.`);
+          }
+        }
+        if (tentativeDemotion !== null) {
+          this.outputModeProber.markMode(this.baseURL, model, 'json_schema');
+        }
+        throw err;
+      }
+
+      // Token-key probe (coarse any-400 fallback).
+      if (APICallError.isInstance(err) && err.statusCode === 400 && !this.tokenKeyProber.getCachedKey(this.baseURL)) {
+        this.tokenKeyProber.setCachedKey(this.baseURL, 'max_completion_tokens');
+        const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+        const { generateText } = await import('ai');
+        const result = await generateText({
+          model: retryLanguageModel,
+          ...(system ? { system } : {}),
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          maxOutputTokens: max_tokens,
+          ...outputArgs,
+          providerOptions: this.buildProviderOptions({
+            enableThinking,
+            repetitionPenalty: repetition_penalty,
+          }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+          ...buildSamplingArgs({ temperature, top_p, seed }),
+        });
+        reportFinish(onFinish, result.finishReason, result.usage);
+        return {
+          text: result.text,
+          output: result.output as T | undefined,
+          outputMode: currentMode,
+          finishReason: result.finishReason,
+          usage: result.usage,
+        };
       }
 
       throw mapAiSdkError(err);
@@ -540,7 +1252,7 @@ export class OpenAICompatSdkClient implements LLMClient {
       }
 
       if (reasoningContent) {
-        fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+        fullText = prependReasoningForParse(reasoningContent, fullText);
       }
       return fullText;
     } catch (err) {
@@ -584,7 +1296,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           }
         } catch { /* no reasoning */ }
         if (reasoningContent) {
-          fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+          fullText = prependReasoningForParse(reasoningContent, fullText);
         }
         return fullText;
       }
@@ -609,7 +1321,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         err.statusCode === 400 &&
         enableThinking === false &&
         !this.reasoningStripProber.shouldStrip(this.baseURL) &&
-        ReasoningStripProber.isReasoningFieldError(err.message ?? '')
+        ReasoningStripProber.isReasoningFieldError(err.responseBody ?? err.message ?? '')
       ) {
         const retryLanguageModel = this.getProvider(model, this.streamFetchImpl);
         const { streamText } = await import('ai');
@@ -644,7 +1356,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         // next call gets a fresh probe.
         this.reasoningStripProber.markStrip(this.baseURL);
         if (reasoningContent) {
-          fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+          fullText = prependReasoningForParse(reasoningContent, fullText);
         }
         return fullText;
       }
@@ -682,7 +1394,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           }
         } catch { /* no reasoning */ }
         if (reasoningContent) {
-          fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+          fullText = prependReasoningForParse(reasoningContent, fullText);
         }
         return fullText;
       }

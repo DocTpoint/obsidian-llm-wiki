@@ -17,6 +17,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { localizeWelcomeNote, type LocalizeArgs } from '../../core/localize-welcome-note';
+import { WelcomeTranslationLLMSchema } from '../../llm-sdk/output-schemas';
 
 const ENGLISH_BODY = `---
 title: Wiki Founding Note
@@ -190,6 +191,113 @@ describe('localizeWelcomeNote — JSON repair (LLM adds stray prose)', () => {
       }),
     );
 
+    expect(result.ok).toBe(true);
+    expect(result.body).toBe(CHINESE_TRANSLATED);
+  });
+});
+
+// === typed-output migration (v1.26.3 PATCH Issue #443 expanded scope) ===
+// Commit 11 — localize-welcome-note now uses createMessageWithOutput when
+// available; falls back to createMessage + extractTranslatedField on legacy
+// clients. Schema enforcement kills the `<|channel>thought` / ```json```
+// wraparound failure mode observed in user's 2026-08-10 LMStudio log.
+describe('localizeWelcomeNote — typed-output migration (#443 expanded scope)', () => {
+  it('passes WelcomeTranslationLLMSchema on the wire via response_format.schema (legacy client)', async () => {
+    const createMessage = vi.fn().mockResolvedValue(JSON.stringify({ translated: CHINESE_TRANSLATED }));
+    await localizeWelcomeNote(makeArgs({
+      targetLanguage: 'zh',
+      llmClient: { createMessage },
+    }));
+    expect(createMessage).toHaveBeenCalled();
+    const calls = createMessage.mock.calls as unknown as Array<[unknown]>;
+    const args = calls[0]?.[0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBe(WelcomeTranslationLLMSchema);
+  });
+
+  it('uses createMessageWithOutput when client implements it (Tier 0 path)', async () => {
+    const createMessageWithOutput = vi.fn().mockResolvedValue({
+      text: JSON.stringify({ translated: CHINESE_TRANSLATED }),
+      output: { translated: CHINESE_TRANSLATED },
+      outputMode: 'json_schema',
+      finishReason: 'stop',
+    });
+    const createMessage = vi.fn();
+    const result = await localizeWelcomeNote(makeArgs({
+      targetLanguage: 'zh',
+      llmClient: { createMessage, createMessageWithOutput },
+    }));
+    expect(createMessageWithOutput).toHaveBeenCalled();
+    expect(createMessage).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    expect(result.body).toBe(CHINESE_TRANSLATED);
+  });
+
+  it('falls back to createMessage + extractTranslatedField when client lacks createMessageWithOutput', async () => {
+    const createMessage = vi.fn().mockResolvedValue(
+      `<|channel>thought reasoning preface\n\n\`\`\`json\n${JSON.stringify({ translated: CHINESE_TRANSLATED })}\n\`\`\``
+    );
+    const result = await localizeWelcomeNote(makeArgs({
+      targetLanguage: 'zh',
+      llmClient: { createMessage },
+    }));
+    expect(createMessage).toHaveBeenCalled();
+    // Even with LMStudio's `<|channel>thought` + ```json``` wrapping, the
+    // legacy parseJsonResponse + greedy regex path still extracts the
+    // translated body. The schema-based Tier 0 path replaces this in the
+    // happy case (test above), but the legacy fallback remains functional
+    // for older clients without the typed-output method.
+    expect(result.ok).toBe(true);
+    expect(result.body).toBe(CHINESE_TRANSLATED);
+  });
+});
+
+// === P1 regression guard (code-review 2026-08-11) ===
+// parseJsonResponse returns the FIRST balanced top-level object. When the
+// model nests the translation (`{"result": {...}}`) or emits a preamble
+// object, parseJsonResponse grabs the WRONG object → `.translated` undefined.
+// extractTranslatedField (key-directed walk) is the fallback that still
+// extracts correctly. These tests pin that the two-tier decode keeps the
+// English-fallback regression from the code-review finding.
+describe('localizeWelcomeNote — nested / preamble object fallback (code-review P1)', () => {
+  it('recovers from a nested {"result": {"translated": ...}} response', async () => {
+    const createMessage = vi.fn().mockResolvedValue(
+      JSON.stringify({ result: { translated: CHINESE_TRANSLATED } })
+    );
+    const result = await localizeWelcomeNote(makeArgs({
+      targetLanguage: 'zh',
+      llmClient: { createMessage },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.body).toBe(CHINESE_TRANSLATED);
+  });
+
+  it('recovers from a preamble object + separate translated object', async () => {
+    // Model emits `{"thinking":"done"}` then `{"translated": ...}` on two
+    // lines. parseJsonResponse grabs the first object (no translated key);
+    // extractTranslatedField walks to the second.
+    const createMessage = vi.fn().mockResolvedValue(
+      `{"thinking":"done"}\n${JSON.stringify({ translated: CHINESE_TRANSLATED })}`
+    );
+    const result = await localizeWelcomeNote(makeArgs({
+      targetLanguage: 'zh',
+      llmClient: { createMessage },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.body).toBe(CHINESE_TRANSLATED);
+  });
+
+  it('recovers from a thought preface containing braces before the fenced JSON', async () => {
+    // LMStudio-style `<|channel>thought` that itself mentions a JSON-like
+    // `{a:1}` fragment. parseJsonResponse's extractBalancedJson grabs the
+    // preface's `{a:1}`; greedy regex grabs everything and fails. The
+    // key-directed walk finds the real translated object.
+    const createMessage = vi.fn().mockResolvedValue(
+      `<|channel>thought consider {a:1}\n\n\`\`\`json\n${JSON.stringify({ translated: CHINESE_TRANSLATED })}\n\`\`\``
+    );
+    const result = await localizeWelcomeNote(makeArgs({
+      targetLanguage: 'zh',
+      llmClient: { createMessage },
+    }));
     expect(result.ok).toBe(true);
     expect(result.body).toBe(CHINESE_TRANSLATED);
   });

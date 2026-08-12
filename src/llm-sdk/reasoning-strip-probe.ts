@@ -3,6 +3,7 @@
 // v1.26.0 Batch 6: Layer-3 of the 4-layer fallback for force-disable thinking.
 //
 // Some openai-compat backends (notably Gemini-via-OpenAI-shim, Issue #137)
+import { classifyFieldError } from './shared-rejection-verbs';
 // reject `reasoning_effort: 'none'` with HTTP 400. We catch the 400 by
 // inspecting the error message for a *rejection verb* AND a *field marker*
 // (two-marker pattern, mirrors the established
@@ -48,19 +49,14 @@
 //   granularity would over-invalidate the cache.
 
 /**
- * Rejection verbs — what a backend says when it does NOT accept a field.
- * Single-substring on the lowercased error message. Chosen to match the
- * patterns an HTTP 400 with a JSON body typically uses. "Unrecognized" /
- * "unknown" / "invalid value" are the most common.
+ * Rejection verbs shared with OutputModeProber via
+ * src/llm-sdk/shared-rejection-verbs.ts (v1.26.3 PATCH simplify
+ * round). Originally 6 verbs in this file; the shared constant adds
+ * 'must be' / 'should be' which only widen matches — every string
+ * the previous local list matched still matches. The reasoning
+ * classifier has never asserted a max-set invariant, so broadening
+ * is safe.
  */
-const REJECTION_VERBS = [
-  'unrecognized',
-  'unknown',
-  'invalid value',
-  'unsupported',
-  'not allowed',
-  'not supported',
-] as const;
 
 /**
  * Field markers — names of the reasoning-related fields, as they would
@@ -116,19 +112,19 @@ export class ReasoningStripProber {
   }
 
   /**
-   * Does an error message indicate that a reasoning-related field was
-   * the cause of an HTTP 400?
+   * Does an error indicate that a reasoning-related field was the
+   * cause of an HTTP 400?
    *
-   * v1.26.0 Batch 6 CR-2: two-marker classifier. BOTH conditions must
-   * hold (AND):
+   * v1.26.0 Batch 6 CR-2: two-marker classifier. BOTH conditions
+   * must hold (AND):
    *
-   *   1. The message contains a REJECTION_VERB substring (e.g.
+   *   1. The body contains a REJECTION_VERB substring (e.g.
    *      "unrecognized", "unknown", "invalid value"). Without this,
    *      messages like "context length exceeded for kimi-k2-thinking"
    *      or "Model 'glm-4.6-thinking' not found" (which contain the
    *      bare word 'thinking' but are NOT field rejections) would
    *      trigger the strip.
-   *   2. The message contains a FIELD_MARKER substring. Without this,
+   *   2. The body contains a FIELD_MARKER substring. Without this,
    *      generic "invalid value" 400s (unrelated to reasoning) would
    *      trigger the strip.
    *
@@ -138,11 +134,20 @@ export class ReasoningStripProber {
    * request; false positives (unrelated 400s that match) permanently
    * disable force-disable-thinking for the baseURL, which is much
    * worse. Mirrors the [[isPdfRelatedLlmError]] classifier's design.
+   *
+   * IMPORTANT — the input MUST be the raw response body (e.g.
+   * `err.responseBody` from an AI SDK `APICallError`), NOT
+   * `err.message`. The AI SDK's APICallError.message field is a
+   * fixed template ("Provider returned error") and does NOT include
+   * the provider's actual error text — the body is in
+   * `responseBody` instead. The original probe was written against
+   * `err.message`, which is why it silently never fired against real
+   * provider 400s in production — the first real E2E on LM Studio
+   * 0.4.20 + qwythos-9b-claude-mythos-5-1m-mlx (2026-08-10)
+   * surfaced it. The v1.26.3 PATCH follow-up fixed the call site to
+   * pass `err.responseBody`.
    */
-  static isReasoningFieldError(message: string): boolean {
-    const lower = message.toLowerCase();
-    const hasVerb = REJECTION_VERBS.some((v) => lower.includes(v));
-    const hasField = FIELD_MARKERS.some((f) => lower.includes(f));
-    return hasVerb && hasField;
+  static isReasoningFieldError(body: string): boolean {
+    return classifyFieldError(body, FIELD_MARKERS);
   }
 }

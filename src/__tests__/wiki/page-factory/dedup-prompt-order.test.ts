@@ -16,13 +16,14 @@
 //      point (measured: ~30 s for a mid-list insert vs ~1.2 s for
 //      append).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { PROMPTS } from '../../../prompts';
 import {
   resolvePagePath,
   type PathResolutionContext,
 } from '../../../wiki/page-factory/path-resolution';
 import type { LLMWikiSettings } from '../../../types';
+import { PathResolutionLLMSchema } from '../../../llm-sdk/output-schemas';
 
 describe('resolveEntityDedup template — invariant prefix first', () => {
   it('renders the existing-pages list before the per-call candidate block', () => {
@@ -101,5 +102,67 @@ describe('resolvePagePath — append-only candidate list order (ctime ascending)
     const p = capture.prompt;
     expect(p).toBeDefined();
     expect(p!.indexOf('entities/first.md')).toBeLessThan(p!.indexOf('entities/second.md'));
+  });
+});
+
+// === typed-output migration (v1.26.3 PATCH Issue #443 expanded scope) ===
+// Commit 8 — resolveEntityDedup uses createMessageWithOutput when available;
+// falls back to createMessage on legacy clients.
+describe('resolvePagePath — typed-output migration (#443 expanded scope)', () => {
+  // The LLM dedup call only fires when same-type pages exist (sameTypePages
+  // > 0) AND ConflictResolver finds no slug/alias match (cr.action is not
+  // 'merge'). Name 'BrandNewThing' deliberately doesn't match any existing
+  // entity, so resolvePagePath reaches the LLM call instead of short-circuiting.
+  const existingEntityCtx = (client: unknown) => ({
+    settings: { wikiFolder: 'wiki', slugCase: 'preserve' } as LLMWikiSettings,
+    app: {
+      vault: {
+        getMarkdownFiles: () => [
+          { path: 'wiki/entities/Alpha.md', basename: 'Alpha', stat: { ctime: 1000 } },
+          { path: 'wiki/entities/Beta.md', basename: 'Beta', stat: { ctime: 2000 } },
+        ],
+        read: async () => '# Alpha\nExisting page.',
+      },
+    },
+    async tryReadFile(): Promise<string | null> { return null; },
+    async createOrUpdateFile(): Promise<void> {},
+    getClient() { return client; },
+    async buildSystemPrompt(): Promise<string> { return 'system'; },
+  });
+
+  it('passes PathResolutionLLMSchema on the wire via response_format.schema (legacy client)', async () => {
+    const createMessage = vi.fn(async (..._args: unknown[]) => JSON.stringify({ match: false }));
+    const ctx = existingEntityCtx({ createMessage }) as unknown as Parameters<typeof resolvePagePath>[0];
+    await resolvePagePath(ctx, 'BrandNewThing', 'entity', 'A summary.');
+    expect(createMessage).toHaveBeenCalled();
+    const calls = createMessage.mock.calls as unknown as Array<[unknown]>;
+    const args = calls[0]?.[0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBe(PathResolutionLLMSchema);
+  });
+
+  it('uses createMessageWithOutput when the client implements it (Tier 0 path)', async () => {
+    const createMessageWithOutput = vi.fn(async (_: unknown) => ({
+      text: JSON.stringify({ match: false }),
+      output: { match: false },
+      outputMode: 'json_schema',
+      finishReason: 'stop',
+    }));
+    const createMessage = vi.fn();
+    const ctx = existingEntityCtx({ createMessage, createMessageWithOutput }) as unknown as Parameters<typeof resolvePagePath>[0];
+    const result = await resolvePagePath(ctx, 'BrandNewThing', 'entity', 'A summary.');
+    expect(createMessageWithOutput).toHaveBeenCalled();
+    expect(createMessage).not.toHaveBeenCalled();
+    const calls = createMessageWithOutput.mock.calls as unknown as Array<[unknown]>;
+    const args = calls[0]?.[0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBe(PathResolutionLLMSchema);
+    expect(result.path).toBe('wiki/entities/BrandNewThing.md'); // no match → slug path (preserve case)
+  });
+
+  it('falls back to createMessage when client lacks createMessageWithOutput', async () => {
+    const createMessage = vi.fn(async (..._args: unknown[]) => JSON.stringify({ match: false }));
+    const ctx = existingEntityCtx({ createMessage }) as unknown as Parameters<typeof resolvePagePath>[0];
+    const result = await resolvePagePath(ctx, 'BrandNewThing', 'entity', 'A summary.');
+    expect(createMessage).toHaveBeenCalled();
+    expect(result.path).toBe('wiki/entities/BrandNewThing.md');
   });
 });

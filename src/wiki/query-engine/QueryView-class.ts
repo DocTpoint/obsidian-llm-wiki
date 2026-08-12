@@ -31,6 +31,7 @@ import { extractThinkingPanel } from './renderers/thinking-extract';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { bindWikiLinkClicks } from './renderers/wiki-link-clicks';
 import { renderHistoryMessage as buildHistoryMessage, addCopyButton } from './renderers/history-message';
+import { QueryViewValueSchema } from '../../llm-sdk/output-schemas';
 import {
   scrollToBottom,
   scrollToStartOfCurrentTurn,
@@ -394,15 +395,35 @@ export class QueryView extends ItemView {
       // v1.24.0 #208: log resolved query model for e2e verification.
       const queryModel = resolveModelForTask(this.plugin.settings, 'query');
       console.debug('[QueryView] evaluateConversationValue model:', queryModel);
-      const response = await this.plugin.llmClient.createMessage({
-        model: queryModel,
-        max_tokens: TOKENS_QUERY_SAVE_DEDUP,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        ...(this.plugin.settings.disableThinking ? { enableThinking: false } : {}),
-      });
 
-      const parsed = await parseJsonResponse(response) as { valuable?: boolean; reason?: string } | null;
+      // v1.26.3 PATCH Phase B (Issue #443): typed-output path. Prefer
+      // `result.output` when the client implements createMessageWithOutput
+      // and the Tier 0 (json_schema) parse succeeds; fall back to
+      // parseJsonResponse(text).
+      let parsed: { valuable?: boolean; reason?: string } | null;
+      if (this.plugin.llmClient.createMessageWithOutput) {
+        const typedResult = await this.plugin.llmClient.createMessageWithOutput<{ valuable?: boolean; reason?: string }>({
+          task: 'query-view-evaluate',
+          model: queryModel,
+          max_tokens: TOKENS_QUERY_SAVE_DEDUP,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object', schema: QueryViewValueSchema },
+          ...(this.plugin.settings.disableThinking ? { enableThinking: false } : {}),
+        });
+        parsed = typedResult.output && typeof typedResult.output === 'object'
+          ? typedResult.output
+          : await parseJsonResponse(typedResult.text);
+      } else {
+        const response = await this.plugin.llmClient.createMessage({
+          model: queryModel,
+          max_tokens: TOKENS_QUERY_SAVE_DEDUP,
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          ...(this.plugin.settings.disableThinking ? { enableThinking: false } : {}),
+        });
+        parsed = await parseJsonResponse(response);
+      }
+
       if (parsed?.valuable) {
         this.plugin.settings.lastOfferedQueryHash = this.computeConversationHash();
         void this.plugin.saveSettings();

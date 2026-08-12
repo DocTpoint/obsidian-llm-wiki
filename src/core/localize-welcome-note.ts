@@ -23,6 +23,9 @@
 
 import type { LLMClient } from '../types';
 import { TOKENS_PAGE_GENERATION } from '../constants';
+import { WelcomeTranslationLLMSchema } from '../llm-sdk/output-schemas';
+import { callLlm } from './llm-dispatch';
+import { parseJsonResponse } from './json';
 
 /**
  * max_tokens for the translation LLM call. We use the ingest-scale
@@ -130,21 +133,45 @@ export async function localizeWelcomeNote(args: LocalizeArgs): Promise<LocalizeR
 
   try {
     console.debug(`[localizeWelcomeNote] target=${targetLanguage}, model=${model}, max_tokens=${TRANSLATION_MAX_TOKENS}, bodyLen=${englishBody.length}`);
-    const raw = await llmClient.createMessage({
+    // v1.26.3 PATCH Issue #443 expanded scope: typed-output path.
+    // WelcomeTranslationLLMSchema ({translated: string}) on the wire as Tier 0
+    // json_schema — LMStudio accepts, no <|channel>thought / ```json``` fence
+    // wraparound to work around. The schema enforces the wire shape; the
+    // legacy `extractTranslatedField` helper (regex fence stripper) is now
+    // dead — parseJsonResponse handles the same variants uniformly with
+    // greedy regex + repair. Single decode path for both modern and legacy
+    // clients.
+    const translateArgs = {
+      task: 'welcome-translate' as const,
       model,
       max_tokens: TRANSLATION_MAX_TOKENS,
       system,
-      messages: [{ role: 'user', content: englishBody }],
+      messages: [{ role: 'user' as const, content: englishBody }],
+      response_format: { type: 'json_object' as const, schema: WelcomeTranslationLLMSchema },
       // Note: no signal param in current LLMClient interface, but caller
       // can pass signal via signal on the request and we ignore at this
       // level. Future: plumb through AbortSignal once interface widens.
       ...(signal ? {} : {}),
-    });
+    };
+    const raw = await callLlm(llmClient, translateArgs);
+    // Two-tier decode:
+    //   1. parseJsonResponse — strips ``` fences, <think>/<thinking> blocks,
+    //      and extracts the first balanced JSON object. Handles the common
+    //      case and the LMStudio `<|channel>thought` + ```json``` wrap.
+    //   2. extractTranslatedField — key-directed fallback. parseJsonResponse
+    //      returns the FIRST balanced top-level object, which can be the
+    //      WRONG one when the model nests the translation (`{"result":{...}}`)
+    //      or emits a preamble object. The key-directed walk finds the
+    //      `"translated"` key's own object. Restored per code-review P1
+    //      (2026-08-11): without it, 3 legacy response shapes regress to the
+    //      English fallback on createMessage-only clients.
+    const parsed = await parseJsonResponse(raw) as { translated?: unknown } | null;
+    const translated = typeof parsed?.translated === 'string'
+      ? parsed.translated
+      : extractTranslatedField(raw);
     console.debug(`[localizeWelcomeNote] LLM returned. rawLen=${raw?.length ?? 0}, preview=${JSON.stringify((raw ?? '').slice(0, 200))}`);
-
-    const translated = extractTranslatedField(raw);
     if (!translated) {
-      console.warn(`[localizeWelcomeNote] extractTranslatedField returned null. Full raw: ${JSON.stringify(raw).slice(0, 500)}`);
+      console.warn(`[localizeWelcomeNote] translated body missing. Full raw: ${JSON.stringify(raw).slice(0, 500)}`);
       return {
         ok: false,
         body: englishBody,
@@ -167,37 +194,25 @@ export async function localizeWelcomeNote(args: LocalizeArgs): Promise<LocalizeR
 }
 
 /**
- * Extract the `translated` field from an LLM response. Tolerant of
- * common variations:
- *   - Plain JSON: {"translated": "..."}
- *   - Wrapped in prose: "Sure, here is: {..."}
- *   - Stray code fences (rarely, but possible)
+ * Key-directed `translated`-field extraction, used as a fallback when
+ * parseJsonResponse returns the WRONG top-level object (nested `{"result":{...}}`
+ * or a preamble object). Walks from the literal `"translated"` key back to its
+ * owning object's `{`, then brace-balances forward to the matching `}`.
+ *
+ * Why this still exists after the schema migration (code-review P1, 2026-08-11):
+ * Tier 0 schema enforcement produces clean `{"translated": "..."}`, but the
+ * legacy createMessage-only path (Anthropic / OpenAI / Codex) and Tier 1/2
+ * demotion on local backends can still emit prose/nested/duplicated-object
+ * shapes. parseJsonResponse grabs the FIRST balanced object; the key-directed
+ * walk grabs the one that actually carries `translated`.
  */
 function extractTranslatedField(raw: string): string | null {
   if (!raw || typeof raw !== 'string') return null;
 
-  // Try direct JSON parse first.
-  try {
-    const obj: unknown = JSON.parse(raw);
-    if (obj && typeof obj === 'object' && 'translated' in obj) {
-      const translated = (obj as Record<string, unknown>).translated;
-      if (typeof translated === 'string') {
-        return translated;
-      }
-    }
-  } catch {
-    // Fall through to prose-wrapped extraction.
-  }
-
-  // Look for the JSON object containing `translated`. We locate the
-  // opening `{` immediately before the `"translated"` key, then walk
-  // the string to find its matching closing `}` (respecting JSON
-  // string escaping so escaped quotes inside the value don't end the
-  // match early).
   const keyIndex = raw.indexOf('"translated"');
   if (keyIndex === -1) return null;
 
-  // Find the `{` that starts this object — scan backwards from the key.
+  // Find the `{` that starts the object containing the key — scan backwards.
   let openBrace = -1;
   for (let i = keyIndex - 1; i >= 0; i--) {
     const ch = raw[i];
@@ -206,8 +221,8 @@ function extractTranslatedField(raw: string): string | null {
   }
   if (openBrace === -1) return null;
 
-  // Walk forward from openBrace, tracking string state + escapes, to
-  // find the matching closing `}`.
+  // Brace-balance forward from openBrace, tracking string + escape state so
+  // escaped quotes / braces inside the translated body don't end the match.
   let depth = 0;
   let inString = false;
   let escape = false;
@@ -228,10 +243,8 @@ function extractTranslatedField(raw: string): string | null {
         try {
           const obj: unknown = JSON.parse(candidate);
           if (obj && typeof obj === 'object' && 'translated' in obj) {
-            const translated = (obj as Record<string, unknown>).translated;
-            if (typeof translated === 'string') {
-              return translated;
-            }
+            const t = (obj as Record<string, unknown>).translated;
+            if (typeof t === 'string') return t;
           }
         } catch {
           return null;

@@ -22,6 +22,21 @@ function clientSpy() {
   return { client, sentBodies };
 }
 
+/** Build a client implementing createMessageWithOutput (Phase B typed path). */
+function typedClientSpy() {
+  const sentBodies: SentBody[] = [];
+  const createMessage = vi.fn(async (body: SentBody) => {
+    sentBodies.push(body);
+    return 'ok';
+  });
+  const createMessageWithOutput = vi.fn(async (body: SentBody) => {
+    sentBodies.push(body);
+    return { text: 'ok', output: undefined, outputMode: 'json_schema', finishReason: 'stop' };
+  });
+  const client = { createMessage, createMessageWithOutput } as unknown as LLMClient;
+  return { client, sentBodies, createMessageWithOutput };
+}
+
 const CALL = { model: 'm', max_tokens: 100, messages: [{ role: 'user' as const, content: 'hi' }] };
 
 function sent(settings: Partial<WrapperSettings>, params: SentBody = {}): SentBody {
@@ -99,5 +114,58 @@ describe('wrapWithAdvancedSettings — per-step accounting', () => {
       wrapWithAdvancedSettings(client, settings).createMessage({ ...CALL, task: 'dedup' }),
     ).rejects.toThrow('boom');
     expect(new Map(taskUsageSince(before)).get('dedup')?.calls).toBe(1);
+  });
+});
+
+// v1.26.3 PATCH Phase B (Issue #443): the typed-output variant must pass
+// through the same seam — task accounting + advanced settings injection
+// — or Phase B callers (seed-selector / query-keywords / merge-triage /
+// link-orphan / fix-dead-link / QueryView) would bypass the wrapper and
+// record under 'untagged' with no temperature/top_p/seed override.
+describe('wrapWithAdvancedSettings — typed-output path (createMessageWithOutput)', () => {
+  const settings = { maxTokensPerCall: 0 } as WrapperSettings;
+
+  it('forwards advanced settings to the typed call', async () => {
+    const { client, sentBodies, createMessageWithOutput } = typedClientSpy();
+    const wrapped = wrapWithAdvancedSettings(client, {
+      maxTokensPerCall: 0,
+      extractionTemperature: 0.7,
+      extractionTopP: 0.8,
+      samplingSeed: 42,
+    });
+    await wrapped.createMessageWithOutput!({ ...CALL } as Parameters<NonNullable<LLMClient['createMessageWithOutput']>>[0]);
+    expect(createMessageWithOutput).toHaveBeenCalledTimes(1);
+    expect(sentBodies[0].temperature).toBe(0.7);
+    expect(sentBodies[0].top_p).toBe(0.8);
+    expect(sentBodies[0].seed).toBe(42);
+  });
+
+  it('records typed call under the label the caller gave', async () => {
+    const { client, createMessageWithOutput } = typedClientSpy();
+    const before = snapshotTaskUsage();
+    await wrapWithAdvancedSettings(client, settings)
+      .createMessageWithOutput!({ ...CALL, task: 'merge-triage' } as Parameters<NonNullable<LLMClient['createMessageWithOutput']>>[0]);
+    expect(createMessageWithOutput).toHaveBeenCalledTimes(1);
+    expect(new Map(taskUsageSince(before)).get('merge-triage')?.calls).toBe(1);
+  });
+
+  it('leaves a caller-provided value alone on the typed path', async () => {
+    const { client, sentBodies, createMessageWithOutput } = typedClientSpy();
+    const wrapped = wrapWithAdvancedSettings(client, {
+      maxTokensPerCall: 0,
+      extractionTemperature: 0.7,
+    });
+    await wrapped.createMessageWithOutput!({
+      ...CALL,
+      temperature: 0.1,
+    } as Parameters<NonNullable<LLMClient['createMessageWithOutput']>>[0]);
+    expect(createMessageWithOutput).toHaveBeenCalledTimes(1);
+    expect(sentBodies[0].temperature).toBe(0.1);
+  });
+
+  it('does NOT add createMessageWithOutput when the client lacks it', async () => {
+    const { client } = clientSpy();
+    const wrapped = wrapWithAdvancedSettings(client, settings);
+    expect(wrapped.createMessageWithOutput).toBeUndefined();
   });
 });

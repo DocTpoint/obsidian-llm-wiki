@@ -28,6 +28,8 @@ import { normalizeLLMPath } from '../../core/prompt-builders';
 import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { appendAliases, type AliasesContext } from './aliases';
+import { PathResolutionLLMSchema } from '../../llm-sdk/output-schemas';
+import { callLlm } from '../../core/llm-dispatch';
 
 /** Page shape consumed by the dedup candidate pre-filter. */
 export interface DedupCandidatePage {
@@ -98,7 +100,13 @@ export interface ResolvedPathResult {
 export interface PathResolutionContext extends AliasesContext {
   app: unknown;
   settings: import('../../types').LLMWikiSettings;
-  getClient(): { createMessage: (...args: unknown[]) => Promise<string> } | null;
+  getClient(): {
+    createMessage: (...args: unknown[]) => Promise<string>;
+    // v1.26.3 PATCH Issue #443 expanded scope: typed-output path. Optional
+    // so legacy clients (Anthropic/OpenAI/Codex) and test mocks without the
+    // method still type-check; the call site falls back to createMessage.
+    createMessageWithOutput?: (...args: unknown[]) => Promise<{ text: string }>;
+  } | null;
   buildSystemPrompt(mode: 'full' | 'compact' | 'merge' | 'index'): Promise<string>;
 }
 
@@ -204,8 +212,8 @@ export async function resolvePagePath(
       existing_pages: pagesList,
     });
 
-    const response = await client.createMessage({
-      task: 'dedup',
+    const resolveArgs = {
+      task: 'dedup' as const,
       model: resolveModelForTask(ctx.settings, 'ingest'),
       max_tokens: TOKENS_DEDUP_RESOLUTION,
       // Slim selector: the dedup decision is same-type and the matching
@@ -213,10 +221,15 @@ export async function resolvePagePath(
       // Structure section is load-bearing here. 'full' (~8.5K chars of
       // templates/naming/maintenance) added pure prefill cost per call.
       system: await ctx.buildSystemPrompt('index'),
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
+      messages: [{ role: 'user' as const, content: prompt }],
+      // v1.26.3 PATCH Issue #443 expanded scope: typed-output path.
+      // PathResolutionLLMSchema ({match?: boolean, path?: string|null}) on the
+      // wire as Tier 0 json_schema — LMStudio accepts, no parse-error fallback
+      // to slugPath.
+      response_format: { type: 'json_object' as const, schema: PathResolutionLLMSchema },
       ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
-    });
+    };
+    const response = await callLlm(client, resolveArgs);
 
     const parsed = await parseJsonResult(response);
 

@@ -16,7 +16,7 @@
 //     kept tight to control classify-token cost.
 
 import { TFile } from 'obsidian';
-import type { EntityInfo, ConceptInfo, LLMWikiSettings, SourceContext } from '../../types';
+import type { EntityInfo, ConceptInfo, LLMWikiSettings, LLMClient, SourceContext } from '../../types';
 import { slugKeys } from '../../core/slug';
 import { PROMPTS } from '../../prompts';
 import { parseJsonResponse } from '../../core/json';
@@ -25,6 +25,7 @@ import { resolveModelForTask } from '../../core/model-resolver';
 import { getSectionLabels, applySectionLabels } from '../system-prompts';
 import { firstQuotesForPrompt } from './contextualize';
 import { renderTemplate } from '../../core/template-renderer';
+import { MergeTriageSchema, type MergeTriage } from '../../llm-sdk/output-schemas';
 
 /** Strategy selected by the LLM for handling new information vs. an existing page. */
 export type MergeStrategy = 'merge' | 'skip' | 'complementary' | 'contradictory';
@@ -54,11 +55,13 @@ export interface MergeTriageResult {
 /**
  * Minimal context contract required by `classifyMergeNeed`. Production
  * callers pass the real EngineContext; tests inject a mock with the same
- * shape.
+ * shape. `getClient()` returns `LLMClient | null` so the typed-output
+ * path (`createMessageWithOutput`) is available when the client
+ * implements it (Phase B).
  */
 export interface MergeTriageContext {
   settings: LLMWikiSettings;
-  getClient(): { createMessage: (...args: unknown[]) => Promise<string> } | null;
+  getClient(): LLMClient | null;
   buildSystemPrompt(mode: 'full' | 'compact' | 'merge'): Promise<string>;
 }
 
@@ -100,27 +103,41 @@ export async function classifyMergeNeed(
   // Issue #328 Phase 1 follow-up: removed appendTagVocabularyToPrompt wrapper
   // because the system layer now always injects the same section once.
   const finalPrompt = applySectionLabels(triagePrompt, ctx.settings);
+  const systemPrompt = await ctx.buildSystemPrompt('merge');
+  const model = resolveModelForTask(ctx.settings, 'ingest');
+  const disableThinking = ctx.settings.disableThinking;
 
-  const response = await client.createMessage({
-    task: 'merge-triage',
-    model: resolveModelForTask(ctx.settings, 'ingest'),
-    max_tokens: TOKENS_MERGE_TRIAGE,
-    system: await ctx.buildSystemPrompt('merge'),
-    messages: [{ role: 'user', content: finalPrompt }],
-    response_format: { type: 'json_object' },
-    ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
-  });
-
-  const parsed = (await parseJsonResponse(response)) as {
-    strategy?: string;
-    items?: Array<{
-      kind?: string;
-      content?: string;
-      target_section?: string;
-      reason?: string;
-    }>;
-    reason?: string;
-  } | null;
+  // v1.26.3 PATCH Phase B (Issue #443): typed-output path. Prefer
+  // `result.output` when the client implements createMessageWithOutput
+  // and the Tier 0 (json_schema) parse succeeds; fall back to
+  // parseJsonResponse(text) otherwise. The strategy/items validation
+  // below is unchanged — it runs on whatever shape we recovered.
+  let parsed: MergeTriage | null;
+  if (client.createMessageWithOutput) {
+    const result = await client.createMessageWithOutput<MergeTriage>({
+      task: 'merge-triage',
+      model,
+      max_tokens: TOKENS_MERGE_TRIAGE,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: finalPrompt }],
+      response_format: { type: 'json_object', schema: MergeTriageSchema },
+      ...(disableThinking ? { enableThinking: false } : {}),
+    });
+    parsed = result.output && typeof result.output === 'object'
+      ? result.output
+      : await parseJsonResponse(result.text) as MergeTriage | null;
+  } else {
+    const response = await client.createMessage({
+      task: 'merge-triage',
+      model,
+      max_tokens: TOKENS_MERGE_TRIAGE,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: finalPrompt }],
+      response_format: { type: 'json_object' },
+      ...(disableThinking ? { enableThinking: false } : {}),
+    });
+    parsed = await parseJsonResponse(response) as MergeTriage | null;
+  }
 
   if (!parsed) throw new Error('merge triage: empty response');
   if (!(MERGE_STRATEGIES as readonly string[]).includes(parsed.strategy ?? '')) {

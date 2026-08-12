@@ -6,7 +6,7 @@
 // happens to produce the lemma on its own, "skipped correctly" and "never
 // called" leave an identical vault. The code path has to be read, not the diff.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createMockContext, createMockFile } from '../__support__/engine-context';
 import { SourceAnalyzer } from '../../wiki/source-analyzer';
 import { TFile } from 'obsidian';
@@ -114,5 +114,98 @@ describe('SourceAnalyzer — patch 16 lemma guarantee wiring', () => {
     // FGF23); the cap of 2 is hit, so the pushed Klotho is skipped.
     expect((result?.entities ?? []).map(e => e.name)).not.toContain('Klotho');
     expect((result?.entities ?? []).length).toBe(2);
+  });
+});
+
+// === typed-output migration (v1.26.3 PATCH Issue #443 expanded scope) ===
+// Commit 3 — lemma-classify uses createMessageWithOutput when the client
+// supports it; falls back to createMessage on legacy clients.
+describe('SourceAnalyzer.classifyLemmaType — typed-output migration', () => {
+  it('passes LemmaClassifyLLMSchema on the wire via response_format.schema (legacy client)', async () => {
+    const { ctx } = createMockContext({
+      vaultFiles: { [NOTE]: BODY },
+      // extraction + lemma-classify both return valid JSON
+      llmResponses: [
+        EXTRACTION_WITHOUT_LEMMA,
+        '{"kind": "entity"}',
+      ],
+    });
+    const client = ctx.getClient()!;
+    const spy = vi.spyOn(client, 'createMessage');
+    const analyzer = new SourceAnalyzer(ctx);
+    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+    await analyzer.analyzeSource(createMockFile(NOTE) as unknown as TFile);
+    expect(spy).toHaveBeenCalled();
+    // The lemma-classify call must carry the schema
+    const lemmaCall = spy.mock.calls.find(
+      (c) => (c[0] as { task?: string }).task === 'lemma-classify'
+    );
+    expect(lemmaCall).toBeDefined();
+    const args = lemmaCall![0] as { response_format?: { schema?: unknown } };
+    expect(args.response_format?.schema).toBeDefined();
+  });
+
+  it('uses createMessageWithOutput for lemma-classify when client supports it', async () => {
+    const { ctx } = createMockContext({
+      vaultFiles: { [NOTE]: BODY },
+      // legacy createMessage NOT used; mock via createMessageWithOutput only
+      llmResponses: [],
+    });
+    const client = ctx.getClient()!;
+    let lemmaTaskCalls = 0;
+    (client as unknown as { createMessageWithOutput: (params: unknown) => Promise<{ text: string; outputMode?: string }> }).createMessageWithOutput =
+      async (params: unknown) => {
+        const p = params as { task?: string };
+        if (p.task === 'lemma-classify') {
+          lemmaTaskCalls++;
+          return { text: '{"kind": "entity"}', outputMode: 'json_schema' };
+        }
+        // extract: return a SourceAnalysis without Klotho so lemma-classify fires
+        return { text: EXTRACTION_WITHOUT_LEMMA, outputMode: 'json_schema' };
+      };
+    const withOutputSpy = vi.spyOn(
+      client as unknown as { createMessageWithOutput: (params: unknown) => Promise<unknown> },
+      'createMessageWithOutput'
+    );
+    const legacySpy = vi.spyOn(client, 'createMessage');
+    const analyzer = new SourceAnalyzer(ctx);
+    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+    await analyzer.analyzeSource(createMockFile(NOTE) as unknown as TFile);
+    // lemma-classify went through typed path; extract also typed
+    expect(withOutputSpy).toHaveBeenCalled();
+    expect(lemmaTaskCalls).toBeGreaterThan(0);
+    const lemmaCall = withOutputSpy.mock.calls.find(
+      (c) => (c[0] as { task?: string }).task === 'lemma-classify'
+    );
+    expect(lemmaCall).toBeDefined();
+    expect(legacySpy).not.toHaveBeenCalled();
+  });
+
+  it('falls back to createMessage when client lacks createMessageWithOutput', async () => {
+    const { ctx } = createMockContext({
+      vaultFiles: { [NOTE]: BODY },
+      // Order: batch 1 (extract) → batch 2 (extract, mostly empty) → lemma-classify.
+      // The default mock fallback returns `{"entities":[],...}` for any call past
+      // the supplied list, so we explicitly include the lemma-classify answer.
+      llmResponses: [
+        EXTRACTION_WITHOUT_LEMMA, // idx 0 — batch 1
+        '{"entities": [], "concepts": []}', // idx 1 — batch 2 (empty round)
+        '{"kind": "entity"}', // idx 2 — lemma-classify
+      ],
+    });
+    const client = ctx.getClient()!;
+    expect((client as unknown as { createMessageWithOutput?: unknown }).createMessageWithOutput).toBeUndefined();
+    const spy = vi.spyOn(client, 'createMessage');
+    const analyzer = new SourceAnalyzer(ctx);
+    // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+    const result = await analyzer.analyzeSource(createMockFile(NOTE) as unknown as TFile);
+    expect(spy).toHaveBeenCalled();
+    // Find lemma-classify among the calls
+    const lemmaCall = spy.mock.calls.find(
+      (c) => (c[0] as { task?: string }).task === 'lemma-classify'
+    );
+    expect(lemmaCall).toBeDefined();
+    // Lemma was extracted via legacy path → entity added
+    expect((result?.entities ?? []).some(e => e.name === 'Klotho')).toBe(true);
   });
 });

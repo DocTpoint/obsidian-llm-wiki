@@ -1,6 +1,7 @@
 // Core Wiki data structures
 
 import { App } from 'obsidian';
+import type { z } from 'zod';
 import type { RejectionReason } from './core/source-requirements';
 
 /**
@@ -144,6 +145,20 @@ export interface ProviderConfig {
   apiKeyPlaceholderZh?: string; // Chinese placeholder
   requiresBaseUrl: boolean;
   authMode: 'api-key' | 'none' | 'codex-oauth';
+  /**
+   * v1.26.3 PATCH (Issue #443): whether the openai-compat SDK client
+   * should create the compat provider with
+   * `supportsStructuredOutputs: true`. When true AND a caller supplies
+   * a `schema` on `response_format`, the AI SDK encodes
+   * `response_format: { type: 'json_schema', json_schema: { ... } }`
+   * on the wire. Local servers (LM Studio / Ollama / self-hosted
+   * `custom`) accept this form; cloud compat servers
+   * (openrouter / deepseek / kimi / glm) accept `json_object` and
+   * should NOT receive `json_schema` (they may 400 on it). The
+   * openai / anthropic / codex paths go through their own SDK
+   * clients and are unaffected by this flag.
+   */
+  supportsStructuredOutputs?: boolean;
 }
 
 // Plugin settings
@@ -653,7 +668,19 @@ export interface LLMClient {
     max_tokens: number;
     system?: string;
     messages: Array<{ role: 'user' | 'assistant'; content: string | MessageContentPart[] }>;
-    response_format?: { type: 'json_object' };
+    response_format?:
+      | { type: 'json_object' }
+      // v1.26.3 PATCH pilot (Issue #443): a schema can now travel with
+      // the response_format request. When the openai-compat SDK client
+      // is created with `supportsStructuredOutputs: true` (currently
+      // LM Studio / Ollama / `provider: custom`) AND a schema is
+      // supplied, the AI SDK's `responseFormat: { type: 'json', schema }`
+      // path is used, which the compat provider encodes as
+      // `response_format: { type: 'json_schema', json_schema: { ... } }`
+      // on the wire. Without a schema, the SDK falls back to
+      // `json_object` (unchanged behaviour for the existing 15 call sites
+      // that have not yet opted in).
+      | { type: 'json_object'; schema?: Record<string, unknown> };
     cacheBreakpoint?: number;
     /**
      * Which step of the pipeline is asking. Purely for accounting: an ingest is
@@ -696,6 +723,49 @@ export interface LLMClient {
     // of tokens" opt in; callers that do not, see no change.
     onFinish?: (meta: LLMFinishMeta) => void;
   }): Promise<string>;
+
+  // v1.26.3 PATCH Phase B (Issue #443): typed-output variant. Opt-in
+  // for callers that want the AI SDK's `Output.object({schema})`
+  // parsed-object result (Tier 0 success) instead of the raw text.
+  // Returns the same `text` for backward compatibility, plus an
+  // `output` field that's populated when `Output.object` parsed
+  // successfully (Tier 0 on supported backends).
+  //
+  // OPTIONAL — clients that don't implement it fall back to
+  // `createMessage` + caller-side `parseJsonResponse`. Anthropic /
+  // OpenAI / Codex clients do not implement this method yet (their
+  // 3 callers — `seed-selector` etc. — currently use no schema; the
+  // 6 P0 Phase B migrations only touch openai-compat callers).
+  //
+  // When `outputMode === 'text_prompt'` or `json_object`, `output`
+  // is undefined (no SDK parse happened — the model emitted free-form
+  // text) and the caller is expected to run `parseJsonResponse(text)`
+  // to recover the structured object. This matches the existing
+  // 16-callers contract (Tier 1 path).
+  createMessageWithOutput?<T = unknown>(params: {
+    model: string;
+    max_tokens: number;
+    system?: string;
+    messages: Array<{ role: 'user' | 'assistant'; content: string | MessageContentPart[] }>;
+    // v1.26.3 PATCH Phase B: `schema` accepts either a raw JSON Schema
+    // (legacy callers) or a Zod schema (Phase B migrations — the Zod
+    // schema is the single source of truth for both the Tier 0 wire
+    // shape and the Tier 1/2 fallback parseJsonResponse validation).
+    response_format?: { type: 'json_object'; schema?: Record<string, unknown> | z.ZodType };
+    task?: string;
+    enableThinking?: boolean;
+    temperature?: number;
+    top_p?: number;
+    seed?: number;
+    repetition_penalty?: number;
+    onFinish?: (meta: LLMFinishMeta) => void;
+  }): Promise<{
+    text: string;
+    output?: T;
+    outputMode: 'json_schema' | 'json_object' | 'text_prompt';
+    finishReason: LLMFinishReason;
+    usage?: LLMUsage;
+  }>;
 
   createMessageStream?(params: {
     model: string;
@@ -937,7 +1007,8 @@ export const PREDEFINED_PROVIDERS: Record<string, ProviderConfig> = {
     apiKeyPlaceholderEn: 'ollama (no Key required)',
     apiKeyPlaceholderZh: 'ollama (无需Key)',
     requiresBaseUrl: false,
-    authMode: 'none'
+    authMode: 'none',
+    supportsStructuredOutputs: true
   },
   lmstudio: {
     id: 'lmstudio',
@@ -949,7 +1020,8 @@ export const PREDEFINED_PROVIDERS: Record<string, ProviderConfig> = {
     apiKeyPlaceholderEn: 'lmstudio (optional)',
     apiKeyPlaceholderZh: 'lmstudio（可选）',
     requiresBaseUrl: false,
-    authMode: 'none'
+    authMode: 'none',
+    supportsStructuredOutputs: true
   },
   custom: {
     id: 'custom',
@@ -961,7 +1033,8 @@ export const PREDEFINED_PROVIDERS: Record<string, ProviderConfig> = {
     apiKeyPlaceholderEn: 'API Key',
     apiKeyPlaceholderZh: 'API Key',
     requiresBaseUrl: true,
-    authMode: 'api-key'
+    authMode: 'api-key',
+    supportsStructuredOutputs: true
   },
   'anthropic-compatible': {
     id: 'anthropic-compatible',

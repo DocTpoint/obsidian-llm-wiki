@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { APICallError } from 'ai';
 import { ReasoningStripProber } from '../../llm-sdk/reasoning-strip-probe';
+import { OutputModeProber } from '../../llm-sdk/output-mode-prober';
 
 // v1.26.0 Batch 6: per-baseURL "strip reasoningEffort" cache, plus the
 // message-match classifier that decides whether a 400 is reasoning-related
@@ -118,5 +120,62 @@ describe('ReasoningStripProber.isReasoningFieldError — two-marker (verb + fiel
   it('handles empty / whitespace input safely', () => {
     expect(ReasoningStripProber.isReasoningFieldError('')).toBe(false);
     expect(ReasoningStripProber.isReasoningFieldError('   ')).toBe(false);
+  });
+});
+
+// v1.26.3 PATCH follow-up — REGRESSION GUARD for the bug surfaced by
+// real E2E on LM Studio 0.4.20 + qwythos-9b-claude-mythos-5-1m-mlx
+// (2026-08-10):
+//
+// AI SDK's APICallError.message is a FIXED template string
+// ("Provider returned error") — it does NOT include the provider's
+// actual error body. The provider body lives in `err.responseBody`.
+// Both `ReasoningStripProber.isReasoningFieldError` and
+// `OutputModeProber.isJsonObjectFieldError` MUST be called
+// with `err.responseBody`, NOT `err.message`. The previous tests
+// passed raw strings to the classifier in isolation, which masked
+// the bug — no test simulated the real APICallError shape.
+//
+// This test simulates the real shape and pins the contract: the
+// classifier must match the responseBody (real body) and MUST NOT
+// match the message (AI SDK template).
+describe('Classifier input contract: responseBody vs message (regression guard for v1.26.3 PATCH follow-up bug)', () => {
+  it('ReasoningStripProber matches the responseBody (Gemini reasoning_effort 400)', () => {
+    // Real Gemini response body: "Invalid value for 'reasoning_effort'".
+    const err = new APICallError({
+      message: 'Provider returned error',  // ← AI SDK template (NOT the real body)
+      statusCode: 400,
+      responseHeaders: {},
+      url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      requestBodyValues: {},
+      responseBody: '{"error":{"message":"Invalid value for \'reasoning_effort\': \'none\' is not supported"}}',
+    });
+
+    // The bug: classifier was called with err.message — "Provider returned
+    // error" — no reasoning-field marker, no rejection verb → false.
+    expect(ReasoningStripProber.isReasoningFieldError(err.message ?? '')).toBe(false);
+    // The fix: classifier is called with err.responseBody — real body
+    // contains "invalid value" + "reasoning_effort" → true.
+    expect(ReasoningStripProber.isReasoningFieldError(err.responseBody ?? '')).toBe(true);
+  });
+
+  it('OutputModeProber.isJsonObjectFieldError matches the responseBody (LM Studio json_object 400)', () => {
+    // Real LM Studio 0.4.20 response body (DocTpoint Issue #443 comment 1
+    // 2026-08-09 + user E2E 2026-08-10 on qwythos-9b-claude-mythos-5-1m-mlx).
+    const err = new APICallError({
+      message: 'Provider returned error',  // ← AI SDK template
+      statusCode: 400,
+      responseHeaders: {},
+      url: 'http://localhost:1234/v1/chat/completions',
+      requestBodyValues: {},
+      responseBody: '{"error":"\'response_format.type\' must be \'json_schema\' or \'text\'"}',
+    });
+
+    // The bug: classifier was called with err.message → no match → strip
+    // never fired → 400 propagated to user.
+    expect(OutputModeProber.isJsonObjectFieldError(err.message ?? '')).toBe(false);
+    // The fix: classifier is called with err.responseBody → real body
+    // contains "must be" + "response_format" → true → strip fires.
+    expect(OutputModeProber.isJsonObjectFieldError(err.responseBody ?? '')).toBe(true);
   });
 });
