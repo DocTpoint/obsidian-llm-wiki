@@ -631,8 +631,10 @@ describe('generateDuplicateCandidates — cancellation hook', () => {
   it('omitting the hooks argument preserves the legacy behaviour (regression guard)', async () => {
     // Two pages whose title prefixes match; just verify the call does
     // not throw or hang when the optional hooks argument is absent.
-    const a = makePage('wiki/a.md', 'Alpha', 'See [[hub-x]] for context.');
-    const b = makePage('wiki/b.md', 'AlphaTwin', 'See [[hub-x]] for context.');
+    // Use entity-folder paths so the cross-type pair filter (B3 fix)
+    // admits them as candidates.
+    const a = makePage('wiki/entities/alpha.md', 'Alpha', 'See [[hub-x]] for context.');
+    const b = makePage('wiki/entities/alphatwin.md', 'AlphaTwin', 'See [[hub-x]] for context.');
     // No hooks argument at all (matches the pre-refactor signature).
     const candidates = await generateDuplicateCandidates([a, b]);
     expect(findCandidate(candidates, a.path, b.path)).not.toBeNull();

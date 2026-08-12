@@ -130,25 +130,25 @@ export async function runDedupPhase(
   // files when `lintDedupIncludeSources !== false` (the settings field
   // is `?: boolean` so undefined = on by default).
   //
-  // Cross-type behaviour (important — read before changing):
-  //   - The dedup-eligible set bundles entity + concept + source paths
-  //     together. The partition + signals DO compare across folders —
-  //     e.g. an entity `Transformer` and a source `Transcription` may
-  //     land in the same `tp:` bucket and surface bigram/sharedLinks
-  //     candidates.
-  //   - Cross-type is suppressed ONLY for sourceFingerprint (body-hash
-  //     equality is the deterministic source↔source tier-1 gate; the
-  //     other three signals fire regardless of folder).
-  //   - This is intentional: per #358 complementary memory model, a
-  //     source mentioning an entity by name is NOT a duplicate, but
-  //     the LLM verify path can down-rank such tier-2 candidates
-  //     independently. The false-positive risk is bounded by the LLM
-  //     token budget (500 candidates max) and the user's
-  //     `lintDedupIncludeSources` opt-out toggle.
-  //   - If cross-type suppression becomes a real recall problem, add
-  //     a `pageTypeOf(path)` guard inside `runSharedLinksSignal` /
-  //     `runBigramCrossLangSignal` / `runCaseVariantSignal` — see
-  //     Altitude-review Q7 in the Batch 2 review record.
+  // Cross-type behaviour (post v1.26.4 PATCH follow-up — was a known
+  // gap in v1.26.0 Batch 2):
+  //   - Pair-level rejection happens inside generateDuplicateCandidates
+  //     via isCrossTypePairAllowed (added in v1.26.4 PATCH B3 fix).
+  //     The forbidden combinations are entity↔source and
+  //     concept↔source (in any order); the allowed combinations are
+  //     entity↔entity, concept↔concept, entity↔concept, and
+  //     source↔source. Pages outside the three content folders
+  //     (log.md, schema/, index.md) are still filtered at file level.
+  //   - Why this matters per #358 complementary memory model: a source
+  //     that mentions an entity by name is NOT a duplicate of the
+  //     entity — they live in different cognitive registers. Showing
+  //     "is this entity page a duplicate of this source page?" to the
+  //     LLM verify path was misleading noise that the LLM tended to
+  //     return false-positives on (especially on small vaults with
+  //     shared bigram titles like Transformer / Transformer Reference).
+  //   - Source↔source detection still uses sourceFingerprint
+  //     (body-hash equality) as its tier-1 gate; the cross-type
+  //     filter does not affect that path.
   const includeSources = ctx.settings.lintDedupIncludeSources !== false;
   const dedupEligibleFiles = input.wikiFiles.filter(f =>
     f.path.includes(`/${WIKI_SUBFOLDERS.entities}/`) ||

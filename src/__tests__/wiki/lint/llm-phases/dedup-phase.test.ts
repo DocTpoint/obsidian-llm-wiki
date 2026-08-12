@@ -355,6 +355,116 @@ describe('runDedupPhase — early returns', () => {
   });
 });
 
+// B3 fix (v1.26.4 PATCH follow-up): the dedup candidate generator
+// previously emitted cross-type pairs (entity↔source, concept↔source)
+// that share a wiki subfolder bucket like 'tp:'. The dedup-phase
+// docstring (line 132-151) explicitly admits this — only the
+// sourceFingerprint signal was suppressed for cross-type, and only
+// because body-hash equality is rare. The remaining three signals
+// (sharedLinks / bigramCrossLang / caseVariant) fired regardless of
+// page type, polluting the LLM verify batch with nonsense questions
+// ("is this entity page a duplicate of this source page?").
+//
+// Spec (user direction, 2026-08-12): the dedup is allowed to consider
+// only these pair-type combinations:
+//   - entity ↔ entity
+//   - concept ↔ concept
+//   - entity ↔ concept (cross-type is OK here)
+//   - source ↔ source
+//
+// Forbidden:
+//   - entity ↔ source (and symmetric)
+//   - concept ↔ source (and symmetric)
+describe('runDedupPhase — cross-type pair filter (B3 fix)', () => {
+  // Shared body that would trip bigramCrossLang + caseVariant signals
+  // — same title-cased token appears in both pages. Pre-B3, this would
+  // produce a duplicate candidate across the entity/source boundary.
+  const sharedBody = 'Transformer is a foundational architecture for sequence modeling and attention.';
+
+  it('entity↔source pair with shared content does NOT produce a candidate (LLM never called)', async () => {
+    const entity = { path: 'wiki/entities/transformer.md', basename: 'transformer.md' };
+    const source = { path: 'wiki/sources/transformer-reference.md', basename: 'transformer-reference.md' };
+    const { client, createMessage } = stubLlm('{"duplicates":[{"target":"wiki/entities/transformer.md","source":"wiki/sources/transformer-reference.md","reason":"shared bigram"}]}');
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [entity, source],
+      pageMap: makePageMap([
+        [entity.path, `---\ntype: entity\n---\n# Transformer\n${sharedBody}`],
+        [source.path, `---\ntype: source\n---\n# Transformer Reference\n${sharedBody}`],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    // Cross-type forbidden: no candidate, no LLM call.
+    expect(result).toEqual([]);
+    expect(createMessage).not.toHaveBeenCalled();
+  });
+
+  it('concept↔source pair with shared content does NOT produce a candidate', async () => {
+    const concept = { path: 'wiki/concepts/attention.md', basename: 'attention.md' };
+    const source = { path: 'wiki/sources/attention-paper.md', basename: 'attention-paper.md' };
+    const { client, createMessage } = stubLlm('{"duplicates":[]}');
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [concept, source],
+      pageMap: makePageMap([
+        [concept.path, `---\ntype: concept\n---\n# Attention\n${sharedBody}`],
+        [source.path, `---\ntype: source\n---\n# Attention Paper\n${sharedBody}`],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    expect(result).toEqual([]);
+    expect(createMessage).not.toHaveBeenCalled();
+  });
+
+  it('entity↔concept pair with shared content IS allowed (cross-type is permitted)', async () => {
+    // Allowed: this confirms we did not over-suppress. The LLM verify
+    // path runs and returns the candidate as-is.
+    const entity = { path: 'wiki/entities/transformer.md', basename: 'transformer.md' };
+    const concept = { path: 'wiki/concepts/transformer.md', basename: 'transformer.md' };
+    const { client, createMessage } = stubLlm(
+      JSON.stringify({
+        duplicates: [{ target: entity.path, source: concept.path, reason: 'same concept' }],
+      })
+    );
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [entity, concept],
+      pageMap: makePageMap([
+        [entity.path, `---\ntype: entity\n---\n# Transformer\n${sharedBody}`],
+        [concept.path, `---\ntype: concept\n---\n# Transformer\n${sharedBody}`],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    expect(createMessage).toHaveBeenCalled();
+    expect(result.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('source↔source pair with identical bodies still produces a candidate (sourceFingerprint path intact)', async () => {
+    // The sourceFingerprint signal is the one the docstring called
+    // out as the only existing cross-type suppression; we must not
+    // regress it. Two sources with identical bodies still flag.
+    const body = 'Identical source body content for fingerprint dedup test.';
+    const a = { path: 'wiki/sources/source-a.md', basename: 'source-a.md' };
+    const b = { path: 'wiki/sources/source-b.md', basename: 'source-b.md' };
+    const { client, createMessage } = stubLlm(
+      JSON.stringify({
+        duplicates: [{ target: a.path, source: b.path, reason: 'identical bodies' }],
+      })
+    );
+    const ctx = makeLintPhaseContext({ llmClient: () => client });
+    const input: DedupPhaseInput = {
+      wikiFiles: [a, b],
+      pageMap: makePageMap([
+        [a.path, `---\ntype: source\n---\n# Source A\n${body}`],
+        [b.path, `---\ntype: source\n---\n# Source B\n${body}`],
+      ]),
+    };
+    const result = await runDedupPhase(ctx, input, () => {});
+    expect(createMessage).toHaveBeenCalled();
+    expect(result.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe('runDedupPhase — LLM verify path', () => {
   it('normalizes LLM-returned paths via wikiFolder prefix', async () => {
     // Two pages with same title → generateDuplicateCandidates produces

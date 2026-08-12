@@ -13,6 +13,7 @@ import {
   LINT_DEDUP_BUCKET_PREFIX_LEN,
   LINT_DEDUP_MAX_BUCKET_SIZE,
   LINT_DEDUP_INCOMING_LINK_THRESHOLD,
+  WIKI_SUBFOLDERS,
 } from '../../constants';
 
 export interface DuplicateCandidate {
@@ -21,6 +22,60 @@ export interface DuplicateCandidate {
   reason: string;
   signal: 'crossLang' | 'bigram' | 'sharedLinks' | 'caseVariant' | 'sourceFingerprint' | 'sharedIncoming';
   score: number;
+}
+
+/**
+ * B3 fix (v1.26.4 PATCH follow-up): infer a page's wiki content type
+ * from its path. Pages whose path contains `/entities/`, `/concepts/`,
+ * or `/sources/` are tagged accordingly; anything else (log.md,
+ * schema/, index.md) is `'other'`. Pure function — no IO.
+ *
+ * Used by the cross-type pair filter (`isCrossTypePairAllowed`) to
+ * reject entity↔source / concept↔source candidate pairs that the
+ * bucketed dedup path (tp: / ic: / lh:) would otherwise surface.
+ */
+export type WikiPageType = 'entity' | 'concept' | 'source' | 'other';
+
+export function pageTypeOf(path: string): WikiPageType {
+  if (path.includes(`/${WIKI_SUBFOLDERS.entities}/`)) return 'entity';
+  if (path.includes(`/${WIKI_SUBFOLDERS.concepts}/`)) return 'concept';
+  if (path.includes(`/${WIKI_SUBFOLDERS.sources}/`)) return 'source';
+  return 'other';
+}
+
+/**
+ * Allowed dedup pair combinations per user direction (2026-08-12):
+ *   entity ↔ entity, concept ↔ concept,
+ *   entity ↔ concept (cross-type is OK here),
+ *   source ↔ source.
+ * Forbidden: entity ↔ source, concept ↔ source.
+ *
+ * Pages tagged `'other'` (e.g. log.md, schema/) are NEVER in the
+ * dedup-eligible set — they bail at the file-level filter upstream,
+ * so this guard only needs to handle the four canonical wiki types.
+ * If `'other'` slips through, the guard rejects the pair rather than
+ * emit a candidate of unknown shape.
+ *
+ * Implementation note: stored as a Set of canonicalized "smaller|larger"
+ * keys (lexicographically sorted by the type tag) so lookup is O(1)
+ * regardless of which side is target vs source. The first naive
+ * implementation used `a <= b` for canonicalization, but string
+ * ordering ('c' < 'e') made the key ['concept','entity'] not match
+ * the stored ['entity','concept'] row — silently rejecting the
+ * allowed combination and causing the regression caught by the
+ * sharedIncoming signal test (entity↔concept incoming test failed).
+ */
+const ALLOWED_PAIR_KEYS: ReadonlySet<string> = new Set([
+  'concept|concept',
+  'concept|entity', // canonical form of ('entity', 'concept')
+  'entity|entity',
+  'source|source',
+]);
+
+export function isCrossTypePairAllowed(a: WikiPageType, b: WikiPageType): boolean {
+  if (a === 'other' || b === 'other') return false;
+  const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+  return ALLOWED_PAIR_KEYS.has(key);
 }
 
 // ── Pure Functions (extracted for testability) ───────────────────────────────
@@ -409,6 +464,23 @@ export async function generateDuplicateCandidates(
   const candidates = new Map<string, DuplicateCandidate>();
 
   const addCandidate = (pathA: string, pathB: string, reason: string, signal: DuplicateCandidate['signal'], score: number) => {
+    // B3 fix (v1.26.4 PATCH follow-up): reject forbidden cross-type
+    // pairs at injection time so the LLM verify batch never sees
+    // "is this entity page a duplicate of this source page?" — that
+    // question is meaningless per the #358 complementary memory model
+    // (a source that mentions an entity by name is not a duplicate of
+    // the entity). The pre-B3 dedup docstring
+    // (dedup-phase.ts:132-151) explicitly admitted this leakage: only
+    // the sourceFingerprint signal was suppressed for cross-type, and
+    // only because body-hash equality is rare. The remaining three
+    // signals (sharedLinks / bigramCrossLang / caseVariant) fired
+    // regardless of page type, polluting every other lint run on
+    // vaults with mixed content folders.
+    const typeA = pageTypeOf(pathA);
+    const typeB = pageTypeOf(pathB);
+    if (!isCrossTypePairAllowed(typeA, typeB)) {
+      return;
+    }
     const key = [pathA, pathB].sort().join('|||');
     if (!candidates.has(key)) {
       candidates.set(key, { target: pathA, source: pathB, reason, signal, score });
