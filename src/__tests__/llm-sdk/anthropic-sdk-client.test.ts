@@ -160,6 +160,71 @@ describe('AnthropicSdkClient', () => {
     });
   });
 
+  // Issue #414: Anthropic's Messages API has no `repetition_penalty`
+  // (only temperature / top_p / top_k). Sending it pollutes the wire with
+  // an unknown field — even though the AI SDK doesn't strip it (it's not
+  // in the @ai-sdk/anthropic zod schema), Claude will silently ignore it.
+  // Pre-fix, our `buildProviderOptions` placed it under
+  // `anthropicOpts.repetitionPenalty`, which became `providerOptions.anthropic.repetitionPenalty`
+  // on the call. Post-fix, the field is dropped entirely — matching the
+  // 10-locale i18n text ("cloud providers will silently ignore it", but
+  // for us the cleaner outcome is to drop rather than send-and-ignore).
+  describe('Issue #414: repetitionPenalty is dropped (Anthropic does not accept it)', () => {
+    it('omits repetition_penalty from providerOptions when repetitionPenalty is set', async () => {
+      const client = new AnthropicSdkClient({ apiKey: 'sk-ant-test' });
+      await client.createMessage({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        repetition_penalty: 1.5,
+      });
+
+      const call = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
+      // The whole providerOptions map must be empty (or at minimum must
+      // not contain `repetitionPenalty` / `repetition_penalty`).
+      const providerOptions = (call.providerOptions ?? {}) as Record<string, Record<string, unknown>>;
+      const anthropicOpts = providerOptions.anthropic ?? {};
+      expect(anthropicOpts).not.toHaveProperty('repetitionPenalty');
+      expect(anthropicOpts).not.toHaveProperty('repetition_penalty');
+    });
+
+    it('omits repetition_penalty from stream providerOptions when repetitionPenalty is set', async () => {
+      // Inline stream mock (the shared `makeStreamResult` helper is
+      // scoped to the 'error mapping' describe block; this Issue #414
+      // describe is a sibling and can't see it).
+      mockStreamText.mockReturnValue({
+        textStream: (async function* () { yield 'hi'; })(),
+        fullStream: (async function* () { yield { type: 'text-delta', textDelta: 'hi' } as never; })(),
+        text: 'hi',
+        usage: Promise.resolve({ inputTokens: 1, outputTokens: 1, totalTokens: 2 }),
+        finishReason: Promise.resolve('stop'),
+        response: Promise.resolve({
+          id: 'resp_test',
+          timestamp: new Date(),
+          modelId: 'claude-sonnet-4-5',
+          headers: {},
+          body: {},
+        } as never),
+      } as unknown as Awaited<ReturnType<typeof streamText>>);
+
+      const client = new AnthropicSdkClient({ apiKey: 'sk-ant-test' });
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      await client.createMessageStream!({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        onChunk: () => undefined,
+        repetition_penalty: 1.5,
+      });
+
+      const call = mockStreamText.mock.calls[0][0] as Record<string, unknown>;
+      const providerOptions = (call.providerOptions ?? {}) as Record<string, Record<string, unknown>>;
+      const anthropicOpts = providerOptions.anthropic ?? {};
+      expect(anthropicOpts).not.toHaveProperty('repetitionPenalty');
+      expect(anthropicOpts).not.toHaveProperty('repetition_penalty');
+    });
+  });
+
   describe('custom baseURL for Anthropic-compatible providers (Coding Plan / z.ai / GLM-Antropic)', () => {
     beforeEach(() => {
       mockCreateAnthropic.mockClear();
