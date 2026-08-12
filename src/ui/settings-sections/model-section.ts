@@ -107,9 +107,29 @@ export function renderModelSection(tab: LLMWikiSettingTab, containerEl: HTMLElem
                   return data.data.map((m: { id: string }) => m.id);
                 }
               }
-              return [];
-            } catch {
-              return [];
+              // B1 fix (v1.26.4 PATCH follow-up): non-2xx responses throw
+              // an error carrying the HTTP status. Previously this path
+              // silently returned [], which caused the orchestrator to
+              // synthesize 'All URL candidates failed' — a status-less
+              // message that `classifyFetchError` (settings-helpers.ts)
+              // could not match, so every auth/endpoint/server failure
+              // was misreported as `fetchErrorNetwork`. By embedding the
+              // status code in the error message, classifyFetchError's
+              // existing regex `\b(401|403)\b` / `\b(404|405|...)\b` /
+              // `\b5\d\d\b` naturally picks up the right category.
+              // Body is truncated to 200 chars to avoid blowing up the
+              // notice message; full body remains in console for diagnosis.
+              const bodySnippet = (response.text ?? '').slice(0, 200);
+              throw new Error(`HTTP ${response.status}: ${bodySnippet}`);
+            } catch (error) {
+              // Preserve the status-bearing error (re-thrown above); wrap
+              // genuine fetch exceptions (DNS, abort, etc.) so they also
+              // carry an "unknown" marker that classifyFetchError falls
+              // back to Network for.
+              if (error instanceof Error && /^HTTP \d+/.test(error.message)) {
+                throw error;
+              }
+              throw new Error(`Network error: ${error instanceof Error ? error.message : String(error)}`);
             }
           };
 
@@ -127,7 +147,16 @@ export function renderModelSection(tab: LLMWikiSettingTab, containerEl: HTMLElem
               fetchFn: fetchOneUrl,
             });
             if (models.length === 0) throw new Error('empty model list');
-          } catch {
+          } catch (err) {
+            // B1 fix (v1.26.4 PATCH follow-up): preserve the underlying
+            // error message so classifyFetchError can match the HTTP
+            // status. Previously every error path was rewritten to the
+            // status-less 'All URL candidates failed', which the
+            // classifier could not categorize (always fell through to
+            // the default 'Network' branch).
+            if (err instanceof Error) {
+              throw err;
+            }
             throw new Error('All URL candidates failed');
           }
 

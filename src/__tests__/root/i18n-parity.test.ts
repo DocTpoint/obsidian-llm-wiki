@@ -169,3 +169,37 @@ describe('Russian locale wiring', () => {
     }
   });
 });
+
+// B1 fallback-content guard (v1.26.4 PATCH follow-up): every locale's
+// `fetchErrorNetwork` message must mention the API Key as a possible
+// cause. The status-code classifier (settings-helpers.ts:classifyFetchError)
+// catches HTTP 401/403/404/5xx and routes to a more specific category
+// (fetchErrorAuth / Endpoint / Server), but true network failures
+// (DNS, connection refused, timeout) still fall through to
+// `fetchErrorNetwork`. Adding an "also check your API Key" hint as the
+// fallback gives users a single message that covers both the network
+// and the "I can't tell what went wrong" cases.
+const API_KEY_HINTS: Record<string, RegExp> = {
+  en:      /api\s*key/i,
+  zh:      /api\s*key|密钥|秘钥|钥匙/i,
+  'zh-Hant': /api\s*key|密鑰|金鑰|密鑰/i,
+  ja:      /api\s*key|キー/i,
+  ko:      /api\s*key|키/i,
+  de:      /api[-\s]*schlüssel|key/i,
+  fr:      /clé\s*api|api\s*key|key/i,
+  es:      /clave\s*api|api\s*key|key/i,
+  pt:      /chave[\s-]*(da\s*)?api|api\s*key|key/i,
+  it:      /chiave\s*api|api\s*key|key/i,
+  ru:      /api[-\s]?ключ|ключ\s*api/i,
+};
+
+describe('fetchErrorNetwork mentions API Key in every locale (B1 fallback)', () => {
+  for (const [locale, pattern] of Object.entries(API_KEY_HINTS)) {
+    it(`locale "${locale}" fetchErrorNetwork mentions API Key`, () => {
+      const texts = TEXTS[locale as keyof typeof TEXTS] as unknown as Record<string, unknown>;
+      const msg = texts.fetchErrorNetwork;
+      expect(typeof msg).toBe('string');
+      expect(msg as string).toMatch(pattern);
+    });
+  }
+});

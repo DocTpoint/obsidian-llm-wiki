@@ -103,7 +103,7 @@ export const EN_TEXTS = {
     fetchErrorEndpoint: 'Endpoint not found (HTTP 404). Verify the BaseURL, or enter a Model ID and click Test Connection to validate.',
     fetchErrorServer: 'Provider server error (HTTP 5xx). Try again later, or enter a Model ID and click Test Connection to validate.',
     fetchErrorEmpty: 'Provider has no model list endpoint. Enter a Model ID below and click Test Connection to validate.',
-    fetchErrorNetwork: 'Network request failed. Check your internet connection, BaseURL, or proxy settings. You can also enter a Model ID below and click Test Connection to validate.',
+    fetchErrorNetwork: 'Network request failed. Check your internet connection, BaseURL, proxy settings, or API Key. You can also enter a Model ID below and click Test Connection to validate.',
 
     selectModelName: 'Select Model',
     selectModelDesc: 'Choose from {} available models',

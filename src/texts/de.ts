@@ -99,7 +99,7 @@ export const DE_TEXTS = {
     fetchErrorEndpoint: 'Endpunkt nicht gefunden (HTTP 404). Überprüfen Sie die Endpunkt-URL, oder geben Sie eine Modell-ID ein und klicken Sie auf Verbindung testen.',
     fetchErrorServer: 'Anbieter-Serverfehler (HTTP 5xx). Versuchen Sie es später erneut, oder geben Sie eine Modell-ID ein und klicken Sie auf Verbindung testen.',
     fetchErrorEmpty: 'Dieser Endpunkt stellt keine Modellliste bereit. Geben Sie eine Modell-ID ein und klicken Sie auf Verbindung testen.',
-    fetchErrorNetwork: 'Netzwerkanfrage fehlgeschlagen. Überprüfen Sie Internetverbindung, Endpunkt-URL oder Proxy-Einstellungen. Sie können auch eine Modell-ID eingeben und auf Verbindung testen klicken.',
+    fetchErrorNetwork: 'Netzwerkanfrage fehlgeschlagen. Überprüfen Sie Internetverbindung, Endpunkt-URL, Proxy-Einstellungen oder API Key. Sie können auch eine Modell-ID eingeben und auf Verbindung testen klicken.',
 
     selectModelName: 'Modell auswählen',
     selectModelDesc: 'Aus {} verfügbaren Modellen wählen',

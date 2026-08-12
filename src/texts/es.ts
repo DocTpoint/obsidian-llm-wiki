@@ -99,7 +99,7 @@ export const ES_TEXTS = {
     fetchErrorEndpoint: 'Endpoint no encontrado (HTTP 404). Verifica la URL del endpoint, o introduce un ID de modelo y haz clic en Probar conexión.',
     fetchErrorServer: 'Error del servidor del proveedor (HTTP 5xx). Inténtalo más tarde, o introduce un ID de modelo y haz clic en Probar conexión.',
     fetchErrorEmpty: 'Este endpoint no expone lista de modelos. Introduce un ID de modelo y haz clic en Probar conexión.',
-    fetchErrorNetwork: 'Falló la solicitud de red. Verifica tu conexión a internet, la URL del endpoint o la configuración del proxy. También puedes introducir un ID de modelo y hacer clic en Probar conexión.',
+    fetchErrorNetwork: 'Falló la solicitud de red. Verifica tu conexión a internet, la URL del endpoint, la configuración del proxy o la clave API. También puedes introducir un ID de modelo y hacer clic en Probar conexión.',
 
     selectModelName: 'Seleccionar modelo',
     selectModelDesc: 'Elige entre {} modelos disponibles',

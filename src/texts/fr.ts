@@ -99,7 +99,7 @@ export const FR_TEXTS = {
     fetchErrorEndpoint: 'Point d\'accès introuvable (HTTP 404). Vérifiez l\'URL du point d\'accès, ou entrez un ID de modèle puis cliquez sur Tester la connexion.',
     fetchErrorServer: 'Erreur du serveur du fournisseur (HTTP 5xx). Réessayez plus tard, ou entrez un ID de modèle puis cliquez sur Tester la connexion.',
     fetchErrorEmpty: 'Ce point d\'accès n\'expose pas de liste de modèles. Entrez un ID de modèle puis cliquez sur Tester la connexion.',
-    fetchErrorNetwork: 'Échec de la requête réseau. Vérifiez votre connexion Internet, l\'URL du point d\'accès ou les paramètres du proxy. Vous pouvez aussi entrer un ID de modèle puis cliquer sur Tester la connexion.',
+    fetchErrorNetwork: 'Échec de la requête réseau. Vérifiez votre connexion Internet, l\'URL du point d\'accès, les paramètres du proxy ou la clé API. Vous pouvez aussi entrer un ID de modèle puis cliquer sur Tester la connexion.',
 
     selectModelName: 'Sélectionner un modèle',
     selectModelDesc: 'Choisir parmi {} modèles disponibles',

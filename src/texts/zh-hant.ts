@@ -99,7 +99,7 @@ export const ZH_HANT_TEXTS = {
     fetchErrorEndpoint: '接入點未找到（HTTP 404）。請檢查 BaseURL 是否正確，或直接輸入模型 ID 後點選測試連線。',
     fetchErrorServer: 'Provider 服務端錯誤（HTTP 5xx）。稍後重試，或直接輸入模型 ID 後點選測試連線。',
     fetchErrorEmpty: '該接入點不支援列出模型列表。請直接輸入模型 ID 後點選測試連線進行驗證。',
-    fetchErrorNetwork: '網路請求失敗。請檢查網路連線、BaseURL 或代理設定。您也可以直接輸入模型 ID 後點選測試連線進行驗證。',
+    fetchErrorNetwork: '網路請求失敗。請檢查網路連線、BaseURL、代理設定或 API Key。您也可以直接輸入模型 ID 後點選測試連線進行驗證。',
 
     selectModelName: '選擇模型',
     selectModelDesc: '從 {} 個可用模型中選擇',

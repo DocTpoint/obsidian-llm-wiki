@@ -103,7 +103,7 @@ export const IT_TEXTS = {
     fetchErrorEndpoint: "Endpoint non trovato (HTTP 404). Verifica l'URL di base, oppure inserisci un ID modello e clicca Testa connessione per validare.",
     fetchErrorServer: 'Errore del server del provider (HTTP 5xx). Riprova più tardi, oppure inserisci un ID modello e clicca Testa connessione per validare.',
     fetchErrorEmpty: "Il provider non ha un endpoint per la lista modelli. Inserisci un ID modello qui sotto e clicca Testa connessione per validare.",
-    fetchErrorNetwork: "Richiesta di rete fallita. Controlla la connessione internet, l'URL di base o le impostazioni del proxy. Puoi anche inserire un ID modello qui sotto e cliccare Testa connessione per validare.",
+    fetchErrorNetwork: "Richiesta di rete fallita. Controlla la connessione internet, l'URL di base, le impostazioni del proxy o la chiave API. Puoi anche inserire un ID modello qui sotto e cliccare Testa connessione per validare.",
 
     selectModelName: 'Seleziona modello',
     selectModelDesc: 'Scegli tra {} modelli disponibili',

@@ -249,9 +249,13 @@ export interface FetchModelsOptions {
    * Probe function: takes a fully-constructed models URL (e.g.,
    * `https://api.kimi.com/coding/v1/models`) and returns the list of
    * model IDs from the response, or an empty array if the request
-   * failed (404, network error, empty response, etc.). Should NOT
-   * throw — return empty array for any non-success so the
-   * orchestrator can try the next candidate.
+   * failed with no useful status (404, network error, empty response,
+   * etc.) so the orchestrator can try the next candidate. May ALSO
+   * throw — for non-2xx responses where the status code carries
+   * signal (HTTP 401/403/404/5xx), throwing an Error whose message
+   * matches `^HTTP \d+:` lets the orchestrator preserve the status
+   * for the final fallback throw (B1 fix: the caller's
+   * `classifyFetchError` relies on the status regex matching).
    */
   fetchFn: (modelsUrl: string) => Promise<string[]>;
 }
@@ -278,6 +282,14 @@ export async function fetchModelsWithFallback(opts: FetchModelsOptions): Promise
 
   if (!baseUrl) return [];
 
+  // B1 fix (v1.26.4 PATCH follow-up): when fetchFn throws an HTTP-status-
+  // bearing error (e.g., fetchOneUrl throws "HTTP 401: ..." for an invalid
+  // API key), preserve the last such error so the caller can surface the
+  // real status via classifyFetchError. Previously every throw was
+  // swallowed by the `catch { continue }` block, and the final empty
+  // return was indistinguishable from "URL not found".
+  let lastHttpError: Error | null = null;
+
   // Step 0: Check cache — if a previous Test Connection resolved this
   // baseURL, reuse the resolved URL for Fetch Models too. This is
   // the cross-path sharing the user reported as missing.
@@ -290,7 +302,10 @@ export async function fetchModelsWithFallback(opts: FetchModelsOptions): Promise
       try {
         const models = await fetchFn(modelsUrl);
         if (models.length > 0) return models;
-      } catch {
+      } catch (err) {
+        if (err instanceof Error && /^HTTP \d+/.test(err.message)) {
+          lastHttpError = err;
+        }
         continue;
       }
     }
@@ -328,11 +343,22 @@ export async function fetchModelsWithFallback(opts: FetchModelsOptions): Promise
           }
           return models;
         }
-      } catch {
-        // testFn threw — skip to next path/candidate
+      } catch (err) {
+        // testFn threw — remember HTTP-status errors for the final throw;
+        // network/abort errors fall through to the next candidate.
+        if (err instanceof Error && /^HTTP \d+/.test(err.message)) {
+          lastHttpError = err;
+        }
         continue;
       }
     }
+  }
+
+  // B1 fix: surface the last HTTP-status error so the caller's
+  // classifyFetchError sees a real status code instead of falling
+  // through to the default 'Network' branch.
+  if (lastHttpError) {
+    throw lastHttpError;
   }
 
   return [];

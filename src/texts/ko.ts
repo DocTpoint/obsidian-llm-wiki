@@ -99,7 +99,7 @@ export const KO_TEXTS = {
     fetchErrorEndpoint: '엔드포인트를 찾을 수 없음 (HTTP 404). BaseURL을 확인하거나 모델 ID를 직접 입력한 후 테스트 연결을 클릭하여 검증하세요.',
     fetchErrorServer: 'Provider 서버 오류 (HTTP 5xx). 나중에 다시 시도하거나 모델 ID를 직접 입력한 후 테스트 연결을 클릭하여 검증하세요.',
     fetchErrorEmpty: '이 엔드포인트는 모델 목록을 제공하지 않습니다. 모델 ID를 직접 입력한 후 테스트 연결을 클릭하여 검증하세요.',
-    fetchErrorNetwork: '네트워크 요청 실패. 인터넷 연결, BaseURL 또는 프록시 설정을 확인하세요. 모델 ID를 직접 입력한 후 테스트 연결을 클릭하여 검증할 수도 있습니다.',
+    fetchErrorNetwork: '네트워크 요청 실패. 인터넷 연결, BaseURL, 프록시 설정 또는 API Key를 확인하세요. 모델 ID를 직접 입력한 후 테스트 연결을 클릭하여 검증할 수도 있습니다.',
 
     selectModelName: '모델 선택',
     selectModelDesc: '{}개의 사용 가능한 모델 중에서 선택',
