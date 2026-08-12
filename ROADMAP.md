@@ -2,11 +2,16 @@
 
 > Feature planning and improvement proposals
 
-**Version:** v1.26.2 PATCH RELEASED 2026-08-09 (tag `1.26.2`). v1.26.3 PATCH in development. v1.27.0 MINOR in design. v1.26.1 PATCH RELEASED 2026-08-08. | **Updated:** 2026-08-10
+**Version:** v1.26.3 PATCH in development (PR #447 merged 2026-08-12; this branch + #450 + #453 pending merge). v1.26.2 PATCH RELEASED 2026-08-09 (tag `1.26.2`). v1.27.0 MINOR in design. v1.26.1 PATCH RELEASED 2026-08-08. | **Updated:** 2026-08-12
 
 ## Current Status
 
-**v1.26.2 PATCH SHIPPED 2026-08-09** (tag `1.26.2`). Surgical fix for v1.26.1's pre-submission blind spot: the Obsidian review bot scans the whole repo `.ts` tree but local `pnpm lint` was `src/`-only, so v1.26.1 shipped a blocking `unsafe-call` Error in `tools/llm-wiki-cli/src/obsidian.ts` that local lint never saw. PR #442 fixes the Error + 8 type-safety warnings, adds `Platform.isDesktop` AST guards on the runtime-loaded `node:*` imports, and ships `pnpm lint:tools-bot` so the local blind spot stays closed. Release skill v1.7.0 now mandates an Obsidian Bot pre-review (Step 6b.5, HARD STOP ②) — see [CHANGELOG.md v1.26.2 entry](./CHANGELOG.md#1262---2026-08-09).
+**v1.26.3 PATCH SHIPPED 2026-08-12** (tag pending). Two-branch composition:
+
+1. **PR #447 (`fix/443-pilot-json-schema-path-resolution`)** — Issue #443 fix: 39 commits across Phase A 3-tier output-mode state machine, Path 2 fix (catch `NoObjectGeneratedError`), Phase B 11 caller migrations to typed output, and per-model placeholder demotion. Awaiting DocTpoint re-review (2026-08-10 `5f4983b` CR resolved by Path 2 + Phase B commits).
+2. **`fix/ux-b1-b2-b3-provider-statusbar-dedup` (this branch)** — 3 UX fixes from the maintainer's 2026-08-12 vault E2E: B1 (Fetch Models misclassified auth failures as Network), B2 (status-bar update path dropped the "click to cancel" label), B3 (lint dedup cross-type false positives). 3 commits (one per fix), 3020 tests passing.
+
+**v1.26.2 PATCH SHIPPED 2026-08-09** Surgical fix for v1.26.1's pre-submission blind spot: the Obsidian review bot scans the whole repo `.ts` tree but local `pnpm lint` was `src/`-only, so v1.26.1 shipped a blocking `unsafe-call` Error in `tools/llm-wiki-cli/src/obsidian.ts` that local lint never saw. PR #442 fixes the Error + 8 type-safety warnings, adds `Platform.isDesktop` AST guards on the runtime-loaded `node:*` imports, and ships `pnpm lint:tools-bot` so the local blind spot stays closed. Release skill v1.7.0 now mandates an Obsidian Bot pre-review (Step 6b.5, HARD STOP ②) — see [CHANGELOG.md v1.26.2 entry](./CHANGELOG.md#1262---2026-08-09).
 
 **v1.26.1 PATCH SHIPPED 2026-08-08** (tag `1.26.1`). 21 PRs since v1.26.0: high-ROI bug fixes (#399 / #403 / #408 / #419 / #424 / #435 + CR-1 dedup halving + #398 silent-save), #407 Stage 0 parse-failure naming, per-step LLM timing (PR #409), 24 Dependabot alerts closed, plus H1 hardening and `--seed` / `thinking` doc corrections. See [CHANGELOG.md v1.26.1 entry](./CHANGELOG.md#1261---2026-08-08).
 
