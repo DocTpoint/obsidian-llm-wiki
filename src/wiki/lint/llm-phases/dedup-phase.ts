@@ -130,10 +130,10 @@ export async function runDedupPhase(
   // files when `lintDedupIncludeSources !== false` (the settings field
   // is `?: boolean` so undefined = on by default).
   //
-  // Cross-type behaviour (post v1.26.4 PATCH follow-up — was a known
+  // Cross-type behaviour (post v1.26.3 PATCH follow-up — was a known
   // gap in v1.26.0 Batch 2):
   //   - Pair-level rejection happens inside generateDuplicateCandidates
-  //     via isCrossTypePairAllowed (added in v1.26.4 PATCH B3 fix).
+  //     via isCrossTypePairAllowed (added in v1.26.3 PATCH B3 fix).
   //     The forbidden combinations are entity↔source and
   //     concept↔source (in any order); the allowed combinations are
   //     entity↔entity, concept↔concept, entity↔concept, and

@@ -25,7 +25,7 @@ export interface DuplicateCandidate {
 }
 
 /**
- * B3 fix (v1.26.4 PATCH follow-up): infer a page's wiki content type
+ * B3 fix (v1.26.3 PATCH follow-up): infer a page's wiki content type
  * from its path. Pages whose path contains `/entities/`, `/concepts/`,
  * or `/sources/` are tagged accordingly; anything else (log.md,
  * schema/, index.md) is `'other'`. Pure function — no IO.

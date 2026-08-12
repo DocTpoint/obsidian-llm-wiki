@@ -540,7 +540,7 @@ export const KO_TEXTS = {
     ingestionCancelling: '취소 중 — 현재 배치 완료 후 중지됩니다',
     ingestionCancelled: '수집이 취소되었습니다',
     crossTypeCollisionNotice: '{count}개 항목이 크로스타입 별칭으로 병합됨（엔티티 ↔ 컨셉 중복 방지）',
-    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
     ingestBatchInitial: '배치 1/{total} 분석 중...',
     ingestBatchProgress: '배치 {current}/{total} 분석 중（엔티티 {entities}개, 컨셉 {concepts}개까지）...',
     ingestBatchProcessed: '배치 {current} 분석 완료, 처리 중...',

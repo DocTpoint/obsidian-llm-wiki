@@ -540,7 +540,7 @@ export const RU_TEXTS = {
     ingestionCancelling: 'Отмена — остановится после завершения текущего пакета',
     ingestionCancelled: 'Импорт отменён',
     crossTypeCollisionNotice: '{count} элементов объединены как межтиповые псевдонимы (дубликаты entity ↔ concept предотвращены)',
-    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
     ingestBatchInitial: 'Анализ партии 1/{total}...',
     ingestBatchProgress: 'Анализ партии {current}/{total} ({entities} сущностей, {concepts} концепций пока)...',
     ingestBatchProcessed: 'Партия {current} проанализирована, обработка...',

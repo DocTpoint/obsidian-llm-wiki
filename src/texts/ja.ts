@@ -507,7 +507,7 @@ export const JA_TEXTS = {
     ingestionCancelling: 'キャンセル中 — 現在のバッチ完了後に停止します',
     ingestionCancelled: '取り込みがキャンセルされました',
     crossTypeCollisionNotice: '{count}件がクロスタイプ別名として統合（エンティティ ↔ コンセプト重複を防止）',
-    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
     ingestBatchInitial: 'バッチ 1/{total} を分析中...',
     ingestBatchProgress: 'バッチ {current}/{total} を分析中（エンティティ {entities}、コンセプト {concepts} まで）...',
     ingestBatchProcessed: 'バッチ {current} を分析しました。処理中...',

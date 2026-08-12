@@ -514,7 +514,7 @@ export const ZH_TEXTS = {
     ingestionCancelling: '正在取消 — 当前批次完成后将停止',
     ingestionCancelled: '提取已取消',
     crossTypeCollisionNotice: '{count} 个条目合并为跨类型别名（实体 ↔ 概念重复已防止）',
-    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
     ingestBatchInitial: '正在分析批次 1/{total}...',
     ingestBatchProgress: '正在分析批次 {current}/{total}（已提取 {entities} 个实体、{concepts} 个概念）...',
     ingestBatchProcessed: '已完成批次 {current}，正在处理...',

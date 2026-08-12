@@ -355,7 +355,7 @@ describe('runDedupPhase — early returns', () => {
   });
 });
 
-// B3 fix (v1.26.4 PATCH follow-up): the dedup candidate generator
+// B3 fix (v1.26.3 PATCH follow-up): the dedup candidate generator
 // previously emitted cross-type pairs (entity↔source, concept↔source)
 // that share a wiki subfolder bucket like 'tp:'. The dedup-phase
 // docstring (line 132-151) explicitly admits this — only the

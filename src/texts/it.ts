@@ -544,7 +544,7 @@ export const IT_TEXTS = {
     ingestionCancelling: 'Annullamento — si fermerà al completamento del batch corrente',
     ingestionCancelled: 'Acquisizione annullata',
     crossTypeCollisionNotice: '{count} elementi uniti come alias inter-tipo (duplicati entità ↔ concetto prevenuti)',
-    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
     ingestBatchInitial: 'Analisi batch 1/{total}...',
     ingestBatchProgress: 'Analisi batch {current}/{total} ({entities} entità, {concepts} concetti finora)...',
     ingestBatchProcessed: 'Batch {current} analizzato, elaborazione...',

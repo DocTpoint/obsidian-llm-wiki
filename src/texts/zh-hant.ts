@@ -507,7 +507,7 @@ export const ZH_HANT_TEXTS = {
     ingestionCancelling: '正在取消 — 當前批次完成後將停止',
     ingestionCancelled: '提取已取消',
     crossTypeCollisionNotice: '{count} 個條目合併為跨型別別名（實體 ↔ 概念重複已防止）',
-    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
     ingestBatchInitial: '正在分析批次 1/{total}...',
     ingestBatchProgress: '正在分析批次 {current}/{total}（已提取 {entities} 個實體、{concepts} 個概念）...',
     ingestBatchProcessed: '已完成批次 {current}，正在處理...',

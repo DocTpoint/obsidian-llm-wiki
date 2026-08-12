@@ -323,7 +323,7 @@ describe('fetchModelsWithFallback', () => {
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
-  // B1 fix (v1.26.4 PATCH follow-up): when fetchFn throws an error with
+  // B1 fix (v1.26.3 PATCH follow-up): when fetchFn throws an error with
   // HTTP status info (e.g., fetchOneUrl in model-section.ts throws
   // "HTTP 401: ..." for an invalid API key), the orchestrator must
   // re-throw that last error after all candidates fail. Otherwise the

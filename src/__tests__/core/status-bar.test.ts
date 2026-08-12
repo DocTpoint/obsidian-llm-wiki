@@ -72,7 +72,7 @@ describe('buildIngestStatusBarText', () => {
   });
 });
 
-// B2 fix (v1.26.4 PATCH follow-up): the status-bar update path
+// B2 fix (v1.26.3 PATCH follow-up): the status-bar update path
 // (command-registry.ts setStatusBarUpdateCallback) must preserve the
 // always-visible "click to cancel" hint. Previously the callback called
 // setText(text) directly with the raw progress text, so the user only

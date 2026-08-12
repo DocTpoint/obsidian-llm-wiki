@@ -170,7 +170,7 @@ describe('Russian locale wiring', () => {
   });
 });
 
-// B1 fallback-content guard (v1.26.4 PATCH follow-up): every locale's
+// B1 fallback-content guard (v1.26.3 PATCH follow-up): every locale's
 // `fetchErrorNetwork` message must mention the API Key as a possible
 // cause. The status-code classifier (settings-helpers.ts:classifyFetchError)
 // catches HTTP 401/403/404/5xx and routes to a more specific category
@@ -204,7 +204,7 @@ describe('fetchErrorNetwork mentions API Key in every locale (B1 fallback)', () 
   }
 });
 
-// B2.5 guard (v1.26.4 PATCH follow-up): the status-bar progress keys
+// B2.5 guard (v1.26.3 PATCH follow-up): the status-bar progress keys
 // introduced for i18n (ingestBatch*, ingestCreating*, conv*, etc.) must
 // preserve the EN placeholder set in every locale. If a translator drops
 // or renames a placeholder, runtime getText(...).replace('{x}', ...) would

@@ -510,7 +510,7 @@ export const FR_TEXTS = {
     ingestionCancelling: 'Annulation — arrêt après le lot en cours',
     ingestionCancelled: 'Ingestion annulée',
     crossTypeCollisionNotice: '{count} éléments fusionnés comme alias cross-type (doublons entité ↔ concept évités)',
-    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
     ingestBatchInitial: 'Analyse du lot 1/{total}...',
     ingestBatchProgress: 'Analyse du lot {current}/{total} ({entities} entités, {concepts} concepts jusqu\'à présent)...',
     ingestBatchProcessed: 'Lot {current} analysé, traitement...',

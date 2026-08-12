@@ -535,7 +535,7 @@ export const ES_TEXTS = {
     ingestionCancelling: 'Cancelando — se detendrá tras el lote actual',
     ingestionCancelled: 'Ingesta cancelada',
     crossTypeCollisionNotice: '{count} elementos fusionados como alias cross-type (duplicados entidad ↔ concepto evitados)',
-    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
     ingestBatchInitial: 'Analizando lote 1/{total}...',
     ingestBatchProgress: 'Analizando lote {current}/{total} ({entities} entidades, {concepts} conceptos hasta ahora)...',
     ingestBatchProcessed: 'Lote {current} analizado, procesando...',

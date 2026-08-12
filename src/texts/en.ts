@@ -545,7 +545,7 @@ export const EN_TEXTS = {
     ingestionCancelling: 'Cancelling — will stop after current batch completes',
     ingestionCancelled: 'Ingestion cancelled',
     crossTypeCollisionNotice: '{count} items merged as cross-type aliases (entity ↔ concept duplicates prevented)',
-    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n.
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n.
     // These were previously hardcoded English strings in wiki-engine.ts,
     // conversation-ingest.ts, and source-analyzer.ts, causing mixed-language
     // status bars on non-English vaults. Every status-bar text emitted via

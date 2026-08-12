@@ -536,7 +536,7 @@ export const DE_TEXTS = {
     ingestionCancelling: 'Wird abgebrochen — Stopp nach aktuellem Batch',
     ingestionCancelled: 'Aufnahme abgebrochen',
     crossTypeCollisionNotice: '{count} Einträge als Cross-Type-Alias zusammengeführt (Entity ↔ Concept Duplikate verhindert)',
-    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
     ingestBatchInitial: 'Analyse Batch 1/{total}...',
     ingestBatchProgress: 'Analyse Batch {current}/{total} ({entities} Entitäten, {concepts} Konzepte bisher)...',
     ingestBatchProcessed: 'Batch {current} analysiert, Verarbeitung...',

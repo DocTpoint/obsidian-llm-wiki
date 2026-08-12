@@ -199,7 +199,7 @@ export function registerWikiCommands(plugin: CommandRegistryHost): void {
   plugin.wikiEngine.setStatusBarUpdateCallback(
     (text: string) => {
       if (plugin.ingestStatusBar) {
-        // B2 fix (v1.26.4 PATCH follow-up): route the granular progress
+        // B2 fix (v1.26.3 PATCH follow-up): route the granular progress
         // text through composeStatusBarUpdate so the always-visible
         // "click to cancel" base label is preserved. Previously this
         // callback called setText(text) directly, dropping the cancel

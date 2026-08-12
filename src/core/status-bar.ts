@@ -57,7 +57,7 @@ export function buildIngestStatusBarText(
 }
 
 /**
- * B2 fix (v1.26.4 PATCH follow-up): the granular progress text emitted
+ * B2 fix (v1.26.3 PATCH follow-up): the granular progress text emitted
  * by `wikiEngine.updateStatusBar` must preserve the always-visible
  * "click to cancel" affordance. The update path (command-registry.ts
  * setStatusBarUpdateCallback) used to call setText(raw) which dropped
