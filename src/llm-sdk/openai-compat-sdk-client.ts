@@ -43,6 +43,8 @@ import { reportFinish } from './finish-reason';
 import { buildSamplingArgs } from './sampling-args';
 import { buildOutputArgs } from './output-args';
 import { JSON_ENFORCEMENT_SYSTEM_PREFIX } from './json-prompt-prefix';
+import { prependReasoningForParse } from '../core/markdown';
+import { isPlaceholderJsonText } from '../core/json';
 
 export interface OpenAICompatSdkClientOptions {
   apiKey: string;
@@ -224,7 +226,7 @@ export class OpenAICompatSdkClient implements LLMClient {
     // is gone. The 3-tier mode ('json_schema' / 'json_object' /
     // 'text_prompt') is consulted instead, and the demotion happens in
     // the catch-block below.
-    const currentMode = this.outputModeProber.getMode(this.baseURL);
+    const currentMode = this.outputModeProber.getMode(this.baseURL, model);
     const outputArgs = buildOutputArgs(response_format, currentMode);
 
     // [DEBUG-LOG v1.26.3 E2E] visible entry-point trace: response_format
@@ -257,7 +259,36 @@ export class OpenAICompatSdkClient implements LLMClient {
         ...buildSamplingArgs({ temperature, top_p, seed }),
       });
       reportFinish(onFinish, result.finishReason, result.usage);
-      return result.text;
+      // Issue #443 follow-up (v1.26.x PATCH) — mirror createMessageWithOutput:
+      // LMStudio + Qwen3.5 routes structured output into `reasoning_content`
+      // and leaves the visible `content` empty. `generateText` returns the
+      // visible text only — reasoning arrives via the separate
+      // `result.reasoning` promise. Prepend it so parseJsonResponse's
+      // balanced-JSON finder can reach the JSON-shaped payload.
+      let reasoningContent = '';
+      try {
+        // AI SDK 6.0.230: `result.reasoning` is a sync getter returning
+        // Array<ReasoningOutput> in the DefaultGenerateTextResult class
+        // (line 5096-5098 of ai/dist/index.mjs). The .d.ts signature
+        // misleadingly declares `PromiseLike<Array<ReasoningOutput>>` —
+        // there is no actual Promise to await. `await` on a non-Thenable
+        // value wraps it in a resolved Promise immediately, so the code
+        // path still works; the cast below silences the await-thenable
+        // lint without changing runtime behaviour.
+        const reasoningRaw = await (result.reasoning as unknown as Promise<unknown>);
+        const reasoningArr: ReadonlyArray<{ text?: string }> = Array.isArray(reasoningRaw)
+          ? (reasoningRaw as ReadonlyArray<{ text?: string }>)
+          : typeof reasoningRaw === 'string'
+            ? [{ text: reasoningRaw }]
+            : [];
+        reasoningContent = reasoningArr.map((r) => r.text ?? '').join('');
+      } catch {
+        /* No reasoning field on this provider. */
+      }
+      const finalText = reasoningContent
+        ? prependReasoningForParse(reasoningContent, result.text)
+        : result.text;
+      return finalText;
     } catch (err) {
       // v1.26.3 PATCH Path 2 fix (DocTpoint CHANGES_REQUESTED
       // 2026-08-10T12:50:37Z) — catch `NoObjectGeneratedError` from
@@ -299,7 +330,30 @@ export class OpenAICompatSdkClient implements LLMClient {
         const text = (err as Error & { text?: unknown }).text;
         if (typeof text === 'string') {
           reportFinish(onFinish, 'stop', undefined);
-          return text;
+          // Issue #443 follow-up (mirrors createMessageWithOutput):
+          // when parseCompleteOutput throws on the JSON-shaped payload
+          // that LMStudio + Qwen3.5 routes into reasoning_content,
+          // `err.text` is empty (only the visible content is captured).
+          // Reach into err.response.body for reasoning_content and
+          // prepend it so parseJsonResponse's thinking-block fallback
+          // (Layer 3) can recover the structured payload.
+          let reasoningContent = '';
+          try {
+            const body = (err as Error & {
+              response?: { body?: { choices?: Array<{ message?: { reasoning_content?: unknown } }> } };
+            }).response?.body;
+            const reasoningFromBody = body?.choices?.[0]?.message?.reasoning_content;
+            if (typeof reasoningFromBody === 'string' && reasoningFromBody) {
+              reasoningContent = reasoningFromBody;
+            } else if (Array.isArray(reasoningFromBody)) {
+              reasoningContent = reasoningFromBody.map((r) => (r as { text?: string }).text || '').join('');
+            }
+          } catch {
+            /* response body shape unexpected */
+          }
+          return reasoningContent
+            ? prependReasoningForParse(reasoningContent, text)
+            : text;
         }
         // Defensive fallback: NoObjectGeneratedError without a `.text`
         // field (shouldn't happen per ai SDK contract, but if it does,
@@ -500,7 +554,7 @@ export class OpenAICompatSdkClient implements LLMClient {
       let tentativeDemotion: OutputMode | null = null;
       // Up to 2 demotions: Tier 0→1, then Tier 1→2.
       for (let chainAttempt = 0; chainAttempt < 2; chainAttempt++) {
-        const currentMode = this.outputModeProber.getMode(this.baseURL);
+        const currentMode = this.outputModeProber.getMode(this.baseURL, model);
 
         // Determine target tier based on current mode and last error body.
         let demotedMode: OutputMode | null = null;
@@ -524,7 +578,7 @@ export class OpenAICompatSdkClient implements LLMClient {
 
         // Tentative write BEFORE retry so the next iteration sees the
         // demoted mode if the retry throws.
-        this.outputModeProber.markMode(this.baseURL, demotedMode);
+        this.outputModeProber.markMode(this.baseURL, model, demotedMode);
         tentativeDemotion = demotedMode;
 
         try {
@@ -565,7 +619,7 @@ export class OpenAICompatSdkClient implements LLMClient {
       // Chain exhausted without success. Roll back any tentative
       // writes so a transient retry failure doesn't poison the cache.
       if (tentativeDemotion !== null) {
-        this.outputModeProber.markMode(this.baseURL, 'json_schema');
+        this.outputModeProber.markMode(this.baseURL, model, 'json_schema');
         console.debug(`[OUTPUT-MODE-DEMOTE-DEBUG] baseURL=${this.baseURL} chain exhausted without success. Rolling back tentative writes; cache reset to json_schema.`);
       }
       // Re-throw the original 400 so the caller sees the same
@@ -671,7 +725,7 @@ export class OpenAICompatSdkClient implements LLMClient {
   }> {
     const { model, max_tokens, system, messages, response_format, enableThinking, repetition_penalty, temperature, top_p, seed, onFinish } = params;
 
-    const currentMode = this.outputModeProber.getMode(this.baseURL);
+    const currentMode = this.outputModeProber.getMode(this.baseURL, model);
     const outputArgs = buildOutputArgs(response_format, currentMode);
 
     console.debug(
@@ -697,8 +751,33 @@ export class OpenAICompatSdkClient implements LLMClient {
         ...buildSamplingArgs({ temperature, top_p, seed }),
       });
       reportFinish(onFinish, result.finishReason, result.usage);
+      // Issue #443 follow-up (v1.26.x PATCH) — LMStudio + Qwen3.5 routes the
+      // structured output into `reasoning_content` and leaves the visible
+      // `content` empty. AI SDK's `generateText` does not include reasoning
+      // in `result.text` (it goes into the separate `result.reasoning`
+      // promise, mirroring the streaming pattern at line 1078). Without
+      // this prepend, `result.text` is `''` and parseJsonResponse sees
+      // empty body — losing the JSON-shaped reasoning payload. Mirrors
+      // the streaming variant at line 1078–1093.
+      let reasoningContent = '';
+      try {
+        // See createMessage comment for the PromiseLike<Array<...>> vs
+        // sync-getter mismatch in the AI SDK 6.0.230 type signature.
+        const reasoningRaw = await (result.reasoning as unknown as Promise<unknown>);
+        const reasoningArr: ReadonlyArray<{ text?: string }> = Array.isArray(reasoningRaw)
+          ? (reasoningRaw as ReadonlyArray<{ text?: string }>)
+          : typeof reasoningRaw === 'string'
+            ? [{ text: reasoningRaw }]
+            : [];
+        reasoningContent = reasoningArr.map((r) => r.text ?? '').join('');
+      } catch {
+        /* No reasoning field on this provider. */
+      }
+      const text = reasoningContent
+        ? prependReasoningForParse(reasoningContent, result.text)
+        : result.text;
       return {
-        text: result.text,
+        text,
         output: result.output as T | undefined,
         outputMode: currentMode,
         finishReason: result.finishReason,
@@ -716,8 +795,92 @@ export class OpenAICompatSdkClient implements LLMClient {
         const text = (err as Error & { text?: unknown }).text;
         if (typeof text === 'string') {
           reportFinish(onFinish, 'stop', undefined);
+          // Issue #443 follow-up: when Output.object's parseCompleteOutput
+          // throws (e.g. LMStudio + Qwen3.5 emits `{"": ""}` under grammar
+          // constraint), `err.text` only contains the visible `content`
+          // field (often empty). The JSON-shaped reasoning payload lives
+          // in `err.response.body.choices[0].message.reasoning_content` —
+          // AI SDK does not promote it onto the error. Reach in via the
+          // response body and prepend it so parseJsonResponse's
+          // thinking-block fallback (Layer 3) can recover the structured
+          // payload.
+          let reasoningContent = '';
+          try {
+            const body = (err as Error & {
+              response?: { body?: { choices?: Array<{ message?: { reasoning_content?: unknown } }> } };
+            }).response?.body;
+            const reasoningFromBody = body?.choices?.[0]?.message?.reasoning_content;
+            if (typeof reasoningFromBody === 'string' && reasoningFromBody) {
+              reasoningContent = reasoningFromBody;
+            } else if (Array.isArray(reasoningFromBody)) {
+              reasoningContent = reasoningFromBody.map((r) => (r as { text?: string }).text || '').join('');
+            }
+          } catch {
+            /* response body shape unexpected */
+          }
+          const finalText = reasoningContent
+            ? prependReasoningForParse(reasoningContent, text)
+            : text;
+
+          // v1.26.3 PATCH follow-up (Issue #443 E2E 2026-08-11): per-model
+          // placeholder → text_prompt demotion. When LMStudio + Qwen3.5 emits
+          // `{"": ""}` under grammar-constrained decoding (thinking mode
+          // collides with the json_schema grammar, model bails with the
+          // 5-token minimum-valid-object), the 400 demotion chain never fires
+          // (no 400 — the backend accepted the wire). The placeholder is a
+          // SEMANTIC failure, not a protocol failure.
+          //
+          // Demote DIRECTLY to text_prompt (skipping json_object): the root
+          // cause is grammar-constrained decoding, and json_object's
+          // Output.json() still applies a (weak) grammar — only text_prompt
+          // drops it. The cache write is PER-MODEL so a healthy sibling model
+          // on the same gateway (gemma-4-12b) is never demoted.
+          if (isPlaceholderJsonText(finalText)) {
+            console.debug(
+              `[OUTPUT-MODE-PLACEHOLDER-DEMOTE] baseURL=${this.baseURL} model=${model} placeholder detected, retrying at tier=text_prompt`,
+            );
+            try {
+              const retryLanguageModel = this.getProvider(model, this.fetchImpl);
+              const { generateText } = await import('ai');
+              const retrySystem = system
+                ? `${JSON_ENFORCEMENT_SYSTEM_PREFIX}\n\n${system}`
+                : JSON_ENFORCEMENT_SYSTEM_PREFIX;
+              const retryResult = await generateText({
+                model: retryLanguageModel,
+                ...(retrySystem ? { system: retrySystem } : {}),
+                messages: messages.map((m) => ({ role: m.role, content: m.content })),
+                maxOutputTokens: max_tokens,
+                ...buildOutputArgs(response_format, 'text_prompt'),
+                providerOptions: this.buildProviderOptions({
+                  enableThinking,
+                  repetitionPenalty: repetition_penalty,
+                }) as unknown as Parameters<typeof generateText>[0]['providerOptions'],
+                ...buildSamplingArgs({ temperature, top_p, seed }),
+              });
+              reportFinish(onFinish, retryResult.finishReason, retryResult.usage);
+              // Cache committed per-model ONLY on retry success (mirror the
+              // 400 chain's success-only policy) — a transient failure must
+              // not permanently downgrade the model.
+              this.outputModeProber.markMode(this.baseURL, model, 'text_prompt');
+              console.debug(
+                `[OUTPUT-MODE-PLACEHOLDER-DEMOTE] baseURL=${this.baseURL} model=${model} retry succeeded. Cache committed: text_prompt`,
+              );
+              return {
+                text: retryResult.text,
+                output: retryResult.output as T | undefined,
+                outputMode: 'text_prompt',
+                finishReason: retryResult.finishReason,
+                usage: retryResult.usage,
+              };
+            } catch {
+              console.debug(
+                `[OUTPUT-MODE-PLACEHOLDER-DEMOTE] baseURL=${this.baseURL} model=${model} retry failed. Returning raw placeholder text.`,
+              );
+            }
+          }
+
           return {
-            text,
+            text: finalText,
             output: undefined,
             outputMode: currentMode,
             finishReason: 'stop',
@@ -770,7 +933,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         let lastErrBody: string = err.responseBody ?? err.message ?? '';
         let tentativeDemotion: OutputMode | null = null;
         for (let chainAttempt = 0; chainAttempt < 2; chainAttempt++) {
-          const iterMode = this.outputModeProber.getMode(this.baseURL);
+          const iterMode = this.outputModeProber.getMode(this.baseURL, model);
           let demotedMode: OutputMode | null = null;
           if (iterMode === 'json_schema' && OutputModeProber.isJsonSchemaFieldError(lastErrBody)) {
             demotedMode = 'json_object';
@@ -786,7 +949,7 @@ export class OpenAICompatSdkClient implements LLMClient {
             `responseBody="${lastErrBody.slice(0, 240)}"`,
           );
 
-          this.outputModeProber.markMode(this.baseURL, demotedMode);
+          this.outputModeProber.markMode(this.baseURL, model, demotedMode);
           tentativeDemotion = demotedMode;
 
           try {
@@ -824,7 +987,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           }
         }
         if (tentativeDemotion !== null) {
-          this.outputModeProber.markMode(this.baseURL, 'json_schema');
+          this.outputModeProber.markMode(this.baseURL, model, 'json_schema');
         }
         throw err;
       }
@@ -1089,7 +1252,7 @@ export class OpenAICompatSdkClient implements LLMClient {
       }
 
       if (reasoningContent) {
-        fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+        fullText = prependReasoningForParse(reasoningContent, fullText);
       }
       return fullText;
     } catch (err) {
@@ -1133,7 +1296,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           }
         } catch { /* no reasoning */ }
         if (reasoningContent) {
-          fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+          fullText = prependReasoningForParse(reasoningContent, fullText);
         }
         return fullText;
       }
@@ -1193,7 +1356,7 @@ export class OpenAICompatSdkClient implements LLMClient {
         // next call gets a fresh probe.
         this.reasoningStripProber.markStrip(this.baseURL);
         if (reasoningContent) {
-          fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+          fullText = prependReasoningForParse(reasoningContent, fullText);
         }
         return fullText;
       }
@@ -1231,7 +1394,7 @@ export class OpenAICompatSdkClient implements LLMClient {
           }
         } catch { /* no reasoning */ }
         if (reasoningContent) {
-          fullText = `<think>\n${reasoningContent}\n</think>\n\n${fullText}`;
+          fullText = prependReasoningForParse(reasoningContent, fullText);
         }
         return fullText;
       }

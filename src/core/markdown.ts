@@ -187,3 +187,49 @@ export function wrapReasoningContent(reasoning: string, text: string): string {
 export function unescapeThinkingTag(s: string): string {
   return s.replace(/<\\\/think/gi, '</think');
 }
+
+/**
+ * v1.26.x PATCH follow-up (LMStudio + Qwen3.5 — issue #443 follow-up).
+ * Smart-prepend reasoning_content to the visible text WITHOUT wrapping in
+ * <think> tags when reasoning_content itself contains JSON-shaped output
+ * that a downstream parser would otherwise lose when stripping the block.
+ *
+ * Why this exists: some local backends (LMStudio's llama.cpp with Qwen3.x
+ * or Qwen3.5 chat templates) route the model's actual structured output
+ * into the OpenAI-compatible `reasoning_content` channel and leave
+ * `content` empty. The model emits valid JSON there, but the previous
+ * wrap-in-<think> contract made `parseJsonResponse` strip the entire block
+ * before the balanced-JSON finder ran — so a complete
+ * `{"entities": [...], ...}` in `reasoning_content` was discarded.
+ *
+ * Strategy:
+ *  - If `reasoning` already contains a `<think>...</think>` block (DeepSeek
+ *    R1, o-series reasoning), wrap-as-is so the existing
+ *    `extractThinkingBlocks` contract holds for the Query UI.
+ *  - Otherwise, prepend the raw reasoning BEFORE the visible text with a
+ *    `<think>` opener only when `text` is empty (so `parseJsonResponse`
+ *    still strips to nothing — caller has `silentOnEmpty:true`); when
+ *    `text` is non-empty, prepend raw with a blank-line separator. The
+ *    JSON-shaped payload survives: the balanced finder at
+ *    parseJsonResponse:189 walks through it.
+ *
+ * @param reasoning - Raw reasoning_content from the SDK
+ * @param text - Visible response content (may be empty)
+ * @returns Combined string safe to feed into parseJsonResponse /
+ *          cleanMarkdownResponse. Returns `text` unchanged when reasoning
+ *          is empty.
+ */
+export function prependReasoningForParse(reasoning: string, text: string): string {
+  if (!reasoning) return text;
+  // Already-tagged (DeepSeek R1 / OpenAI o-series) — keep the contract
+  // so extractThinkingBlocks in the Query UI still recognises it.
+  if (/<think(?:ing)?\b[^>]*>/i.test(reasoning)) {
+    return wrapReasoningContent(reasoning, text);
+  }
+  // No closing tag in reasoning — prepending raw is safer than wrapping,
+  // because wrap + strip loses the JSON-shaped reasoning payload. The
+  // visible text follows after a blank line; parseJsonResponse's
+  // balanced-JSON finder will walk into the reasoning text first.
+  const safeReasoning = reasoning.replace(/<\/think/gi, '<\\/think');
+  return text ? `${safeReasoning}\n\n${text}` : `${safeReasoning}\n\n`;
+}

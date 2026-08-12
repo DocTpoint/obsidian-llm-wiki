@@ -74,6 +74,26 @@ function makeResultWithOutput(text: string, output: unknown): Awaited<ReturnType
   return { ...(base as object), output } as unknown as Awaited<ReturnType<typeof generateText>>;
 }
 
+// v1.26.x PATCH follow-up (#443 LMStudio + Qwen3.5): helper for tests that
+// exercise the reasoning_content prepend path. AI SDK's generateText
+// returns `reasoning` as a Promise<string> (or array of {text}) that
+// resolves after the main response — mirroring the streaming variant
+// already covered in the SDK. Tests use this to simulate a backend like
+// LMStudio + Qwen3.5 whose chat template routes structured output into
+// reasoning_content and leaves content empty.
+function makeResultWithReasoning(
+  text: string,
+  reasoning: string | Array<{ text?: string }>,
+  output?: unknown,
+): Awaited<ReturnType<typeof generateText>> {
+  const base = output !== undefined ? makeResultWithOutput(text, output) : makeResult(text);
+  return {
+    ...(base as object),
+    reasoning: Promise.resolve(reasoning),
+    reasoningText: undefined,
+  } as unknown as Awaited<ReturnType<typeof generateText>>;
+}
+
 const PRESETS = [
   { id: 'gemini', baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash' },
   { id: 'openrouter', baseURL: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-3.5-sonnet' },
@@ -198,6 +218,139 @@ describe('OpenAICompatSdkClient', () => {
 
       const call = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
       expect(call.providerOptions).toEqual({});
+    });
+  });
+
+  // v1.26.x PATCH follow-up (#443 LMStudio + Qwen3.5):
+  //
+  // AI SDK's `generateText` returns the visible `content` field as
+  // `result.text` and the reasoning (DeepSeek R1 / OpenAI o-series /
+  // LMStudio + Qwen3.5) as a SEPARATE `result.reasoning` Promise that
+  // resolves after the main response. The SDK must prepend the
+  // reasoning content so `parseJsonResponse`'s balanced-JSON finder can
+  // recover JSON-shaped payloads that the backend routed into the
+  // reasoning channel.
+  //
+  // Before this fix, source-analyzer's batch 1 ingested through
+  // `createMessageWithOutput` and saw `text: ''` because the model
+  // output was entirely in reasoning_content (LMStudio chat-template
+  // parser bug + Qwen3.5 thinking mode). parseJsonResponse classified
+  // it as 'empty' even though a complete `{"entities": [...]}` payload
+  // existed in reasoning_content. The user's E2E log on 2026-08-11
+  // showed `Response length: 0` for that exact reason.
+  describe('reasoning_content prepend (Issue #443 follow-up — LMStudio + Qwen3.5)', () => {
+    it('createMessageWithOutput: prepends raw reasoning when no <think> tag is present', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValue(
+        makeResultWithReasoning('', '{"entities":[{"name":"X"}],"concepts":[]}'),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessageWithOutput({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+        response_format: { type: 'json_object', schema: {} },
+      });
+      // The JSON-shaped reasoning payload must survive in the returned
+      // text — NOT be wrapped in <think> tags (those would force
+      // parseJsonResponse to strip them and lose the JSON).
+      expect(result.text).not.toMatch(/^<think>/);
+      expect(result.text).toContain('"entities"');
+      expect(result.text).toContain('"name":"X"');
+      // output should be undefined because Tier 0 schema parse failed
+      // (we passed an empty schema, that's fine — the important thing
+      // is that the text is not empty).
+      expect(result.output).toBeUndefined();
+    });
+
+    it('createMessage (legacy): also prepends reasoning content on the non-typed path', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValue(
+        makeResultWithReasoning('', '{"entities":[{"name":"A"}]}'),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const text = await client.createMessage({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+      });
+      expect(text).toContain('"entities"');
+      expect(text).toContain('"name":"A"');
+    });
+
+    it('does NOT prepend when reasoning is empty (cloud providers unaffected)', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValue(
+        makeResultWithReasoning('{"summary":"ok"}', ''),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const result = await client.createMessageWithOutput({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+      });
+      // Reasoning empty → no prepend → text is exactly the visible text.
+      expect(result.text).toBe('{"summary":"ok"}');
+    });
+
+    it('wraps reasoning in <think> tags when reasoning already contains <think> (DeepSeek R1 compat)', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValue(
+        makeResultWithReasoning(
+          '{"answer":"yes"}',
+          '<think>let me think</think>step',
+        ),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const result = await client.createMessageWithOutput({
+        model: 'deepseek-reasoner',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+      });
+      // Reasoning already wrapped → keep the wrap contract so
+      // extractThinkingBlocks in the Query UI still recognises it.
+      expect(result.text).toMatch(/<think>/);
+      expect(result.text).toMatch(/<\/think>/);
+      expect(result.text).toContain('{"answer":"yes"}');
+    });
+
+    it('handles reasoning as Array<{text}> form', async () => {
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValue(
+        makeResultWithReasoning('', [
+          { text: '{"a":1}' },
+          { text: '{"b":2}' },
+        ]),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessageWithOutput({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'x' }],
+      });
+      // Both reasoning chunks must be joined and prepended.
+      expect(result.text).toContain('{"a":1}');
+      expect(result.text).toContain('{"b":2}');
     });
   });
 
@@ -902,11 +1055,20 @@ describe('OpenAICompatSdkClient', () => {
     // the same way as in production.
     //
     // Constructor requires response/usage/finishReason — minimal placeholders.
-    const makeNoObjectError = (text: string) => new NoObjectGeneratedError({
+    const makeNoObjectError = (
+      text: string,
+      body?: Record<string, unknown>,
+    ) => new NoObjectGeneratedError({
       message: 'No object generated',
       text,
       cause: new Error('JSONParseError'),
-      response: { id: 'test', timestamp: new Date(), modelId: 'test', headers: {} },
+      response: {
+        id: 'test',
+        timestamp: new Date(),
+        modelId: 'test',
+        headers: {},
+        body: body ?? {},
+      } as unknown as ConstructorParameters<typeof NoObjectGeneratedError>[0]['response'],
       usage: {
         inputTokens: 10,
         inputTokenDetails: { noCacheTokens: 10, cacheReadTokens: undefined, cacheWriteTokens: undefined },
@@ -1030,6 +1192,213 @@ describe('OpenAICompatSdkClient', () => {
       // defeat parseJsonResponse's greedy-regex + LLM repair path.
       expect(result).toBe(MALFORMED_WITH_TRUNCATION);
     });
+
+    // Issue #443 follow-up (LMStudio + Qwen3.5). When the model emits
+    // `{"": ""}` under grammar-constrained decoding, Output.object
+    // throws NoObjectGeneratedError. err.text is empty (only the
+    // visible content field is captured) — the JSON-shaped payload
+    // lives in err.response.body.choices[0].message.reasoning_content.
+    // The SDK must reach in there and prepend it so the caller's
+    // parseJsonResponse thinking-block fallback (Layer 3) can recover
+    // the structured output.
+    it('createMessage: recovers reasoning_content from err.response.body when err.text is empty', async () => {
+      const reasoningContent =
+        '{"source_title": "Developer policies", "entities": [{"name": "Obsidian"}]}';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(
+        makeNoObjectError('', {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: '',
+              reasoning_content: reasoningContent,
+              tool_calls: [],
+            },
+          }],
+        }),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const text = await client.createMessage({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+        response_format: { type: 'json_object', schema: {} },
+      });
+      // The reasoning payload must reach the caller — not be wrapped in
+      // <think> tags (those would force parseJsonResponse's block-strip
+      // to discard it).
+      expect(text).toContain('"source_title"');
+      expect(text).toContain('"entities"');
+      expect(text).not.toMatch(/^<think>/);
+    });
+
+    it('createMessageWithOutput: recovers reasoning_content from err.response.body when err.text is empty', async () => {
+      const reasoningContent = '{"entities":[{"name":"X"}],"summary":"yes"}';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(
+        makeNoObjectError('', {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: '',
+              reasoning_content: reasoningContent,
+              tool_calls: [],
+            },
+          }],
+        }),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const result = await client.createMessageWithOutput({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+        response_format: { type: 'json_object', schema: {} },
+      });
+      expect(result.text).toContain('"entities"');
+      expect(result.text).toContain('"summary"');
+      expect(result.output).toBeUndefined(); // Tier 0 failed → caller parses text
+    });
+
+    it('createMessage: degrades to err.text when err.response.body lacks reasoning_content', async () => {
+      // Defensive: if the body shape is unexpected (e.g. cloud provider
+      // without reasoning_content), do not crash — just surface err.text.
+      const FALLBACK_TEXT = '{"placeholder":"yes"}';
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(
+        makeNoObjectError(FALLBACK_TEXT, {
+          choices: [{ message: { role: 'assistant', content: '', tool_calls: [] } }],
+        }),
+      );
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'http://localhost:1234/v1',
+        provider: 'lmstudio',
+      });
+      const text = await client.createMessage({
+        model: 'qwen3.5-9b',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'analyze' }],
+        response_format: { type: 'json_object' },
+      });
+      expect(text).toBe(FALLBACK_TEXT);
+    });
+
+    // ==========================================================================
+    // Issue #443 follow-up (2026-08-11 E2E): per-model placeholder demotion.
+    //
+    // When LMStudio + Qwen3.5 emits `{"": ""}` under grammar-constrained
+    // decoding (thinking mode cannot co-exist with the json_schema grammar,
+    // so the model bails with the 5-token minimum-valid-object), the 400
+    // demotion chain never fires (no 400 — the backend accepted the wire).
+    // The placeholder is a SEMANTIC failure, not a protocol failure.
+    //
+    // The demotion target is text_prompt DIRECTLY (skipping json_object):
+    // the placeholder's root cause is grammar-constrained decoding, and
+    // json_object's Output.json() still applies a (weak) grammar — only
+    // text_prompt drops it. The cache write is PER-MODEL so a healthy
+    // sibling model on the same gateway (gemma-4-12b) is never demoted.
+    // ==========================================================================
+    describe('createMessageWithOutput: placeholder → text_prompt demotion (per-model, Issue #443 follow-up)', () => {
+      const PLACEHOLDER = '{"": ""}';
+      const baseURL = 'http://localhost:1234/v1';
+
+      const makePlaceholderError = () =>
+        makeNoObjectError('', {
+          choices: [{ message: { role: 'assistant', content: '', reasoning_content: PLACEHOLDER, tool_calls: [] } }],
+        });
+
+      it('demotes to text_prompt and retries once when reasoning_content is a placeholder', async () => {
+        mockGenerateText.mockReset();
+        mockGenerateText.mockRejectedValueOnce(makePlaceholderError());
+        // Second call (text_prompt retry) succeeds with real content.
+        mockGenerateText.mockResolvedValueOnce(makeResult('{"entities":[{"name":"X"}],"concepts":[]}'));
+
+        const client = new OpenAICompatSdkClient({ apiKey: 'sk-test', baseURL, provider: 'lmstudio' });
+        const result = await client.createMessageWithOutput({
+          model: 'qwen3.5-9b',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'analyze' }],
+          response_format: { type: 'json_object', schema: {} },
+        });
+
+        // Two generateText calls: the placeholder failure, then the demoted retry.
+        expect(mockGenerateText).toHaveBeenCalledTimes(2);
+        const firstCall = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
+        const secondCall = mockGenerateText.mock.calls[1][0] as Record<string, unknown>;
+        // Tier 0 first attempt: Output.object on the wire.
+        expect(firstCall.output).toBeDefined();
+        // Demoted retry: text_prompt → buildOutputArgs returns {} (no output arg).
+        expect(secondCall.output).toBeUndefined();
+        // JSON-shape enforcement prefix injected into the retry system prompt.
+        expect(String(secondCall.system)).toContain('MUST be a single valid JSON object');
+
+        // Success path returns the retry's text + the demoted outputMode.
+        expect(result.text).toContain('"entities"');
+        expect(result.outputMode).toBe('text_prompt');
+        expect(result.output).toBeUndefined();
+
+        // Cache committed per-model: qwen3.5-9b is demoted...
+        const prober = (client as unknown as { outputModeProber: { getMode: (u: string, m: string) => string } }).outputModeProber;
+        expect(prober.getMode(baseURL, 'qwen3.5-9b')).toBe('text_prompt');
+        // ...but gemma on the same gateway stays at the strongest tier.
+        expect(prober.getMode(baseURL, 'gemma-4-12b')).toBe('json_schema');
+      });
+
+      it('returns the raw placeholder text when the text_prompt retry also fails', async () => {
+        mockGenerateText.mockReset();
+        mockGenerateText.mockRejectedValueOnce(makePlaceholderError());
+        mockGenerateText.mockRejectedValueOnce(makePlaceholderError());
+
+        const client = new OpenAICompatSdkClient({ apiKey: 'sk-test', baseURL, provider: 'lmstudio' });
+        const result = await client.createMessageWithOutput({
+          model: 'qwen3.5-9b',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'analyze' }],
+          response_format: { type: 'json_object', schema: {} },
+        });
+
+        // Two calls attempted; no crash — raw placeholder text surfaced so the
+        // caller's parseJsonResponse placeholder gate can diagnose it.
+        expect(mockGenerateText).toHaveBeenCalledTimes(2);
+        expect(result.text).toContain('{"": ""}');
+        expect(result.output).toBeUndefined();
+        // No cache write on failed retry (mirror the 400 chain's "success-only" policy).
+        const prober = (client as unknown as { outputModeProber: { getMode: (u: string, m: string) => string } }).outputModeProber;
+        expect(prober.getMode(baseURL, 'qwen3.5-9b')).toBe('json_schema');
+      });
+
+      it('does NOT demote when reasoning_content is a real object (non-placeholder)', async () => {
+        mockGenerateText.mockReset();
+        // Full valid JSON in reasoning_content — the "good" #443 path that
+        // must keep working unchanged: recover + return, no retry.
+        mockGenerateText.mockRejectedValueOnce(
+          makeNoObjectError('', {
+            choices: [{ message: { role: 'assistant', content: '', reasoning_content: '{"entities":[{"name":"X"}],"concepts":[]}', tool_calls: [] } }],
+          }),
+        );
+
+        const client = new OpenAICompatSdkClient({ apiKey: 'sk-test', baseURL, provider: 'lmstudio' });
+        const result = await client.createMessageWithOutput({
+          model: 'qwen3.5-9b',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: 'analyze' }],
+          response_format: { type: 'json_object', schema: {} },
+        });
+
+        // Exactly one call — no demotion retry for a real payload.
+        expect(mockGenerateText).toHaveBeenCalledTimes(1);
+        expect(result.text).toContain('"entities"');
+        expect(result.outputMode).toBe('json_schema');
+      });
+    });
   });
 
   // ==========================================================================
@@ -1094,8 +1463,8 @@ describe('OpenAICompatSdkClient', () => {
       // Output.json() → output is still parsed IF the SDK does so). For
       // the Tier 1 contract we instead test the explicit case where
       // mode is forced via the prober.
-      const prober = (client as unknown as { outputModeProber: { markMode: (u: string, m: 'json_object') => void } }).outputModeProber;
-      prober.markMode(client['baseURL'] as string, 'json_object');
+      const prober = (client as unknown as { outputModeProber: { markMode: (u: string, m: string, mode: 'json_object') => void } }).outputModeProber;
+      prober.markMode(client['baseURL'] as string, 'deepseek-chat', 'json_object');
       const result = await client.createMessageWithOutput!({
         model: 'deepseek-chat',
         max_tokens: 100,
@@ -1117,8 +1486,8 @@ describe('OpenAICompatSdkClient', () => {
         baseURL: 'http://localhost:1234/v1',
         provider: 'lmstudio',
       });
-      const prober = (client as unknown as { outputModeProber: { markMode: (u: string, m: 'text_prompt') => void } }).outputModeProber;
-      prober.markMode(client['baseURL'] as string, 'text_prompt');
+      const prober = (client as unknown as { outputModeProber: { markMode: (u: string, m: string, mode: 'text_prompt') => void } }).outputModeProber;
+      prober.markMode(client['baseURL'] as string, 'qwythos-9b', 'text_prompt');
       const result = await client.createMessageWithOutput!({
         model: 'qwythos-9b',
         max_tokens: 100,

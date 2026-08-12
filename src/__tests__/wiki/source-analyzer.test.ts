@@ -41,6 +41,46 @@ describe('SourceAnalyzer', () => {
     expect(await run(a, TEST_PATH)).toBeNull();
   });
 
+  // v1.26.x PATCH follow-up (#443 LMStudio + Qwen3.5): a reasoning-mode
+  // model under grammar constraint emits `{"": ""}` (placeholder) when its
+  // thinking budget is tight. The parseJsonResponse placeholder gate
+  // rejects it (returns null), but the model sometimes emits a complete
+  // JSON on a second generation pass. SourceAnalyzer's first batch gets
+  // ONE bounded retry without halving before giving up. These tests pin
+  // that retry: first call returns placeholder (→ null via gate), second
+  // returns complete JSON (→ success).
+  it('retries first batch once when parse returns null (placeholder gate) then succeeds', async () => {
+    const a = mockAnalyze(
+      { [TEST_PATH]: '# Test\nContent here.' },
+      [
+        '{"": ""}', // first attempt → placeholder gate → null → retry
+        JSON.stringify({
+          source_title: 'Test',
+          summary: 'Some summary',
+          entities: [{ name: 'EntityA', type: 'other', summary: 'A', mentions_in_source: ['Content here.'] }],
+          concepts: [],
+        }),
+      ]
+    );
+    const result = await run(a, TEST_PATH);
+    expect(result).not.toBeNull();
+    expect(result!.entities).toHaveLength(1);
+    expect(result!.entities[0].name).toBe('EntityA');
+  });
+
+  it('does not retry when first batch has real content that is merely unusable (no entities/concepts keys)', async () => {
+    // A non-placeholder object (has source_title + summary but no
+    // entities/concepts) is NOT a placeholder — the parse succeeds and
+    // normalizeBatchResponse reports validity='unusable'. The first-batch
+    // `return null` path (round 1 unusable) fires, not the placeholder
+    // retry. This pins that the retry is ONLY for parse-null (placeholder).
+    const a = mockAnalyze(
+      { [TEST_PATH]: '# Test\nContent here.' },
+      ['{"source_title": "Test", "summary": "Some summary"}']
+    );
+    expect(await run(a, TEST_PATH)).toBeNull();
+  });
+
   it('proceeds when first batch has only entities (glossary case, PR #61)', async () => {
     const a = mockAnalyze(
       { [GLOSSARY_PATH]: '# Glossary\nTerm definitions here.' },

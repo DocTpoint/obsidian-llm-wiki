@@ -31,23 +31,37 @@ describe('renderTemplate', () => {
     expect(renderTemplate('plain text', { foo: 'bar' })).toBe('plain text');
   });
 
-  it('warns on unknown placeholder and leaves it untouched', () => {
+  it('logs unknown placeholders at debug (not warn) and leaves them untouched', () => {
+    // Design rationale (v1.26.x PATCH follow-up): renderTemplate is the
+    // FIRST of a two-stage render (the second is `applySectionLabels`).
+    // Templates deliberately use `{{section_*}}` markers that the first
+    // stage does NOT substitute — the second stage does, reading from
+    // settings. Previously this triggered `console.warn` on every entity/
+    // concept page creation (3+ warnings per page), which is a false
+    // positive: the marker is by design unknown to stage 1. Downgrading
+    // to `console.debug` keeps the diagnostic visible to devs (build:dev)
+    // while silencing the production-build log noise that obscured real
+    // warnings during E2E ingest.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
     const result = renderTemplate('Hello {{name}}, your {{unknown}} is ready.', { name: 'Alice' });
     expect(result).toBe('Hello Alice, your {{unknown}} is ready.');
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('{{unknown}}'));
+    expect(warn).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledWith(expect.stringContaining('{{unknown}}'));
   });
 
-  it('does not warn when all placeholders are known', () => {
+  it('does not warn or debug-log when all placeholders are known', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
     renderTemplate('Hello {{name}}', { name: 'Alice' });
     expect(warn).not.toHaveBeenCalled();
+    expect(debug).not.toHaveBeenCalled();
   });
 
-  it('warns once per unknown placeholder across many occurrences', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('debug-logs once per unknown placeholder across many occurrences', () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
     renderTemplate('{{a}} {{a}} {{b}} {{b}}', {});
-    expect(warn).toHaveBeenCalledTimes(4);
+    expect(debug).toHaveBeenCalledTimes(4);
   });
 
   it('leaves placeholders with non-word chars (dot/dash) untouched', () => {

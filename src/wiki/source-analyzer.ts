@@ -31,7 +31,7 @@ import {
   LLMUsage,
 } from '../types';
 import { PROMPTS } from '../prompts';
-import { parseJsonResponse } from '../core/json';
+import { parseJsonResponse, parseJsonResult } from '../core/json';
 import { isCrossLanguage, normalizeSourceLanguage, getWikiLanguageName } from '../core/source-language';
 import { renderTemplate } from '../core/template-renderer';
 import { matchExtractedToExisting } from '../core/index-search';
@@ -230,6 +230,16 @@ export class SourceAnalyzer {
     let currentBatchSize = limits.initialBatchSize;
     let batchSizeHalved = false;
     let retryingBatch = false; // one retry on truncation: halve batch size
+    // v1.26.x PATCH follow-up (#443 LMStudio + Qwen3.5): a reasoning-mode
+    // model under grammar constraint emits `{"": ""}` (minimum valid JSON
+    // object) as a placeholder when its thinking budget is tight. The
+    // parseJsonResponse placeholder gate now rejects it (returns null),
+    // but the model sometimes emits a complete JSON on retry (observed in
+    // LMStudio + Qwen3.5 testing). Give the FIRST batch one bounded retry
+    // WITHOUT halving (placeholder is not truncation — batch size is fine,
+    // the model just needs another generation pass). Mirrors the
+    // `retryingBatch` single-attempt philosophy from Issue #305.
+    let placeholderRetried = false;
 
     // Issue #305: the halving retry below used to live only in the catch
     // block, so it required the provider call to *throw*. An
@@ -472,7 +482,18 @@ export class SourceAnalyzer {
             // string back, so either branch returns the same shape.
             return callLlm(client, repairArgs);
           };
-        const analysisData = await parseJsonResponse(response, repairFn, { silentOnEmpty: true }) as Partial<SourceAnalysis> | null;
+        // v1.26.x PATCH follow-up (#443 LMStudio + Qwen3.5): use
+        // parseJsonResult (not parseJsonResponse) so the parse FAILURE
+        // REASON is available. A grammar-constrained reasoning model
+        // emits `{"": ""}` — the placeholder gate rejects it with reason
+        // 'thinking-block-only'. That is the one condition we retry
+        // without halving. Malformed/empty/exception keep the legacy
+        // paths below unchanged.
+        const parseResult = await parseJsonResult(response, repairFn);
+        const analysisData = parseResult.ok
+          ? parseResult.value as Partial<SourceAnalysis>
+          : null;
+        const parseReason = parseResult.ok ? undefined : parseResult.reason;
 
         if (!analysisData) {
           // Issue #305: a truncated response is not malformed JSON, it is
@@ -485,6 +506,23 @@ export class SourceAnalyzer {
           // better. `retryingBatch` and `minBatchSize` bound it to a single
           // extra attempt.
           if (finish.reason === 'length' && halveBatchAndRetry(`[Batch ${batchNum + 1}]`, 'finish_reason=length')) {
+            batchNum--;
+            continue;
+          }
+          // v1.26.x PATCH follow-up (#443 LMStudio + Qwen3.5): the
+          // placeholder gate (`{"": ""}` grammar-constrained artifact)
+          // returns reason 'thinking-block-only' with finish.reason='stop'.
+          // A complete JSON is sometimes emitted on a second generation
+          // pass (observed on LMStudio + Qwen3.5). Give the first batch
+          // ONE retry without halving before giving up — but ONLY for the
+          // placeholder-gate condition, NOT for malformed/empty (those keep
+          // the #305 "no retry on non-truncation" contract). Later batches
+          // skip this — by then the model is clearly misbehaving and
+          // retrying every batch would multiply LLM calls (Gate 4 network
+          // regression).
+          if (isFirstBatch && !placeholderRetried && parseReason === 'thinking-block-only') {
+            placeholderRetried = true;
+            console.warn(`[Batch ${batchNum + 1}] Placeholder response (placeholder gate), retrying once without halving`);
             batchNum--;
             continue;
           }

@@ -13,15 +13,23 @@
 //   not accept Tier 1 either and we should demote Tier 1 → Tier 2.
 //
 // The cache contract:
-//   - getMode(baseURL) returns the current tier. Default = 'json_schema'
-//     (assume strongest, demote on 400).
-//   - markMode(baseURL, mode) writes the tier to the cache.
+//   - getMode(baseURL, model) returns the current tier for a baseURL +
+//     model pair. Default = 'json_schema' (assume strongest, demote on
+//     failure). Per-model granularity is REQUIRED for placeholder-driven
+//     demotion (Issue #443 follow-up): a reasoning model that emits
+//     `{"": ""}` on one baseURL must not demote a working model on the
+//     same gateway. 400-driven demotion (backend rejects the wire format)
+//     is per-baseURL in nature but shares the same key space harmlessly —
+//     worst case a sibling model re-probes once.
+//   - markMode(baseURL, model, mode) writes the tier to the cache.
 //     Called AFTER retry success (not before — transient retry failure
-//     must not permanently downgrade a baseURL).
+//     must not permanently downgrade a model).
 //
 // Test matrix pins:
 //   1. Default mode = 'json_schema'
-//   2. markMode + getMode round-trip per baseURL (no cross-baseURL leak)
+//   2. markMode + getMode round-trip per (baseURL, model) — no cross-model
+//      leak on the SAME baseURL (Issue #443 follow-up: Qwen placeholder
+//      demotion must not demote gemma on the same LM Studio gateway)
 //   3. isJsonSchemaFieldError: catches 'json_schema' rejection
 //      (e.g. Cloudflare / Anthropic-via-proxy hypothetical response)
 //   7. isJsonSchemaFieldError: does NOT match bare 'json' / model names
@@ -35,18 +43,31 @@ import { APICallError } from 'ai';
 import { OutputModeProber, type OutputMode } from '../../llm-sdk/output-mode-prober';
 
 describe('OutputModeProber — cache & promotion', () => {
-  it('default mode is json_schema (assume strongest, demote on 400)', () => {
+  it('default mode is json_schema (assume strongest, demote on failure)', () => {
     const prober = new OutputModeProber();
-    expect(prober.getMode('https://api.deepseek.com/v1')).toBe('json_schema');
-    expect(prober.getMode('https://api.example.com/v1')).toBe('json_schema');
+    expect(prober.getMode('https://api.deepseek.com/v1', 'deepseek-chat')).toBe('json_schema');
+    expect(prober.getMode('https://api.example.com/v1', 'some-model')).toBe('json_schema');
   });
 
-  it('markMode + getMode round-trip per baseURL (no cross-leak)', () => {
+  it('markMode + getMode round-trip per (baseURL, model)', () => {
     const prober = new OutputModeProber();
-    prober.markMode('https://api.deepseek.com/v1', 'json_object');
-    expect(prober.getMode('https://api.deepseek.com/v1')).toBe('json_object');
+    prober.markMode('https://api.deepseek.com/v1', 'deepseek-chat', 'json_object');
+    expect(prober.getMode('https://api.deepseek.com/v1', 'deepseek-chat')).toBe('json_object');
     // Different baseURL unaffected
-    expect(prober.getMode('https://api.openai.com/v1')).toBe('json_schema');
+    expect(prober.getMode('https://api.openai.com/v1', 'deepseek-chat')).toBe('json_schema');
+  });
+
+  it('per-model isolation: same baseURL, different models do not leak (Issue #443 follow-up)', () => {
+    // The core reason per-model granularity is required: LM Studio gateway
+    // 127.0.0.1:1234 serves Qwen3.5 (placeholder-demoted) AND gemma-4-12b
+    // (healthy) on the SAME baseURL. A per-baseURL cache would demote gemma
+    // too — the exact regression the E2E log (2026-08-11) warned about.
+    const prober = new OutputModeProber();
+    const baseURL = 'http://localhost:1234/v1';
+    prober.markMode(baseURL, 'qwen3.5-9b', 'text_prompt');
+    expect(prober.getMode(baseURL, 'qwen3.5-9b')).toBe('text_prompt');
+    // gemma on the same gateway must stay at the strongest tier.
+    expect(prober.getMode(baseURL, 'gemma-4-12b')).toBe('json_schema');
   });
 
 });

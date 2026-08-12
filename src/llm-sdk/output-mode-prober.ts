@@ -39,11 +39,17 @@
 //   independent lets each be tuned against its real-world error bodies
 //   without leaking false-positive matches between tiers.
 //
-// Why per-baseURL not per-model:
-//   Same gateway → same wire format → same rejection behaviour. Model
-//   granularity would over-invalidate the cache (one model rejects a
-//   field, all models on the gateway get demoted; not the case here).
-//   Mirrors the [[reasoning-strip-probe]] design.
+// Why per-model (not per-baseURL):
+//   The v1.26.3 PATCH Phase A2 design cached per-baseURL ("Same gateway →
+//   same wire format → same rejection behaviour") — correct for the
+//   400-driven demotion (the BACKEND rejects a wire format; every model
+//   on the gateway sees the same 400). But Issue #443 follow-up E2E
+//   (2026-08-11) proved the placeholder-driven demotion is a MODEL-level
+//   signal: on ONE LM Studio gateway, Qwen3.5 emits `{"": ""}` under
+//   grammar constraint while gemma-4-12b emits full JSON. A per-baseURL
+//   cache would demote gemma too. Per-model key space makes the
+//   placeholder demotion safe; 400-driven demotion merely re-probes a
+//   sibling model once (harmless, not incorrect).
 
 import { classifyFieldError } from './shared-rejection-verbs';
 
@@ -86,21 +92,27 @@ const JSON_SCHEMA_FIELD_MARKERS = [
 export class OutputModeProber {
   private readonly cache = new Map<string, OutputMode>();
 
-  /**
-   * Read the strongest mode the backend accepts for a baseURL.
-   * Default = 'json_schema' (assume strongest, demote on first 400).
-   */
-  getMode(baseUrl: string): OutputMode {
-    return this.cache.get(baseUrl) ?? 'json_schema';
+  /** Composite key: baseURL + model so sibling models share no state. */
+  private key(baseUrl: string, model: string): string {
+    return `${baseUrl}::${model}`;
   }
 
   /**
-   * Write the demoted mode for a baseURL. Called AFTER a demoted
-   * retry succeeds — a transient retry failure must not permanently
-   * downgrade a baseURL.
+   * Read the strongest mode the backend accepts for a (baseURL, model)
+   * pair. Default = 'json_schema' (assume strongest, demote on first
+   * placeholder / 400).
    */
-  markMode(baseUrl: string, mode: OutputMode): void {
-    this.cache.set(baseUrl, mode);
+  getMode(baseUrl: string, model: string): OutputMode {
+    return this.cache.get(this.key(baseUrl, model)) ?? 'json_schema';
+  }
+
+  /**
+   * Write the demoted mode for a (baseURL, model) pair. Called AFTER a
+   * demoted retry succeeds — a transient retry failure must not
+   * permanently downgrade a model.
+   */
+  markMode(baseUrl: string, model: string, mode: OutputMode): void {
+    this.cache.set(this.key(baseUrl, model), mode);
   }
 
   /**
