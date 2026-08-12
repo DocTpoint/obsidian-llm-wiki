@@ -13,6 +13,7 @@ import { cleanMarkdownResponse } from '../core/markdown';
 import { applySectionLabels } from './system-prompts';
 import { renderTemplate } from '../core/template-renderer';
 import { resolveModelForTask } from '../core/model-resolver';
+import { getText } from '../core/i18n';
 import { UNIVERSAL_LINK_CONSTRAINTS } from './prompts/constraints';
 import { TOKENS_CONVERSATION_EXTRACTION, TOKENS_CONVERSATION_PAGE, TOKENS_PAGE_GENERATION, TOKENS_QUERY_SAVE_DEDUP } from '../constants';
 import { PageFactory } from './page-factory';
@@ -63,7 +64,7 @@ export class ConversationIngestor {
     }
 
     console.debug('=== Starting conversation extraction ===');
-    this.ctx.onProgress?.('Analyzing conversation...');
+    this.ctx.onProgress?.(getText(this.ctx.settings.language, 'convAnalyzing'));
 
     const actualDate = new Date().toISOString().split('T')[0];
     console.debug('[System time]', actualDate);
@@ -75,7 +76,7 @@ export class ConversationIngestor {
     const conversationText = formatConversation(history);
 
     if (existingWikiIndex !== 'Wiki is empty') {
-      this.ctx.onProgress?.('Checking for existing knowledge...');
+      this.ctx.onProgress?.(getText(this.ctx.settings.language, 'convCheckingExisting'));
       try {
         const dedupResult = await this.checkDedup(existingWikiIndex, conversationText);
         // Issue #398: emit a console.warn so DevTools shows the LLM's actual
@@ -85,7 +86,7 @@ export class ConversationIngestor {
         console.debug('[conversation-ingest] dedup verdict:', dedupResult);
         if (dedupResult === 'fully_redundant') {
           console.warn('[conversation-ingest] save skipped: dedup=fully_redundant');
-          this.ctx.onProgress?.('This knowledge already exists in Wiki');
+          this.ctx.onProgress?.(getText(this.ctx.settings.language, 'convAlreadyExists'));
           return {
             sourceFile: `Conversation: ${history.messages[0]?.content?.substring(0, 50) || 'unknown'}`,
             createdPages: [],
@@ -201,7 +202,7 @@ CRITICAL RULES:
     console.debug('[LLM分析结果]', parsed);
     console.debug('[生成的标题]', parsed.source_title);
 
-    this.ctx.onProgress?.('Creating summary page...');
+    this.ctx.onProgress?.(getText(this.ctx.settings.language, 'convCreatingSummary'));
     await this.orch.ensureWikiStructure();
 
     const preserveCase = this.ctx.settings.slugCase === 'preserve';
@@ -241,7 +242,7 @@ CRITICAL RULES:
 
     const finalSummaryPrompt = applySectionLabels(summaryPrompt, this.ctx.settings);
 
-    this.ctx.onProgress?.('Generating summary page...');
+    this.ctx.onProgress?.(getText(this.ctx.settings.language, 'convGeneratingSummary'));
     const summaryPageContent = await client.createMessage({
       task: 'conversation-page',
       model: resolveModelForTask(this.ctx.settings, 'ingest'),
@@ -260,7 +261,9 @@ CRITICAL RULES:
 
     for (const entity of parsed.entities) {
       await this.orch.apiDelay();
-      this.ctx.onProgress?.(`Saving entity: ${entity.name}`);
+      this.ctx.onProgress?.(
+        getText(this.ctx.settings.language, 'convSavingEntity').replace('{name}', entity.name)
+      );
       try {
         const entityResult = await this.pageFactory.createOrUpdateEntityPage(entity, parsed, { path: summaryPath, basename: semanticSlug }, convPlannedPaths);
         if (entityResult.path) {
@@ -279,7 +282,9 @@ CRITICAL RULES:
 
     for (const concept of parsed.concepts) {
       await this.orch.apiDelay();
-      this.ctx.onProgress?.(`Saving concept: ${concept.name}`);
+      this.ctx.onProgress?.(
+        getText(this.ctx.settings.language, 'convSavingConcept').replace('{name}', concept.name)
+      );
       try {
         const conceptResult = await this.pageFactory.createOrUpdateConceptPage(concept, parsed, { path: summaryPath, basename: semanticSlug }, convPlannedPaths);
         if (conceptResult.path) {
@@ -296,7 +301,7 @@ CRITICAL RULES:
       }
     }
 
-    this.ctx.onProgress?.('Generating index...');
+    this.ctx.onProgress?.(getText(this.ctx.settings.language, 'convGeneratingIndex'));
     await this.orch.generateIndex();
     parsed.contradictions = parsed.contradictions || [];
     await this.orch.updateLog('conversation', parsed);

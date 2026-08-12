@@ -41,6 +41,7 @@ import { MAX_TOKENS_BATCH, TOKENS_PER_ITEM_BUDGET, TOKENS_LEMMA_CLASSIFY, SOURCE
 import { getExistingWikiPages } from './lint/get-existing-pages';
 import { getGranularityInstruction } from './system-prompts';
 import { resolveModelForTask } from '../core/model-resolver';
+import { getText } from '../core/i18n';
 import { calculateBatchLimits, adjustBatchSizeForResponse, getCustomTypeCaps } from '../core/batch-limits';
 import { detectConvergence, checkCumulativeLimits, checkEmptyBatch, formatConvergenceStatus } from '../core/convergence-detector';
 import { createEmptyAccumulation, mergeBatchResults, buildSourceAnalysis, calculateBatchStats } from '../core/batch-merger';
@@ -358,9 +359,18 @@ export class SourceAnalyzer {
       console.debug(`[Batch ${batchNum + 1}/${limits.maxBatches}] LLM call started (batch_size=${currentBatchSize})...`);
       console.debug(`[Batch ${batchNum + 1}] Prompt length:`, prompt.length);
       if (isFirstBatch) {
-        this.ctx.onProgress?.(`Analyzing batch 1/${limits.maxBatches}...`);
+        this.ctx.onProgress?.(
+          getText(this.ctx.settings.language, 'ingestBatchInitial')
+            .replace('{total}', String(limits.maxBatches))
+        );
       } else {
-        this.ctx.onProgress?.(`Analyzing batch ${batchNum + 1}/${limits.maxBatches} (${accumulation.entities.length} entities, ${accumulation.concepts.length} concepts so far)...`);
+        this.ctx.onProgress?.(
+          getText(this.ctx.settings.language, 'ingestBatchProgress')
+            .replace('{current}', String(batchNum + 1))
+            .replace('{total}', String(limits.maxBatches))
+            .replace('{entities}', String(accumulation.entities.length))
+            .replace('{concepts}', String(accumulation.concepts.length))
+        );
       }
 
       try {
@@ -423,7 +433,10 @@ export class SourceAnalyzer {
           ? ` | tokens in=${finish.usage.inputTokens ?? '?'} out=${finish.usage.outputTokens ?? '?'} (max_tokens=${batchMaxTokens})`
           : '';
         console.debug(`[Batch ${batchNum + 1}] Response length:`, response.length, usageStr);
-        this.ctx.onProgress?.(`Analyzed batch ${batchNum + 1}, processing...`);
+        this.ctx.onProgress?.(
+          getText(this.ctx.settings.language, 'ingestBatchProcessed')
+            .replace('{current}', String(batchNum + 1))
+        );
 
         // Issue #305 follow-up: on a truncated response (finish_reason=length)
         // the JSON is *incomplete*, not malformed, and a syntax-repair pass

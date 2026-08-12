@@ -203,3 +203,54 @@ describe('fetchErrorNetwork mentions API Key in every locale (B1 fallback)', () 
     });
   }
 });
+
+// B2.5 guard (v1.26.4 PATCH follow-up): the status-bar progress keys
+// introduced for i18n (ingestBatch*, ingestCreating*, conv*, etc.) must
+// preserve the EN placeholder set in every locale. If a translator drops
+// or renames a placeholder, runtime getText(...).replace('{x}', ...) would
+// silently leave the literal '{x}' in the user-visible string.
+//
+// This generalizes the existing ru-only placeholder-drift test (line 157)
+// to ALL locales for the B2.5 progress keys — the user-facing strings that
+// flow through composeStatusBarUpdate / onProgress every ingest run.
+const B25_PROGRESS_KEYS = [
+  'ingestBatchInitial',
+  'ingestBatchProgress',
+  'ingestBatchProcessed',
+  'ingestAnalyzing',
+  'ingestCreatingSummary',
+  'ingestCreatingItem',
+  'ingestUpdating',
+  'ingestGeneratingIndex',
+  'ingestItemTypeEntity',
+  'ingestItemTypeConcept',
+  'convAnalyzing',
+  'convCheckingExisting',
+  'convAlreadyExists',
+  'convCreatingSummary',
+  'convGeneratingSummary',
+  'convSavingEntity',
+  'convSavingConcept',
+  'convGeneratingIndex',
+] as const;
+
+describe('B2.5 status-bar progress keys preserve EN placeholders across all locales', () => {
+  it.each(LOCALES)('locale "%s" preserves every {placeholder} for B2.5 progress keys', (locale) => {
+    const enTexts = TEXTS.en as unknown as Record<string, string>;
+    const locTexts = TEXTS[locale] as unknown as Record<string, string>;
+    for (const key of B25_PROGRESS_KEYS) {
+      const enPlaceholders = [...(enTexts[key] ?? '').matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map(m => m[1]).sort();
+      const locPlaceholders = [...(locTexts[key] ?? '').matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map(m => m[1]).sort();
+      expect(locPlaceholders, `placeholder drift in ${locale}.${key}`).toEqual(enPlaceholders);
+    }
+  });
+
+  it.each(LOCALES)('locale "%s" has non-empty B2.5 progress values', (locale) => {
+    const locTexts = TEXTS[locale] as unknown as Record<string, string>;
+    for (const key of B25_PROGRESS_KEYS) {
+      const value = locTexts[key];
+      expect(typeof value, `missing ${locale}.${key}`).toBe('string');
+      expect((value ?? '').trim().length, `empty ${locale}.${key}`).toBeGreaterThan(0);
+    }
+  });
+});

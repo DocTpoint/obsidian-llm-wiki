@@ -534,6 +534,39 @@ export const EN_TEXTS = {
     ingestionCancelling: 'Cancelling — will stop after current batch completes',
     ingestionCancelled: 'Ingestion cancelled',
     crossTypeCollisionNotice: '{count} items merged as cross-type aliases (entity ↔ concept duplicates prevented)',
+    // v1.26.4 PATCH follow-up (B2.5): status-bar progress text i18n.
+    // These were previously hardcoded English strings in wiki-engine.ts,
+    // conversation-ingest.ts, and source-analyzer.ts, causing mixed-language
+    // status bars on non-English vaults. Every status-bar text emitted via
+    // onProgress (which routes through composeStatusBarUpdate → setText)
+    // now flows through getText() so the user's selected language is honored
+    // end-to-end. Placeholder contract:
+    //   {filename}  — source file basename
+    //   {total}     — total batch count
+    //   {current}   — current batch index (1-based)
+    //   {entities}  — accumulated entities count so far
+    //   {concepts}  — accumulated concepts count so far
+    //   {step} / {totalSteps} — page-generation step counter
+    //   {type}      — 'Entity' or 'Concept' (resolved via ingestItemType*)
+    //   {name}      — entity / concept / file name
+    ingestBatchInitial: 'Analyzing batch 1/{total}...',
+    ingestBatchProgress: 'Analyzing batch {current}/{total} ({entities} entities, {concepts} concepts so far)...',
+    ingestBatchProcessed: 'Analyzed batch {current}, processing...',
+    ingestAnalyzing: 'Analyzing: {filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] Creating summary...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type}: {name}',
+    ingestUpdating: '[{step}/{totalSteps}] Updating: {name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] Generating index...',
+    ingestItemTypeEntity: 'Entity',
+    ingestItemTypeConcept: 'Concept',
+    convAnalyzing: 'Analyzing conversation...',
+    convCheckingExisting: 'Checking for existing knowledge...',
+    convAlreadyExists: 'This knowledge already exists in Wiki',
+    convCreatingSummary: 'Creating summary page...',
+    convGeneratingSummary: 'Generating summary page...',
+    convSavingEntity: 'Saving entity: {name}',
+    convSavingConcept: 'Saving concept: {name}',
+    convGeneratingIndex: 'Generating index...',
 
     // Lint Report
     lintReportTitle: 'Wiki lint report',
