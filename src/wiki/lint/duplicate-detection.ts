@@ -58,12 +58,15 @@ export function pageTypeOf(path: string): WikiPageType {
  *
  * Implementation note: stored as a Set of canonicalized "smaller|larger"
  * keys (lexicographically sorted by the type tag) so lookup is O(1)
- * regardless of which side is target vs source. The first naive
- * implementation used `a <= b` for canonicalization, but string
- * ordering ('c' < 'e') made the key ['concept','entity'] not match
- * the stored ['entity','concept'] row — silently rejecting the
- * allowed combination and causing the regression caught by the
- * sharedIncoming signal test (entity↔concept incoming test failed).
+ * regardless of which side is target vs source. Because the key is
+ * canonical, ('entity', 'concept') and ('concept', 'entity') BOTH map to
+ * 'concept|entity' — the Set MUST contain that row for the cross-type
+ * combination to be allowed. The original bug (caught by the
+ * sharedIncoming signal test) was a Set missing 'concept|entity' (only
+ * symmetric rows were present), so every entity↔concept pair was silently
+ * rejected — the fix was ADDING the row, not changing the `a < b`
+ * comparison (which produces an identical key either way). Do not
+ * 'simplify' the comparison or trust that Set row order matters.
  */
 const ALLOWED_PAIR_KEYS: ReadonlySet<string> = new Set([
   'concept|concept',
@@ -325,6 +328,16 @@ export interface DuplicateCandidateHooks {
    * the next bucket.
    */
   checkCancelled?: () => void;
+
+  /**
+   * B3 (v1.26.3 PATCH, DocT CR): invoked ONCE at the end of the scan with
+   * the total count of candidate pairs rejected by the cross-type filter
+   * (entity↔source / concept↔source / any 'other' pairing). Gives the
+   * caller a number to surface in dedup debug output — without it, the
+   * filter's effect is completely silent, so a future path-convention
+   * drift would degrade dedup to a no-op with no signal at all.
+   */
+  onCrossTypeRejected?: (count: number) => void;
 }
 
 /**
@@ -462,9 +475,12 @@ export async function generateDuplicateCandidates(
   }
 
   const candidates = new Map<string, DuplicateCandidate>();
+  // B3 (v1.26.3 PATCH, DocT CR): count rejected cross-type pairs so the
+  // filter's effect is measurable (emitted via hooks.onCrossTypeRejected).
+  let crossTypeRejected = 0;
 
   const addCandidate = (pathA: string, pathB: string, reason: string, signal: DuplicateCandidate['signal'], score: number) => {
-    // B3 fix (v1.26.4 PATCH follow-up): reject forbidden cross-type
+    // B3 (v1.26.3 PATCH): reject forbidden cross-type
     // pairs at injection time so the LLM verify batch never sees
     // "is this entity page a duplicate of this source page?" — that
     // question is meaningless per the #358 complementary memory model
@@ -479,6 +495,7 @@ export async function generateDuplicateCandidates(
     const typeA = pageTypeOf(pathA);
     const typeB = pageTypeOf(pathB);
     if (!isCrossTypePairAllowed(typeA, typeB)) {
+      crossTypeRejected++;
       return;
     }
     const key = [pathA, pathB].sort().join('|||');
@@ -545,6 +562,12 @@ export async function generateDuplicateCandidates(
     // are dimension-specific (ic: only) can short-circuit on tp:/lh:
     // buckets without running O(B²) pair loops over them.
     await runSignalsForBucket(bucketPages, thresholds, addCandidate, comparisonCountRef, bucketKey);
+  }
+
+  // B3 (v1.26.3 PATCH, DocT CR): surface the rejected count once, so the
+  // filter's effect is measurable in the caller's dedup debug output.
+  if (crossTypeRejected > 0) {
+    hooks.onCrossTypeRejected?.(crossTypeRejected);
   }
 
   return Array.from(candidates.values());

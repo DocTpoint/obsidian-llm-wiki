@@ -194,6 +194,11 @@ export async function runDedupPhase(
     // link) instead of the previous O(N) Array.find, dropping the
     // build from O(N² × L) to O(N × L).
     const incomingIndex = buildIncomingLinkIndex(pagesForDedup);
+    // B3 (v1.26.3 PATCH, DocT CR): count pairs rejected by the cross-type
+    // filter so its effect shows up in the dedup debug output below —
+    // without this number the filter is silent and a path-convention drift
+    // would degrade dedup to a no-op with no signal.
+    let crossTypeRejected = 0;
     const allCandidates = await generateDuplicateCandidates(pagesForDedup, {
       jaccardLinkThreshold: ctx.settings.lintJaccardLinkThreshold,
       jaccardBodyGate: ctx.settings.lintJaccardBodyGate,
@@ -205,6 +210,7 @@ export async function runDedupPhase(
       // bucket fan-out on a 2000-page vault can no longer block cancel
       // for the full scan duration.
       checkCancelled,
+      onCrossTypeRejected: (count) => { crossTypeRejected = count; },
     }, incomingIndex);
     if (allCandidates.length === 0) {
       console.debug('lintWiki: no duplicate candidates found — wiki is clean');
@@ -216,7 +222,7 @@ export async function runDedupPhase(
     // the constants.ts docblock). It controls which generated candidates
     // the LLM sees, not whether a candidate is generated.
     const { tier1, tier2 } = classifyTiers(allCandidates);
-    console.debug(`lintWiki: ${allCandidates.length} candidates → Tier 1: ${tier1.length}, Tier 2: ${tier2.length}`);
+    console.debug(`lintWiki: ${allCandidates.length} candidates → Tier 1: ${tier1.length}, Tier 2: ${tier2.length}${crossTypeRejected > 0 ? ` (${crossTypeRejected} cross-type pairs rejected by #358 filter)` : ''}`);
     // v1.24.0: log candidate breakdown by signal (preserved from the
     // OLD controller.ts:runLintWiki lines 200-204 diagnostic; was
     // accidentally dropped during refactor).

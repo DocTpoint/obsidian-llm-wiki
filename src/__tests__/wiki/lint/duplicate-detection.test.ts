@@ -639,6 +639,23 @@ describe('generateDuplicateCandidates — cancellation hook', () => {
     const candidates = await generateDuplicateCandidates([a, b]);
     expect(findCandidate(candidates, a.path, b.path)).not.toBeNull();
   });
+
+  it('reports the count of cross-type-rejected pairs via onCrossTypeRejected (B3 DocT CR)', async () => {
+    // entity + source share a title-cased body, so pre-B3 the
+    // bigram/caseVariant signals would have surfaced a candidate across
+    // the entity/source boundary. The cross-type filter rejects it AND
+    // reports the count so the filter's effect is measurable in the
+    // dedup-phase debug output.
+    const sharedBody = 'Transformer is a foundational architecture for sequence modeling and attention.';
+    const entity = makePage('wiki/entities/transformer.md', 'Transformer', sharedBody);
+    const source = makePage('wiki/sources/transformer-reference.md', 'Transformer Reference', sharedBody);
+    let rejected = 0;
+    const candidates = await generateDuplicateCandidates([entity, source], {}, {
+      onCrossTypeRejected: (count) => { rejected = count; },
+    });
+    expect(rejected).toBeGreaterThan(0);
+    expect(candidates).toHaveLength(0);
+  });
 });
 
 // ── generateDuplicateCandidates — e2e recall (v1.26.0 #382 item 3, Batch 1) ───
