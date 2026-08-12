@@ -55,3 +55,36 @@ export function buildIngestStatusBarText(
   const body = [filename?.trim(), stage?.trim(), label].filter(Boolean).join(' · ');
   return `${prefix}${body}`;
 }
+
+/**
+ * B2 fix (v1.26.4 PATCH follow-up): the granular progress text emitted
+ * by `wikiEngine.updateStatusBar` must preserve the always-visible
+ * "click to cancel" affordance. The update path (command-registry.ts
+ * setStatusBarUpdateCallback) used to call setText(raw) which dropped
+ * the base label entirely; this helper restores the
+ * `buildIngestStatusBarText(label, undefined, undefined, updateText)`
+ * contract by picking the right active label and appending it.
+ *
+ * Pure function — no IO. Caller (command-registry) decides whether to
+ * setText the result or hide the bar when null is returned.
+ *
+ * Precedence: ingest > lint (they are mutex in practice; this is
+ * defensive in case a future bug lets them overlap).
+ */
+export interface ComposeStatusBarUpdateOptions {
+  isIngesting: boolean;
+  isLintRunning: boolean;
+  ingestLabel: string;
+  lintLabel: string;
+  updateText: string;
+}
+
+export function composeStatusBarUpdate(opts: ComposeStatusBarUpdateOptions): string | null {
+  if (opts.isIngesting) {
+    return buildIngestStatusBarText(opts.ingestLabel, undefined, undefined, opts.updateText);
+  }
+  if (opts.isLintRunning) {
+    return buildIngestStatusBarText(opts.lintLabel, undefined, undefined, opts.updateText);
+  }
+  return null;
+}

@@ -17,7 +17,7 @@ import type { AutoMaintainManager } from '../schema/auto-maintain';
 import type { BatchProgress } from '../core/status-bar';
 import type { IngestQueue } from '../core/ingest-queue';
 import { getText } from '../core/i18n';
-import { buildIngestStatusBarText } from '../core/status-bar';
+import { buildIngestStatusBarText, composeStatusBarUpdate } from '../core/status-bar';
 import { TEXTS } from '../texts';
 import { HistoryModal } from '../ui/history-modal';
 import { LLMWikiSettingTab } from '../ui/settings';
@@ -199,8 +199,26 @@ export function registerWikiCommands(plugin: CommandRegistryHost): void {
   plugin.wikiEngine.setStatusBarUpdateCallback(
     (text: string) => {
       if (plugin.ingestStatusBar) {
-        plugin.ingestStatusBar.setText(text);
-        plugin.ingestStatusBar.removeClass('llm-wiki-status-bar-hidden');
+        // B2 fix (v1.26.4 PATCH follow-up): route the granular progress
+        // text through composeStatusBarUpdate so the always-visible
+        // "click to cancel" base label is preserved. Previously this
+        // callback called setText(text) directly, dropping the cancel
+        // affordance for the entire duration of long ingest/lint batches.
+        // Returns null when neither is running (e.g., post-cancel) — in
+        // that case we hide the bar instead of writing stale text.
+        const composed = composeStatusBarUpdate({
+          isIngesting: plugin.wikiEngine.isIngesting(),
+          isLintRunning: plugin.wikiEngine.isLintRunning(),
+          ingestLabel: getText(plugin.settings.language, 'ingestionStatusBar'),
+          lintLabel: getText(plugin.settings.language, 'lintStatusBar'),
+          updateText: text,
+        });
+        if (composed === null) {
+          plugin.ingestStatusBar.addClass('llm-wiki-status-bar-hidden');
+        } else {
+          plugin.ingestStatusBar.setText(composed);
+          plugin.ingestStatusBar.removeClass('llm-wiki-status-bar-hidden');
+        }
       }
     }
   );
