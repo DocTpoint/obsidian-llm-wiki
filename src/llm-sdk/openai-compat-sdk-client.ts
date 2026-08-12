@@ -57,6 +57,34 @@ export interface OpenAICompatSdkClientOptions {
   streamFetch?: typeof streamWithFallback;
 }
 
+/**
+ * Issue #414: per-provider wire-field spelling for the
+ * `repetitionPenalty` user setting. `lmstudio` / `ollama` accept the
+ * llama.cpp spelling (`repeat_penalty`, no `-ion` — verified by
+ * DocTpoint #414 type-error test on LM Studio / gemma-4-12b).
+ * `kimi` / `openrouter` / `custom` accept the OpenAI-spec spelling
+ * (`repetition_penalty`, snake_case). Other backends (`deepseek` /
+ * `gemini` / `minimax` / `glm`) do not document the field, so the
+ * caller drops it silently rather than emitting a key the backend
+ * will ignore.
+ *
+ * Module-level lookup table (rather than chained if/return) so
+ * adding a new provider is one line and the table is itself the
+ * documentation. Exported for direct unit-test coverage without
+ * spinning up a full `OpenAICompatSdkClient`.
+ */
+const REPETITION_PENALTY_WIRE_FIELD: Readonly<Record<string, 'repeat_penalty' | 'repetition_penalty'>> = {
+  lmstudio: 'repeat_penalty',
+  ollama: 'repeat_penalty',
+  kimi: 'repetition_penalty',
+  openrouter: 'repetition_penalty',
+  custom: 'repetition_penalty',
+};
+
+export function repetitionPenaltyWireField(provider: string): 'repeat_penalty' | 'repetition_penalty' | null {
+  return REPETITION_PENALTY_WIRE_FIELD[provider] ?? null;
+}
+
 export class OpenAICompatSdkClient implements LLMClient {
   private readonly apiKey: string;
   private readonly baseURL: string;
@@ -109,6 +137,17 @@ export class OpenAICompatSdkClient implements LLMClient {
    */
   private readonly supportsStructuredOutputs: boolean;
 
+  /**
+   * Issue #414: per-provider wire-field spelling for `repetitionPenalty`.
+   * Computed once in the constructor — `this.provider` is immutable per
+   * client, so the lookup runs at most once per client lifetime (vs
+   * once per LLM call if the helper were re-evaluated on each
+   * `buildProviderOptions`). `null` means "drop silently" (DeepSeek /
+   * Gemini / MiniMax / GLM — providers whose public API does not
+   * document `repetition_penalty`).
+   */
+  private readonly repetitionPenaltyWireField: 'repeat_penalty' | 'repetition_penalty' | null;
+
   constructor(opts: OpenAICompatSdkClientOptions) {
     this.apiKey = opts.apiKey;
     this.baseURL = opts.baseURL;
@@ -117,6 +156,7 @@ export class OpenAICompatSdkClient implements LLMClient {
     this.streamFetchImpl = opts.streamFetch ?? streamWithFallback;
     this.supportsStructuredOutputs
       = PREDEFINED_PROVIDERS[opts.provider]?.supportsStructuredOutputs ?? false;
+    this.repetitionPenaltyWireField = repetitionPenaltyWireField(opts.provider);
   }
 
   /**
@@ -1100,61 +1140,73 @@ export class OpenAICompatSdkClient implements LLMClient {
     }
 
     if (opts.repetitionPenalty !== undefined) {
-      // The spelling `OpenAICompatibleClient.buildRequestBody` put on the wire
-      // before v1.23.0. Kept, so that correcting the providerOptions key
-      // restores that spelling rather than inventing a new one — but only the
-      // spelling. That client gated every non-standard field on an
-      // `unsupportedFields` set held per client instance, learned from 400
-      // bodies via `parseUnknownFields` and surfaced to the user as a
-      // `paramStripped` notice. The AI-SDK migration dropped all of it, so
-      // whenever a value is set this field now travels ungated — the setting
-      // itself is opt-in, with no default and its input behind Custom Advanced
-      // Settings.
+      // Issue #414: per-provider spelling dispatch. The AI SDK's
+      // openai-compat passthrough (dist/index.mjs:525-540) reads from
+      // `providerOptions[this.providerOptionsName]` (our provider id —
+      // `lmstudio` / `kimi` / etc.), not the hardcoded `"openaiCompatible"`
+      // key. This branch now emits under the per-id key (the return key
+      // below) so passthrough delivers the field to the wire body.
       //
-      // Which spelling is right is per-backend, not global:
-      //   - llama.cpp b9205 ignores this one — measured once locally, same
-      //     output hash as a field name invented on the spot, three seeds, both
-      //     ends of the range, while `repeat_penalty` changed the output. No
-      //     artefact kept, and the server is no longer reachable
-      //   - the repository counts it among the fields the #137 retry stripped
-      //     on a 400 (CHANGELOG «temperature, repetition_penalty, etc.»), and a
-      //     code comment of that era cites `Unknown name 'repetition_penalty'`
-      //     as a Gemini reply. The issue itself never names the field, and no
-      //     live response is kept — the record is weaker than the thinking one
-      //   - OpenRouter and vLLM document this spelling; whether it ever took
-      //     effect for a user is not established either way
-      // So the fix is a per-provider dialect plus something to replace the
-      // learned blocklist, not a rename. A rename here would trade one broken
-      // set of backends for another.
-      openaiOpts.repetition_penalty = opts.repetitionPenalty;
+      // Different backends accept different spellings (see constructor
+      // for the dispatch table — the field is `null` for providers whose
+      // public API does not document `repetition_penalty`, in which case
+      // we drop silently to avoid the "user sets 1.5 expecting a
+      // reduction, field is silently ignored" failure class that
+      // motivated #414):
+      //   - `lmstudio` / `ollama` (llama.cpp dialect) → `repeat_penalty`
+      //     (no `-ion`). Verified by DocTpoint #414 type-error test on
+      //     LM Studio / gemma-4-12b.
+      //   - `kimi` / `openrouter` / `custom` (OpenAI-spec dialect) →
+      //     `repetition_penalty` (snake_case).
+      //
+      // No 400-strip retry: `repetitionPenalty` is a user opt-in
+      // setting (not a plugin default), so a backend rejection should
+      // surface to the user, not be silently swallowed. If a future
+      // pattern emerges of "users frequently 400 because they set
+      // repetitionPenalty", add a per-baseURL strip prober (see
+      // `reasoning-strip-probe.ts` for the pattern) — not preemptively,
+      // per dead-code-as-docs policy.
+      //
+      // Log fires only when the field IS sent (not on drop), matching
+      // the `[REASONING-STRIP-DEBUG]` convention of "log on the action
+      // the caller will care about". The drop path is documented in
+      // the constructor field's JSDoc + in `repetitionPenaltyWireField`.
+      //
+      // Tag `[REPETITION-PENALTY-EMIT]` (parallel to `[REASONING-STRIP-DEBUG]`)
+      // includes `baseURL=` for disambiguation across `custom` providers
+      // pointing at different backends — same provider id, different
+      // contract.
+      const wireField = this.repetitionPenaltyWireField;
+      if (wireField !== null) {
+        console.debug(
+          `[REPETITION-PENALTY-EMIT] baseURL=${this.baseURL} ` +
+          `provider=${this.provider} wireField=${wireField} ` +
+          `value=${opts.repetitionPenalty}`,
+        );
+        openaiOpts[wireField] = opts.repetitionPenalty;
+      }
     }
 
-    // repetition_penalty is NOT in
-    // openaiCompatibleLanguageModelChatOptions (zod schema, line 322-344 of
-    // dist/index.mjs). The SDK's path-2 passthrough (line 533-534) reads
-    // from `providerOptions[this.providerOptionsName]` — our provider id
-    // (`deepseek` / `kimi` / `lmstudio` / etc.), not the hardcoded
-    // `"openaiCompatible"` key that buildProviderOptions returns under.
-    // None of the 15 provider ids is literally `"openai-compatible"`, so
-    // the passthrough lookup misses for every provider and the field
-    // never reaches the wire on the openai-compat path. Has been the case
-    // since v1.23.0 — that migration dropped the
-    // pre-AI-SDK `unsupportedFields` blocklist that used to gate this.
+    // Issue #414: return under `this.provider` (e.g. `lmstudio`,
+    // `kimi`), not the hardcoded `"openaiCompatible"` key. The AI SDK's
+    // openai-compat passthrough at
+    // `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:525-540` reads
+    // from `providerOptions[this.providerOptionsName]` (camelCase,
+    // double-lookup) and forwards every field not in the zod whitelist
+    // (`reasoningEffort` / `textVerbosity` / `strictJsonSchema` / `user`)
+    // to the wire body unchanged. `reasoningEffort` is handled by the
+    // SDK separately (whitelisted → wire `reasoning_effort` at line
+    // 541); the per-provider key swap is what allows `repetition_penalty`
+    // (and any future per-provider field we add) to reach the wire.
     //
-    // v1.26.0 Batch 6: reasoningEffort (above) IS in the zod schema and
-    // does reach the wire as `reasoning_effort` (line 541). repetition_penalty
-    // is kept in the object for completeness — the user's Custom Advanced
-    // Setting can opt in, but the field is a no-op today. Correcting it
-    // is deliberately not part of this change: it would deliver
-    // repetition_penalty to all ten providers on this path at once, and no
-    // backend is known to read it.
-    //
-    // The follow-up does not need this key at all for most of it: the SDK
-    // parses `openaiCompatible.reasoningEffort` through its own schema and
-    // emits `reasoning_effort` regardless, which is Gemini's documented way to
-    // decline reasoning, and structured output travels as the standard
-    // `responseFormat` argument.
-    return Object.keys(openaiOpts).length > 0 ? { openaiCompatible: openaiOpts } : {};
+    // Side-effect: `thinking` + `chat_template_kwargs` (no longer used
+    // post-PR #411 / Batch 6) would now also passthrough if added
+    // here. We never add them, so this is a non-concern. PR #411's
+    // `reasoningEffort` → `reasoning_effort` path is unaffected (it's
+    // a zod-whitelist translation, not a passthrough).
+    return Object.keys(openaiOpts).length > 0
+      ? { [this.provider]: openaiOpts }
+      : {};
   }
 
   async createMessageStream(params: {

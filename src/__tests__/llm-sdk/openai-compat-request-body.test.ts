@@ -61,14 +61,24 @@ describe('OpenAICompatSdkClient — what reaches the request body', () => {
     // per DocTpoint's measurement) will turn reasoning off.
     expect(body).toHaveProperty('reasoning_effort', 'none');
 
-    // What still does NOT travel, and this is the bug being preserved not
-    // repeated. The prior PR #410 mechanism (`thinking.type` +
-    // `chat_template_kwargs`) was stripped by the SDK's filter because
-    // neither field is in the zod schema. The replacement
-    // (`reasoningEffort`) IS in the schema, so it survives.
-    for (const field of ['thinking', 'chat_template_kwargs', 'repetition_penalty']) {
-      expect(Object.keys(body)).not.toContain(field);
-    }
+    // Issue #414 (v1.26.3 PATCH): the per-id provider key fix flips this
+    // assertion. `repetition_penalty` (or its llama.cpp dialect
+    // `repeat_penalty`) IS expected on the wire for the providers whose
+    // APIs accept the field — see the dialect tests further down for the
+    // per-provider spelling. The 'thinking' + 'chat_template_kwargs'
+    // pair stays absent (those were stripped by the SDK zod filter and
+    // remain so after this fix — see buildProviderOptions in
+    // openai-compat-sdk-client.ts:1132-1156).
+    //
+    // For `provider: 'custom'`, `repetition_penalty` IS on the wire
+    // (per the dialect dispatch — `custom` maps to `repetition_penalty`,
+    // NOT `repeat_penalty`). The llama.cpp spelling `repeat_penalty`
+    // must still be absent. This catches a future regression where a
+    // contributor adds both keys for the same provider (cross-dialect
+    // leak).
+    expect(Object.keys(body)).not.toContain('thinking');
+    expect(Object.keys(body)).not.toContain('chat_template_kwargs');
+    expect(Object.keys(body)).not.toContain('repeat_penalty');
 
     // v1.26.3 PATCH follow-up (Issue #443 elegant fallback): the no-
     // schema case now emits `response_format: { type: 'json_object' }`
@@ -320,5 +330,109 @@ describe('OpenAICompatSdkClient — Issue #443 pilot: schema emits json_schema o
   ] as const)('falls back to json_object for cloud compat provider:%s when caller supplies a schema (flag is the open question for the per-caller migration PR)', async (provider) => {
     const body = await captureBody(provider);
     expect(body.response_format, `${provider} without supportsStructuredOutputs=true emits json_object, NOT json_schema — flip the flag in the per-caller migration PR`).toEqual({ type: 'json_object' });
+  });
+});
+
+// Issue #414: `repetitionPenalty` user setting is a silent no-op on every
+// shipped provider today (verified 2026-08-12). Pre-fix root cause:
+// `buildProviderOptions` returned `{ openaiCompatible: openaiOpts }`, but the
+// AI SDK's passthrough at `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:525-540`
+// reads `providerOptions[this.providerOptionsName]` (the provider id —
+// `lmstudio` / `deepseek` / etc.), so the field never reached the wire.
+//
+// Fix in `openai-compat-sdk-client.ts`: switch the return key to
+// `this.provider`, add a per-provider spelling dispatch for `repetitionPenalty`
+// (llama.cpp / Ollama accept `repeat_penalty` — no `-ion`; Kimi / OpenRouter
+// / vLLM accept the OpenAI-spec `repetition_penalty`; Anthropic / DeepSeek /
+// OpenAI don't accept either). Dialect evidence: DocTpoint's #414 comment
+// (2026-08-07) type-error test on LM Studio / gemma-4-12b (server returns
+// HTTP 400 for `repeat_penalty: "abc"`, HTTP 200 for `repetition_penalty: "abc"`).
+describe('OpenAICompatSdkClient — Issue #414: repetitionPenalty dialect dispatch', () => {
+  const validResponse = (): Response => new Response(JSON.stringify({
+    id: 'x', object: 'chat.completion', created: 0, model: 'm',
+    choices: [{ index: 0, message: { role: 'assistant', content: '{}' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+
+  async function captureBody(provider: string, repetitionPenalty: number | null = 1.5): Promise<Record<string, unknown>> {
+    let body: Record<string, unknown> = {};
+    const stub = vi.fn(async (_url: string, init?: { body?: unknown }) => {
+      body = JSON.parse(String(init?.body));
+      return validResponse();
+    });
+    const client = new OpenAICompatSdkClient({
+      apiKey: 'k', baseURL: 'http://localhost/v1/', provider,
+      fetch: stub as never,
+    });
+    await client.createMessage({
+      model: 'm', max_tokens: 100,
+      messages: [{ role: 'user', content: 'hi' }],
+      ...(repetitionPenalty !== null ? { repetition_penalty: repetitionPenalty } : {}),
+    });
+    return body;
+  }
+
+  // The dialect map:
+  //   lmstudio, ollama  -> repeat_penalty   (no `-ion`; llama.cpp dialect)
+  //   kimi, openrouter  -> repetition_penalty (OpenAI-spec name, accepted)
+  //   custom            -> repetition_penalty (vLLM / OpenAI-spec default)
+  //   deepseek          -> (drop; DeepSeek API docs do not list the field)
+  // Each branch is its own test so a future regression in one dialect
+  // surfaces as a single named failure rather than a batch-skipped
+  // describe block.
+  it('lmstudio: emits repeat_penalty (no -ion, llama.cpp dialect)', async () => {
+    const body = await captureBody('lmstudio');
+    expect(body.repeat_penalty).toBe(1.5);
+    expect(Object.keys(body)).not.toContain('repetition_penalty');
+  });
+
+  it('ollama: emits repeat_penalty (Ollama-native name)', async () => {
+    const body = await captureBody('ollama');
+    expect(body.repeat_penalty).toBe(1.5);
+    expect(Object.keys(body)).not.toContain('repetition_penalty');
+  });
+
+  it.each(['kimi', 'openrouter', 'custom'] as const)(
+    '%s: emits repetition_penalty (OpenAI-spec name)',
+    async (provider) => {
+      const body = await captureBody(provider);
+      expect(body.repetition_penalty, `provider=${provider}`).toBe(1.5);
+      expect(Object.keys(body), `provider=${provider}`).not.toContain('repeat_penalty');
+    },
+  );
+
+  it('deepseek: omits the field (DeepSeek API does not support it)', async () => {
+    const body = await captureBody('deepseek');
+    expect(Object.keys(body)).not.toContain('repeat_penalty');
+    expect(Object.keys(body)).not.toContain('repetition_penalty');
+  });
+
+  it('omits the field when repetition_penalty is not passed', async () => {
+    // Pass `null` (not `undefined`) so the default parameter doesn't
+    // kick in — caller wants to verify the "field omitted" branch.
+    const body = await captureBody('lmstudio', null);
+    expect(Object.keys(body)).not.toContain('repeat_penalty');
+    expect(Object.keys(body)).not.toContain('repetition_penalty');
+  });
+
+  // Boundary value tests (Issue #414 / code-review finding 2a): the
+  // client does NOT transform `repetition_penalty` — values are passed
+  // through verbatim to the wire (the backend's responsibility is
+  // clamping / interpretation, not ours). These tests pin that
+  // contract so a future contributor adding a "clamp for safety" code
+  // path would surface as a single-named test failure.
+  describe('boundary values pass through verbatim (no client-side transformation)', () => {
+    it('repetition_penalty: 0 — emits repeat_penalty: 0 (lmstudio)', async () => {
+      const body = await captureBody('lmstudio', 0);
+      expect(body.repeat_penalty).toBe(0);
+    });
+    it('repetition_penalty: 1 — emits repeat_penalty: 1 (lmstudio, "no effect")', async () => {
+      const body = await captureBody('lmstudio', 1);
+      expect(body.repeat_penalty).toBe(1);
+    });
+    it('repetition_penalty: 0.5 (<1) — emits repeat_penalty: 0.5 (unusual but valid)', async () => {
+      const body = await captureBody('lmstudio', 0.5);
+      expect(body.repeat_penalty).toBe(0.5);
+    });
   });
 });
