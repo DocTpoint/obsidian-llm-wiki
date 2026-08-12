@@ -508,6 +508,9 @@ export const ES_TEXTS = {
     cmdViewHistory: 'Ver historial de ingesta',
     noActiveFile: 'No hay ningún archivo abierto',
     mdOnlyFile: 'Solo se pueden ingerir archivos Markdown',
+    ingestSingleFileStart: 'Procesando: {filename}',
+    ingestCheckingExisting: 'Comprobando archivos ya procesados...',
+    lintFindingsSummary: '{total} hallazgos',
 
     // Ingestion status bar
     ingestionStatusBar: 'Ingiriendo... clic para cancelar',

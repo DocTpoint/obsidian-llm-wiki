@@ -254,3 +254,37 @@ describe('B2.5 status-bar progress keys preserve EN placeholders across all loca
     }
   });
 });
+
+// B2.5 follow-up (v1.26.3 PATCH): the Toast keys added alongside the
+// status-bar localizations — single-file ingest start, batch check, and the
+// auto-lint findings phrase — feed showProgressFor → persistent Notice and
+// the auto-lint completion Notice. Same placeholder-drift guard as B2.5:
+// a locale dropping a {placeholder} silently leaves the literal in the
+// user-visible Toast.
+const TOAST_KEYS = [
+  'ingestSingleFileStart',
+  'ingestCheckingExisting',
+  'lintFindingsSummary',
+] as const;
+
+describe('Toast keys preserve EN placeholders across all locales (B2.5 follow-up)', () => {
+  it.each(LOCALES)('locale "%s" preserves every {placeholder} for Toast keys', (locale) => {
+    const enTexts = TEXTS.en as unknown as Record<string, string>;
+    const locTexts = TEXTS[locale] as unknown as Record<string, string>;
+    for (const key of TOAST_KEYS) {
+      const enPlaceholders = [...(enTexts[key] ?? '').matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map(m => m[1]).sort();
+      const locPlaceholders = [...(locTexts[key] ?? '').matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map(m => m[1]).sort();
+      expect(locPlaceholders, `placeholder drift in ${locale}.${key}`).toEqual(enPlaceholders);
+    }
+  });
+
+  it.each(LOCALES)('locale "%s" has non-empty Toast key values', (locale) => {
+    const locTexts = TEXTS[locale] as unknown as Record<string, string>;
+    for (const key of TOAST_KEYS) {
+      const value = locTexts[key];
+      expect(typeof value, `missing ${locale}.${key}`).toBe('string');
+      expect((value ?? '').trim().length, `empty ${locale}.${key}`).toBeGreaterThan(0);
+    }
+  });
+});
+

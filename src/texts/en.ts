@@ -506,6 +506,17 @@ export const EN_TEXTS = {
     noActiveFile: 'No file is currently open',
     mdOnlyFile: 'Only Markdown files can be ingested',
 
+    // v1.26.3 PATCH (B2.5 follow-up): single-file ingest + batch-check
+    // Toasts. These feed showProgressFor → persistent Notice (Toast), which
+    // is separate from the status-bar channel — they were hardcoded English
+    // ('Ingesting: <file>', 'Checking for already-ingested files...'),
+    // producing English Toasts on non-English vaults.
+    ingestSingleFileStart: 'Ingesting: {filename}',
+    ingestCheckingExisting: 'Checking for already-ingested files...',
+    // Auto-lint completion Notice ("N findings" phrase — full phrase so
+    // each locale can order/pluralize freely).
+    lintFindingsSummary: '{total} findings',
+
     // Ingestion status bar
     ingestionStatusBar: 'Ingesting... click to cancel',
     lintStatusBar: 'Linting... click to cancel',

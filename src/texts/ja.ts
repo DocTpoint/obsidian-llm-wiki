@@ -480,6 +480,9 @@ export const JA_TEXTS = {
     cmdViewHistory: '取り込み履歴を表示',
     noActiveFile: '現在開いているファイルはありません',
     mdOnlyFile: 'Markdownファイルのみ取り込み可能です',
+    ingestSingleFileStart: '取り込み中：{filename}',
+    ingestCheckingExisting: '既に取り込み済みのファイルを確認中...',
+    lintFindingsSummary: '{total} 件の指摘',
 
     // Ingestion status bar
     ingestionStatusBar: '取り込み中... クリックでキャンセル',

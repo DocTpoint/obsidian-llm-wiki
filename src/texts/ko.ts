@@ -508,6 +508,9 @@ export const KO_TEXTS = {
     cmdViewHistory: '수집 이력 보기',
     noActiveFile: '열려 있는 파일이 없습니다',
     mdOnlyFile: 'Markdown 파일만 수집할 수 있습니다',
+    ingestSingleFileStart: '수집 중: {filename}',
+    ingestCheckingExisting: '이미 수집된 파일 확인 중...',
+    lintFindingsSummary: '발견 {total}건',
 
     // Ingestion status bar
     ingestionStatusBar: '수집 중... 클릭하여 취소',

@@ -509,6 +509,9 @@ export const DE_TEXTS = {
     cmdViewHistory: 'Ingestionsverlauf anzeigen',
     noActiveFile: 'Keine Datei geöffnet',
     mdOnlyFile: 'Nur Markdown-Dateien können aufgenommen werden',
+    ingestSingleFileStart: 'Verarbeite: {filename}',
+    ingestCheckingExisting: 'Prüfe bereits verarbeitete Dateien...',
+    lintFindingsSummary: '{total} Befunde',
 
     // Ingestion status bar
     ingestionStatusBar: 'Aufnahme läuft... zum Abbrechen klicken',

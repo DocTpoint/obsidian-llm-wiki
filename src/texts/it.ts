@@ -517,6 +517,9 @@ export const IT_TEXTS = {
     cmdViewHistory: 'Visualizza cronologia acquisizioni',
     noActiveFile: 'Nessun file è attualmente aperto',
     mdOnlyFile: 'Solo i file Markdown possono essere acquisiti',
+    ingestSingleFileStart: 'Elaborazione in corso: {filename}',
+    ingestCheckingExisting: 'Controllo dei file già elaborati...',
+    lintFindingsSummary: '{total} riscontri',
 
     // Barra di stato acquisizione
     ingestionStatusBar: 'Acquisizione... clicca per annullare',

@@ -482,6 +482,9 @@ export const ZH_TEXTS = {
     cmdViewHistory: '查看摄入历史',
     noActiveFile: '当前没有打开的文件',
     mdOnlyFile: '仅支持摄入 Markdown 文件',
+    ingestSingleFileStart: '正在摄入：{filename}',
+    ingestCheckingExisting: '正在检查已摄入的文件...',
+    lintFindingsSummary: '共 {total} 处发现',
 
     // Ingestion status bar
     ingestionStatusBar: '提取中... 点击取消',

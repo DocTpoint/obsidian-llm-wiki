@@ -508,6 +508,9 @@ export const RU_TEXTS = {
     cmdViewHistory: 'Просмотр истории операций',
     noActiveFile: 'В настоящее время ни один файл не открыт',
     mdOnlyFile: 'Можно импортировать только файлы Markdown',
+    ingestSingleFileStart: 'Обработка: {filename}',
+    ingestCheckingExisting: 'Проверка уже обработанных файлов...',
+    lintFindingsSummary: 'найдено {total}',
 
     // Строка статуса импорта
     ingestionStatusBar: 'Импорт... нажмите для отмены',

@@ -480,6 +480,9 @@ export const ZH_HANT_TEXTS = {
     cmdViewHistory: '檢視攝入歷史',
     noActiveFile: '當前沒有開啟的檔案',
     mdOnlyFile: '僅支援攝入 Markdown 檔案',
+    ingestSingleFileStart: '正在攝入：{filename}',
+    ingestCheckingExisting: '正在檢查已攝入的檔案...',
+    lintFindingsSummary: '共 {total} 處發現',
 
     // Ingestion status bar
     ingestionStatusBar: '提取中... 點選取消',
