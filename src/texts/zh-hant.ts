@@ -99,7 +99,7 @@ export const ZH_HANT_TEXTS = {
     fetchErrorEndpoint: '接入點未找到（HTTP 404）。請檢查 BaseURL 是否正確，或直接輸入模型 ID 後點選測試連線。',
     fetchErrorServer: 'Provider 服務端錯誤（HTTP 5xx）。稍後重試，或直接輸入模型 ID 後點選測試連線。',
     fetchErrorEmpty: '該接入點不支援列出模型列表。請直接輸入模型 ID 後點選測試連線進行驗證。',
-    fetchErrorNetwork: '網路請求失敗。請檢查網路連線、BaseURL 或代理設定。您也可以直接輸入模型 ID 後點選測試連線進行驗證。',
+    fetchErrorNetwork: '網路請求失敗。請檢查網路連線、BaseURL、代理設定或 API Key。您也可以直接輸入模型 ID 後點選測試連線進行驗證。',
 
     selectModelName: '選擇模型',
     selectModelDesc: '從 {} 個可用模型中選擇',
@@ -480,6 +480,9 @@ export const ZH_HANT_TEXTS = {
     cmdViewHistory: '檢視攝入歷史',
     noActiveFile: '當前沒有開啟的檔案',
     mdOnlyFile: '僅支援攝入 Markdown 檔案',
+    ingestSingleFileStart: '正在攝入：{filename}',
+    ingestCheckingExisting: '正在檢查已攝入的檔案...',
+    lintFindingsSummary: '共 {total} 處發現',
 
     // Ingestion status bar
     ingestionStatusBar: '提取中... 點選取消',
@@ -504,6 +507,25 @@ export const ZH_HANT_TEXTS = {
     ingestionCancelling: '正在取消 — 當前批次完成後將停止',
     ingestionCancelled: '提取已取消',
     crossTypeCollisionNotice: '{count} 個條目合併為跨型別別名（實體 ↔ 概念重複已防止）',
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
+    ingestBatchInitial: '正在分析批次 1/{total}...',
+    ingestBatchProgress: '正在分析批次 {current}/{total}（已提取 {entities} 個實體、{concepts} 個概念）...',
+    ingestBatchProcessed: '已完成批次 {current}，正在處理...',
+    ingestAnalyzing: '正在分析：{filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] 正在產生摘要...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type}：{name}',
+    ingestUpdating: '[{step}/{totalSteps}] 正在更新：{name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] 正在產生索引...',
+    ingestItemTypeEntity: '實體',
+    ingestItemTypeConcept: '概念',
+    convAnalyzing: '正在分析對話...',
+    convCheckingExisting: '正在檢查既有知識...',
+    convAlreadyExists: '此知識已存在於 Wiki',
+    convCreatingSummary: '正在建立摘要頁...',
+    convGeneratingSummary: '正在產生摘要頁...',
+    convSavingEntity: '正在儲存實體：{name}',
+    convSavingConcept: '正在儲存概念：{name}',
+    convGeneratingIndex: '正在產生索引...',
 
     // 维护报告
     lintReportTitle: 'Wiki 維護報告',

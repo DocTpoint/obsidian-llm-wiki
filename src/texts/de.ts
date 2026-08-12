@@ -99,7 +99,7 @@ export const DE_TEXTS = {
     fetchErrorEndpoint: 'Endpunkt nicht gefunden (HTTP 404). Überprüfen Sie die Endpunkt-URL, oder geben Sie eine Modell-ID ein und klicken Sie auf Verbindung testen.',
     fetchErrorServer: 'Anbieter-Serverfehler (HTTP 5xx). Versuchen Sie es später erneut, oder geben Sie eine Modell-ID ein und klicken Sie auf Verbindung testen.',
     fetchErrorEmpty: 'Dieser Endpunkt stellt keine Modellliste bereit. Geben Sie eine Modell-ID ein und klicken Sie auf Verbindung testen.',
-    fetchErrorNetwork: 'Netzwerkanfrage fehlgeschlagen. Überprüfen Sie Internetverbindung, Endpunkt-URL oder Proxy-Einstellungen. Sie können auch eine Modell-ID eingeben und auf Verbindung testen klicken.',
+    fetchErrorNetwork: 'Netzwerkanfrage fehlgeschlagen. Überprüfen Sie Internetverbindung, Endpunkt-URL, Proxy-Einstellungen oder API Key. Sie können auch eine Modell-ID eingeben und auf Verbindung testen klicken.',
 
     selectModelName: 'Modell auswählen',
     selectModelDesc: 'Aus {} verfügbaren Modellen wählen',
@@ -509,6 +509,9 @@ export const DE_TEXTS = {
     cmdViewHistory: 'Ingestionsverlauf anzeigen',
     noActiveFile: 'Keine Datei geöffnet',
     mdOnlyFile: 'Nur Markdown-Dateien können aufgenommen werden',
+    ingestSingleFileStart: 'Verarbeite: {filename}',
+    ingestCheckingExisting: 'Prüfe bereits verarbeitete Dateien...',
+    lintFindingsSummary: '{total} Befunde',
 
     // Ingestion status bar
     ingestionStatusBar: 'Aufnahme läuft... zum Abbrechen klicken',
@@ -533,6 +536,25 @@ export const DE_TEXTS = {
     ingestionCancelling: 'Wird abgebrochen — Stopp nach aktuellem Batch',
     ingestionCancelled: 'Aufnahme abgebrochen',
     crossTypeCollisionNotice: '{count} Einträge als Cross-Type-Alias zusammengeführt (Entity ↔ Concept Duplikate verhindert)',
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
+    ingestBatchInitial: 'Analyse Batch 1/{total}...',
+    ingestBatchProgress: 'Analyse Batch {current}/{total} ({entities} Entitäten, {concepts} Konzepte bisher)...',
+    ingestBatchProcessed: 'Batch {current} analysiert, Verarbeitung...',
+    ingestAnalyzing: 'Analysiere: {filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] Erstelle Zusammenfassung...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type}: {name}',
+    ingestUpdating: '[{step}/{totalSteps}] Aktualisiere: {name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] Erstelle Index...',
+    ingestItemTypeEntity: 'Entität',
+    ingestItemTypeConcept: 'Konzept',
+    convAnalyzing: 'Analysiere Konversation...',
+    convCheckingExisting: 'Prüfe vorhandenes Wissen...',
+    convAlreadyExists: 'Dieses Wissen existiert bereits im Wiki',
+    convCreatingSummary: 'Erstelle Zusammenfassungsseite...',
+    convGeneratingSummary: 'Generiere Zusammenfassungsseite...',
+    convSavingEntity: 'Speichere Entität: {name}',
+    convSavingConcept: 'Speichere Konzept: {name}',
+    convGeneratingIndex: 'Erstelle Index...',
 
     // Lint Report
     lintReportTitle: 'Wiki-Prüfbericht',

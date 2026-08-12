@@ -631,11 +631,30 @@ describe('generateDuplicateCandidates — cancellation hook', () => {
   it('omitting the hooks argument preserves the legacy behaviour (regression guard)', async () => {
     // Two pages whose title prefixes match; just verify the call does
     // not throw or hang when the optional hooks argument is absent.
-    const a = makePage('wiki/a.md', 'Alpha', 'See [[hub-x]] for context.');
-    const b = makePage('wiki/b.md', 'AlphaTwin', 'See [[hub-x]] for context.');
+    // Use entity-folder paths so the cross-type pair filter (B3 fix)
+    // admits them as candidates.
+    const a = makePage('wiki/entities/alpha.md', 'Alpha', 'See [[hub-x]] for context.');
+    const b = makePage('wiki/entities/alphatwin.md', 'AlphaTwin', 'See [[hub-x]] for context.');
     // No hooks argument at all (matches the pre-refactor signature).
     const candidates = await generateDuplicateCandidates([a, b]);
     expect(findCandidate(candidates, a.path, b.path)).not.toBeNull();
+  });
+
+  it('reports the count of cross-type-rejected pairs via onCrossTypeRejected (B3 DocT CR)', async () => {
+    // entity + source share a title-cased body, so pre-B3 the
+    // bigram/caseVariant signals would have surfaced a candidate across
+    // the entity/source boundary. The cross-type filter rejects it AND
+    // reports the count so the filter's effect is measurable in the
+    // dedup-phase debug output.
+    const sharedBody = 'Transformer is a foundational architecture for sequence modeling and attention.';
+    const entity = makePage('wiki/entities/transformer.md', 'Transformer', sharedBody);
+    const source = makePage('wiki/sources/transformer-reference.md', 'Transformer Reference', sharedBody);
+    let rejected = 0;
+    const candidates = await generateDuplicateCandidates([entity, source], {}, {
+      onCrossTypeRejected: (count) => { rejected = count; },
+    });
+    expect(rejected).toBeGreaterThan(0);
+    expect(candidates).toHaveLength(0);
   });
 });
 

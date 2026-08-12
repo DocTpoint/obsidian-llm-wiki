@@ -720,8 +720,13 @@ export async function runLintWiki(
         // v1.22.6: sum all LintCounts fields for a single human-readable
         // summary number in the auto-lint completion Notice.
         const totalFindings = (Object.values(counts) as number[]).reduce((sum, n) => sum + n, 0);
+        // B2.5 follow-up (v1.26.3 PATCH): 'findings' was hardcoded English
+        // inside an otherwise-localized Notice — route the phrase through
+        // getText so the count noun matches the locale.
+        const findingsPhrase = getText(ctx.settings.language, 'lintFindingsSummary')
+          .replace('{total}', String(totalFindings));
         new Notice(
-          `${t.lintFixAllComplete}: ${totalFindings} findings. ${historyHint}`,
+          `${t.lintFixAllComplete}: ${findingsPhrase}. ${historyHint}`,
           NOTICE_NORMAL
         );
       }

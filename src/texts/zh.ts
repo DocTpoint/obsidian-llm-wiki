@@ -99,7 +99,7 @@ export const ZH_TEXTS = {
     fetchErrorEndpoint: '接入点未找到（HTTP 404）。请检查 BaseURL 是否正确，或直接输入模型 ID 后点击测试连接。',
     fetchErrorServer: 'Provider 服务端错误（HTTP 5xx）。稍后重试，或直接输入模型 ID 后点击测试连接。',
     fetchErrorEmpty: '该接入点不支持列出模型列表。请直接输入模型 ID 后点击测试连接进行验证。',
-    fetchErrorNetwork: '网络请求失败。请检查网络连接、BaseURL 或代理设置。您也可以直接输入模型 ID 后点击测试连接进行验证。',
+    fetchErrorNetwork: '网络请求失败。请检查网络连接、BaseURL、代理设置或 API Key。您也可以直接输入模型 ID 后点击测试连接进行验证。',
 
     selectModelName: '选择模型',
     selectModelDesc: '从 {} 个可用模型中选择',
@@ -482,6 +482,9 @@ export const ZH_TEXTS = {
     cmdViewHistory: '查看摄入历史',
     noActiveFile: '当前没有打开的文件',
     mdOnlyFile: '仅支持摄入 Markdown 文件',
+    ingestSingleFileStart: '正在摄入：{filename}',
+    ingestCheckingExisting: '正在检查已摄入的文件...',
+    lintFindingsSummary: '共 {total} 处发现',
 
     // Ingestion status bar
     ingestionStatusBar: '提取中... 点击取消',
@@ -511,6 +514,25 @@ export const ZH_TEXTS = {
     ingestionCancelling: '正在取消 — 当前批次完成后将停止',
     ingestionCancelled: '提取已取消',
     crossTypeCollisionNotice: '{count} 个条目合并为跨类型别名（实体 ↔ 概念重复已防止）',
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
+    ingestBatchInitial: '正在分析批次 1/{total}...',
+    ingestBatchProgress: '正在分析批次 {current}/{total}（已提取 {entities} 个实体、{concepts} 个概念）...',
+    ingestBatchProcessed: '已完成批次 {current}，正在处理...',
+    ingestAnalyzing: '正在分析：{filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] 正在生成摘要...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type}：{name}',
+    ingestUpdating: '[{step}/{totalSteps}] 正在更新：{name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] 正在生成索引...',
+    ingestItemTypeEntity: '实体',
+    ingestItemTypeConcept: '概念',
+    convAnalyzing: '正在分析对话...',
+    convCheckingExisting: '正在检查已有知识...',
+    convAlreadyExists: '此知识已存在于 Wiki',
+    convCreatingSummary: '正在创建摘要页...',
+    convGeneratingSummary: '正在生成摘要页...',
+    convSavingEntity: '正在保存实体：{name}',
+    convSavingConcept: '正在保存概念：{name}',
+    convGeneratingIndex: '正在生成索引...',
 
     // 维护报告
     lintReportTitle: 'Wiki 维护报告',

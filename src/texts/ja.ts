@@ -99,7 +99,7 @@ export const JA_TEXTS = {
     fetchErrorEndpoint: 'エンドポイントが見つかりません（HTTP 404）。BaseURL を確認するか、モデル ID を直接入力して「テスト接続」をクリックして検証してください。',
     fetchErrorServer: 'プロバイダーサーバーエラー（HTTP 5xx）。後でもう一度お試しいただくか、モデル ID を直接入力して「テスト接続」をクリックして検証してください。',
     fetchErrorEmpty: 'このエンドポイントはモデル一覧を提供していません。モデル ID を直接入力して「テスト接続」をクリックして検証してください。',
-    fetchErrorNetwork: 'ネットワークリクエストが失敗しました。インターネット接続、BaseURL、またはプロキシ設定を確認してください。モデル ID を直接入力して「テスト接続」をクリックして検証することもできます。',
+    fetchErrorNetwork: 'ネットワークリクエストが失敗しました。インターネット接続、BaseURL、プロキシ設定、または API Key を確認してください。モデル ID を直接入力して「テスト接続」をクリックして検証することもできます。',
 
     selectModelName: 'モデルを選択',
     selectModelDesc: '{}件の利用可能なモデルから選択',
@@ -480,6 +480,9 @@ export const JA_TEXTS = {
     cmdViewHistory: '取り込み履歴を表示',
     noActiveFile: '現在開いているファイルはありません',
     mdOnlyFile: 'Markdownファイルのみ取り込み可能です',
+    ingestSingleFileStart: '取り込み中：{filename}',
+    ingestCheckingExisting: '既に取り込み済みのファイルを確認中...',
+    lintFindingsSummary: '{total} 件の指摘',
 
     // Ingestion status bar
     ingestionStatusBar: '取り込み中... クリックでキャンセル',
@@ -504,6 +507,25 @@ export const JA_TEXTS = {
     ingestionCancelling: 'キャンセル中 — 現在のバッチ完了後に停止します',
     ingestionCancelled: '取り込みがキャンセルされました',
     crossTypeCollisionNotice: '{count}件がクロスタイプ別名として統合（エンティティ ↔ コンセプト重複を防止）',
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
+    ingestBatchInitial: 'バッチ 1/{total} を分析中...',
+    ingestBatchProgress: 'バッチ {current}/{total} を分析中（エンティティ {entities}、コンセプト {concepts} まで）...',
+    ingestBatchProcessed: 'バッチ {current} を分析しました。処理中...',
+    ingestAnalyzing: '分析中：{filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] サマリーを作成中...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type}：{name}',
+    ingestUpdating: '[{step}/{totalSteps}] 更新中：{name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] インデックスを作成中...',
+    ingestItemTypeEntity: 'エンティティ',
+    ingestItemTypeConcept: 'コンセプト',
+    convAnalyzing: '会話を分析中...',
+    convCheckingExisting: '既存の知識を確認中...',
+    convAlreadyExists: 'この知識は既に Wiki に存在します',
+    convCreatingSummary: 'サマリーページを作成中...',
+    convGeneratingSummary: 'サマリーページを生成中...',
+    convSavingEntity: 'エンティティを保存中：{name}',
+    convSavingConcept: 'コンセプトを保存中：{name}',
+    convGeneratingIndex: 'インデックスを作成中...',
 
     // Lint Report
     lintReportTitle: 'Wiki Lintレポート',

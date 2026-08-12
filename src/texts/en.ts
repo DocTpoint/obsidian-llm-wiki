@@ -103,7 +103,7 @@ export const EN_TEXTS = {
     fetchErrorEndpoint: 'Endpoint not found (HTTP 404). Verify the BaseURL, or enter a Model ID and click Test Connection to validate.',
     fetchErrorServer: 'Provider server error (HTTP 5xx). Try again later, or enter a Model ID and click Test Connection to validate.',
     fetchErrorEmpty: 'Provider has no model list endpoint. Enter a Model ID below and click Test Connection to validate.',
-    fetchErrorNetwork: 'Network request failed. Check your internet connection, BaseURL, or proxy settings. You can also enter a Model ID below and click Test Connection to validate.',
+    fetchErrorNetwork: 'Network request failed. Check your internet connection, BaseURL, proxy settings, or API Key. You can also enter a Model ID below and click Test Connection to validate.',
 
     selectModelName: 'Select Model',
     selectModelDesc: 'Choose from {} available models',
@@ -506,6 +506,17 @@ export const EN_TEXTS = {
     noActiveFile: 'No file is currently open',
     mdOnlyFile: 'Only Markdown files can be ingested',
 
+    // v1.26.3 PATCH (B2.5 follow-up): single-file ingest + batch-check
+    // Toasts. These feed showProgressFor → persistent Notice (Toast), which
+    // is separate from the status-bar channel — they were hardcoded English
+    // ('Ingesting: <file>', 'Checking for already-ingested files...'),
+    // producing English Toasts on non-English vaults.
+    ingestSingleFileStart: 'Ingesting: {filename}',
+    ingestCheckingExisting: 'Checking for already-ingested files...',
+    // Auto-lint completion Notice ("N findings" phrase — full phrase so
+    // each locale can order/pluralize freely).
+    lintFindingsSummary: '{total} findings',
+
     // Ingestion status bar
     ingestionStatusBar: 'Ingesting... click to cancel',
     lintStatusBar: 'Linting... click to cancel',
@@ -534,6 +545,39 @@ export const EN_TEXTS = {
     ingestionCancelling: 'Cancelling — will stop after current batch completes',
     ingestionCancelled: 'Ingestion cancelled',
     crossTypeCollisionNotice: '{count} items merged as cross-type aliases (entity ↔ concept duplicates prevented)',
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n.
+    // These were previously hardcoded English strings in wiki-engine.ts,
+    // conversation-ingest.ts, and source-analyzer.ts, causing mixed-language
+    // status bars on non-English vaults. Every status-bar text emitted via
+    // onProgress (which routes through composeStatusBarUpdate → setText)
+    // now flows through getText() so the user's selected language is honored
+    // end-to-end. Placeholder contract:
+    //   {filename}  — source file basename
+    //   {total}     — total batch count
+    //   {current}   — current batch index (1-based)
+    //   {entities}  — accumulated entities count so far
+    //   {concepts}  — accumulated concepts count so far
+    //   {step} / {totalSteps} — page-generation step counter
+    //   {type}      — 'Entity' or 'Concept' (resolved via ingestItemType*)
+    //   {name}      — entity / concept / file name
+    ingestBatchInitial: 'Analyzing batch 1/{total}...',
+    ingestBatchProgress: 'Analyzing batch {current}/{total} ({entities} entities, {concepts} concepts so far)...',
+    ingestBatchProcessed: 'Analyzed batch {current}, processing...',
+    ingestAnalyzing: 'Analyzing: {filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] Creating summary...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type}: {name}',
+    ingestUpdating: '[{step}/{totalSteps}] Updating: {name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] Generating index...',
+    ingestItemTypeEntity: 'Entity',
+    ingestItemTypeConcept: 'Concept',
+    convAnalyzing: 'Analyzing conversation...',
+    convCheckingExisting: 'Checking for existing knowledge...',
+    convAlreadyExists: 'This knowledge already exists in Wiki',
+    convCreatingSummary: 'Creating summary page...',
+    convGeneratingSummary: 'Generating summary page...',
+    convSavingEntity: 'Saving entity: {name}',
+    convSavingConcept: 'Saving concept: {name}',
+    convGeneratingIndex: 'Generating index...',
 
     // Lint Report
     lintReportTitle: 'Wiki lint report',

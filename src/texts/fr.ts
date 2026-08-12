@@ -99,7 +99,7 @@ export const FR_TEXTS = {
     fetchErrorEndpoint: 'Point d\'accès introuvable (HTTP 404). Vérifiez l\'URL du point d\'accès, ou entrez un ID de modèle puis cliquez sur Tester la connexion.',
     fetchErrorServer: 'Erreur du serveur du fournisseur (HTTP 5xx). Réessayez plus tard, ou entrez un ID de modèle puis cliquez sur Tester la connexion.',
     fetchErrorEmpty: 'Ce point d\'accès n\'expose pas de liste de modèles. Entrez un ID de modèle puis cliquez sur Tester la connexion.',
-    fetchErrorNetwork: 'Échec de la requête réseau. Vérifiez votre connexion Internet, l\'URL du point d\'accès ou les paramètres du proxy. Vous pouvez aussi entrer un ID de modèle puis cliquer sur Tester la connexion.',
+    fetchErrorNetwork: 'Échec de la requête réseau. Vérifiez votre connexion Internet, l\'URL du point d\'accès, les paramètres du proxy ou la clé API. Vous pouvez aussi entrer un ID de modèle puis cliquer sur Tester la connexion.',
 
     selectModelName: 'Sélectionner un modèle',
     selectModelDesc: 'Choisir parmi {} modèles disponibles',
@@ -483,6 +483,9 @@ export const FR_TEXTS = {
     cmdViewHistory: 'Voir l\'historique d\'ingestion',
     noActiveFile: 'Aucun fichier ouvert',
     mdOnlyFile: 'Seuls les fichiers Markdown peuvent être ingérés',
+    ingestSingleFileStart: 'Ingestion en cours : {filename}',
+    ingestCheckingExisting: 'Vérification des fichiers déjà ingérés...',
+    lintFindingsSummary: '{total} constatations',
 
     // Ingestion status bar
     ingestionStatusBar: 'Ingestion en cours... cliquer pour annuler',
@@ -507,6 +510,25 @@ export const FR_TEXTS = {
     ingestionCancelling: 'Annulation — arrêt après le lot en cours',
     ingestionCancelled: 'Ingestion annulée',
     crossTypeCollisionNotice: '{count} éléments fusionnés comme alias cross-type (doublons entité ↔ concept évités)',
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
+    ingestBatchInitial: 'Analyse du lot 1/{total}...',
+    ingestBatchProgress: 'Analyse du lot {current}/{total} ({entities} entités, {concepts} concepts jusqu\'à présent)...',
+    ingestBatchProcessed: 'Lot {current} analysé, traitement...',
+    ingestAnalyzing: 'Analyse : {filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] Création du résumé...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type} : {name}',
+    ingestUpdating: '[{step}/{totalSteps}] Mise à jour : {name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] Création de l\'index...',
+    ingestItemTypeEntity: 'Entité',
+    ingestItemTypeConcept: 'Concept',
+    convAnalyzing: 'Analyse de la conversation...',
+    convCheckingExisting: 'Vérification des connaissances existantes...',
+    convAlreadyExists: 'Ces connaissances existent déjà dans le Wiki',
+    convCreatingSummary: 'Création de la page de résumé...',
+    convGeneratingSummary: 'Génération de la page de résumé...',
+    convSavingEntity: 'Enregistrement de l\'entité : {name}',
+    convSavingConcept: 'Enregistrement du concept : {name}',
+    convGeneratingIndex: 'Création de l\'index...',
 
     // Lint Report
     lintReportTitle: 'Rapport de vérification du wiki',

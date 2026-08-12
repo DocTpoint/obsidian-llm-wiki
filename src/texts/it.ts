@@ -103,7 +103,7 @@ export const IT_TEXTS = {
     fetchErrorEndpoint: "Endpoint non trovato (HTTP 404). Verifica l'URL di base, oppure inserisci un ID modello e clicca Testa connessione per validare.",
     fetchErrorServer: 'Errore del server del provider (HTTP 5xx). Riprova più tardi, oppure inserisci un ID modello e clicca Testa connessione per validare.',
     fetchErrorEmpty: "Il provider non ha un endpoint per la lista modelli. Inserisci un ID modello qui sotto e clicca Testa connessione per validare.",
-    fetchErrorNetwork: "Richiesta di rete fallita. Controlla la connessione internet, l'URL di base o le impostazioni del proxy. Puoi anche inserire un ID modello qui sotto e cliccare Testa connessione per validare.",
+    fetchErrorNetwork: "Richiesta di rete fallita. Controlla la connessione internet, l'URL di base, le impostazioni del proxy o la chiave API. Puoi anche inserire un ID modello qui sotto e cliccare Testa connessione per validare.",
 
     selectModelName: 'Seleziona modello',
     selectModelDesc: 'Scegli tra {} modelli disponibili',
@@ -517,6 +517,9 @@ export const IT_TEXTS = {
     cmdViewHistory: 'Visualizza cronologia acquisizioni',
     noActiveFile: 'Nessun file è attualmente aperto',
     mdOnlyFile: 'Solo i file Markdown possono essere acquisiti',
+    ingestSingleFileStart: 'Elaborazione in corso: {filename}',
+    ingestCheckingExisting: 'Controllo dei file già elaborati...',
+    lintFindingsSummary: '{total} riscontri',
 
     // Barra di stato acquisizione
     ingestionStatusBar: 'Acquisizione... clicca per annullare',
@@ -541,6 +544,25 @@ export const IT_TEXTS = {
     ingestionCancelling: 'Annullamento — si fermerà al completamento del batch corrente',
     ingestionCancelled: 'Acquisizione annullata',
     crossTypeCollisionNotice: '{count} elementi uniti come alias inter-tipo (duplicati entità ↔ concetto prevenuti)',
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
+    ingestBatchInitial: 'Analisi batch 1/{total}...',
+    ingestBatchProgress: 'Analisi batch {current}/{total} ({entities} entità, {concepts} concetti finora)...',
+    ingestBatchProcessed: 'Batch {current} analizzato, elaborazione...',
+    ingestAnalyzing: 'Analisi: {filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] Creazione riepilogo...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type}: {name}',
+    ingestUpdating: '[{step}/{totalSteps}] Aggiornamento: {name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] Creazione indice...',
+    ingestItemTypeEntity: 'Entità',
+    ingestItemTypeConcept: 'Concetto',
+    convAnalyzing: 'Analisi conversazione...',
+    convCheckingExisting: 'Verifica conoscenze esistenti...',
+    convAlreadyExists: 'Questa conoscenza esiste già nel Wiki',
+    convCreatingSummary: 'Creazione pagina riepilogo...',
+    convGeneratingSummary: 'Generazione pagina riepilogo...',
+    convSavingEntity: 'Salvataggio entità: {name}',
+    convSavingConcept: 'Salvataggio concetto: {name}',
+    convGeneratingIndex: 'Creazione indice...',
 
     // Report Lint
     lintReportTitle: 'Report lint Wiki',

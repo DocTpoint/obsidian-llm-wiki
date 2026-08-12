@@ -92,7 +92,10 @@ export const ingestCommands = {
     }
 
     new FileSuggestModal(this.app, this.settings.wikiFolder, (file: TFile) => {
-      this.showProgressFor(ProgressScope.IngestManual, `Ingesting: ${file.basename}`);
+      // B2.5 follow-up (v1.26.3 PATCH): 'Ingesting: <file>' was hardcoded
+      // English — route through getText so the Toast honors the locale.
+      this.showProgressFor(ProgressScope.IngestManual,
+        getText(this.settings.language, 'ingestSingleFileStart').replace('{filename}', file.basename));
       this.wikiEngine.ingestSource(file, { interactive: true }).catch(e => {
         console.error('Single ingest failed:', e);
         const errMsg = e instanceof Error ? e.message : String(e);
@@ -115,7 +118,8 @@ export const ingestCommands = {
       return;
     }
 
-    this.showProgressFor(ProgressScope.IngestManual, `Ingesting: ${activeFile.basename}`);
+    this.showProgressFor(ProgressScope.IngestManual,
+      getText(this.settings.language, 'ingestSingleFileStart').replace('{filename}', activeFile.basename));
     this.wikiEngine.ingestSource(activeFile, { interactive: true }).catch(e => {
       console.error('Ingest active file failed:', e);
       const errMsg = e instanceof Error ? e.message : String(e);
@@ -174,7 +178,8 @@ export const ingestCommands = {
   async runBatchIngest(this: IngestHost, files: TFile[], jobIds: string[], sourceLabel: string): Promise<void> {
     void this.preparePdfCacheForBatchIngest();
 
-    this.showProgressFor(ProgressScope.IngestManual, 'Checking for already-ingested files...');
+    this.showProgressFor(ProgressScope.IngestManual,
+      getText(this.settings.language, 'ingestCheckingExisting'));
     const alreadyIngestedFiles: TFile[] = [];
     const newFiles: TFile[] = [];
     const alignedJobIds: string[] = [];

@@ -415,6 +415,39 @@ describe('WikiEngine.ingestSource — PDF cache-only branch (#PR2 redo)', () => 
       expect(hadPdfProgress).toBe(true);
     });
 
+    it('PDF stage emits raw segments (filename · stage), never an already-composed label (B2 DocT CR)', async () => {
+      // DocT's review of PR #448: setPdfStage passed
+      // buildIngestStatusBarText(getText(ingestionStatusBar), filename, ...)
+      // — a string ALREADY ending in the base label — into updateStatusBar,
+      // and command-registry's composeStatusBarUpdate then appended the
+      // label AGAIN → "My Note.pdf · Reading PDF… · Ingesting… · Ingesting…".
+      // The emitter must send raw segments so label composition happens in
+      // exactly one place (composeStatusBarUpdate).
+      mockedConvert.mockResolvedValueOnce({
+        markdown: '# PDF Body',
+        metadata: { convertedAt: '2026-07-17T00:00:00Z', converter: 'anthropic/claude-opus-4-8' },
+      });
+      const h = createWikiEngineHarness({
+        llmResponses: [
+          JSON.stringify({ source_title: 'P', summary: 's', entities: [], concepts: [] }),
+        ],
+      });
+      const statusBarTexts: string[] = [];
+      h.engine.setStatusBarUpdateCallback((t: string) => statusBarTexts.push(t));
+
+      await h.engine.ingestSource(pdfFile('sources/paper.pdf'));
+
+      const pdfStageUpdates = statusBarTexts.filter((t) => /Reading PDF|Converting PDF|Writing sidecar/i.test(t));
+      expect(pdfStageUpdates.length).toBeGreaterThan(0);
+      for (const text of pdfStageUpdates) {
+        // Pre-fix the setPdfStage strings already contained the base label
+        // ("Ingesting... click to cancel" — default harness language is en),
+        // so composeStatusBarUpdate would have appended it a second time.
+        expect(text).not.toMatch(/Ingesting/i);
+        expect(text).toMatch(/paper/);
+      }
+    });
+
     it('cancel during PDF conversion aborts isIngesting() → true', async () => {
       // We construct a converter mock whose promise resolves only when
       // the test calls the deferred resolver. Then we trigger cancel.

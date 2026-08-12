@@ -13,6 +13,7 @@ import {
   LINT_DEDUP_BUCKET_PREFIX_LEN,
   LINT_DEDUP_MAX_BUCKET_SIZE,
   LINT_DEDUP_INCOMING_LINK_THRESHOLD,
+  WIKI_SUBFOLDERS,
 } from '../../constants';
 
 export interface DuplicateCandidate {
@@ -21,6 +22,63 @@ export interface DuplicateCandidate {
   reason: string;
   signal: 'crossLang' | 'bigram' | 'sharedLinks' | 'caseVariant' | 'sourceFingerprint' | 'sharedIncoming';
   score: number;
+}
+
+/**
+ * B3 fix (v1.26.3 PATCH follow-up): infer a page's wiki content type
+ * from its path. Pages whose path contains `/entities/`, `/concepts/`,
+ * or `/sources/` are tagged accordingly; anything else (log.md,
+ * schema/, index.md) is `'other'`. Pure function — no IO.
+ *
+ * Used by the cross-type pair filter (`isCrossTypePairAllowed`) to
+ * reject entity↔source / concept↔source candidate pairs that the
+ * bucketed dedup path (tp: / ic: / lh:) would otherwise surface.
+ */
+export type WikiPageType = 'entity' | 'concept' | 'source' | 'other';
+
+export function pageTypeOf(path: string): WikiPageType {
+  if (path.includes(`/${WIKI_SUBFOLDERS.entities}/`)) return 'entity';
+  if (path.includes(`/${WIKI_SUBFOLDERS.concepts}/`)) return 'concept';
+  if (path.includes(`/${WIKI_SUBFOLDERS.sources}/`)) return 'source';
+  return 'other';
+}
+
+/**
+ * Allowed dedup pair combinations per user direction (2026-08-12):
+ *   entity ↔ entity, concept ↔ concept,
+ *   entity ↔ concept (cross-type is OK here),
+ *   source ↔ source.
+ * Forbidden: entity ↔ source, concept ↔ source.
+ *
+ * Pages tagged `'other'` (e.g. log.md, schema/) are NEVER in the
+ * dedup-eligible set — they bail at the file-level filter upstream,
+ * so this guard only needs to handle the four canonical wiki types.
+ * If `'other'` slips through, the guard rejects the pair rather than
+ * emit a candidate of unknown shape.
+ *
+ * Implementation note: stored as a Set of canonicalized "smaller|larger"
+ * keys (lexicographically sorted by the type tag) so lookup is O(1)
+ * regardless of which side is target vs source. Because the key is
+ * canonical, ('entity', 'concept') and ('concept', 'entity') BOTH map to
+ * 'concept|entity' — the Set MUST contain that row for the cross-type
+ * combination to be allowed. The original bug (caught by the
+ * sharedIncoming signal test) was a Set missing 'concept|entity' (only
+ * symmetric rows were present), so every entity↔concept pair was silently
+ * rejected — the fix was ADDING the row, not changing the `a < b`
+ * comparison (which produces an identical key either way). Do not
+ * 'simplify' the comparison or trust that Set row order matters.
+ */
+const ALLOWED_PAIR_KEYS: ReadonlySet<string> = new Set([
+  'concept|concept',
+  'concept|entity', // canonical form of ('entity', 'concept')
+  'entity|entity',
+  'source|source',
+]);
+
+export function isCrossTypePairAllowed(a: WikiPageType, b: WikiPageType): boolean {
+  if (a === 'other' || b === 'other') return false;
+  const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+  return ALLOWED_PAIR_KEYS.has(key);
 }
 
 // ── Pure Functions (extracted for testability) ───────────────────────────────
@@ -270,6 +328,16 @@ export interface DuplicateCandidateHooks {
    * the next bucket.
    */
   checkCancelled?: () => void;
+
+  /**
+   * B3 (v1.26.3 PATCH, DocT CR): invoked ONCE at the end of the scan with
+   * the total count of candidate pairs rejected by the cross-type filter
+   * (entity↔source / concept↔source / any 'other' pairing). Gives the
+   * caller a number to surface in dedup debug output — without it, the
+   * filter's effect is completely silent, so a future path-convention
+   * drift would degrade dedup to a no-op with no signal at all.
+   */
+  onCrossTypeRejected?: (count: number) => void;
 }
 
 /**
@@ -407,8 +475,29 @@ export async function generateDuplicateCandidates(
   }
 
   const candidates = new Map<string, DuplicateCandidate>();
+  // B3 (v1.26.3 PATCH, DocT CR): count rejected cross-type pairs so the
+  // filter's effect is measurable (emitted via hooks.onCrossTypeRejected).
+  let crossTypeRejected = 0;
 
   const addCandidate = (pathA: string, pathB: string, reason: string, signal: DuplicateCandidate['signal'], score: number) => {
+    // B3 (v1.26.3 PATCH): reject forbidden cross-type
+    // pairs at injection time so the LLM verify batch never sees
+    // "is this entity page a duplicate of this source page?" — that
+    // question is meaningless per the #358 complementary memory model
+    // (a source that mentions an entity by name is not a duplicate of
+    // the entity). The pre-B3 dedup docstring
+    // (dedup-phase.ts:132-151) explicitly admitted this leakage: only
+    // the sourceFingerprint signal was suppressed for cross-type, and
+    // only because body-hash equality is rare. The remaining three
+    // signals (sharedLinks / bigramCrossLang / caseVariant) fired
+    // regardless of page type, polluting every other lint run on
+    // vaults with mixed content folders.
+    const typeA = pageTypeOf(pathA);
+    const typeB = pageTypeOf(pathB);
+    if (!isCrossTypePairAllowed(typeA, typeB)) {
+      crossTypeRejected++;
+      return;
+    }
     const key = [pathA, pathB].sort().join('|||');
     if (!candidates.has(key)) {
       candidates.set(key, { target: pathA, source: pathB, reason, signal, score });
@@ -473,6 +562,12 @@ export async function generateDuplicateCandidates(
     // are dimension-specific (ic: only) can short-circuit on tp:/lh:
     // buckets without running O(B²) pair loops over them.
     await runSignalsForBucket(bucketPages, thresholds, addCandidate, comparisonCountRef, bucketKey);
+  }
+
+  // B3 (v1.26.3 PATCH, DocT CR): surface the rejected count once, so the
+  // filter's effect is measurable in the caller's dedup debug output.
+  if (crossTypeRejected > 0) {
+    hooks.onCrossTypeRejected?.(crossTypeRejected);
   }
 
   return Array.from(candidates.values());

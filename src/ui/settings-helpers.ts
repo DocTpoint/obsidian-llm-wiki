@@ -7,6 +7,20 @@ export type FetchErrorCategory = 'Auth' | 'Endpoint' | 'Server' | 'Empty' | 'Net
 export function classifyFetchError(msg: string): FetchErrorCategory {
   if (msg === 'empty model list') return 'Empty';
 
+  // B1 (v1.26.3 PATCH, DocT CR): when the message carries a leading HTTP
+  // status (e.g. the "HTTP 401: …" thrown by fetchOneUrl in model-section.ts),
+  // classify by status FIRST. The keyword regexes below are auth-first, so a
+  // 5xx whose body happens to mention "unauthorized" would otherwise be
+  // misread as Auth. Statuses without a dedicated branch (2xx, odd statuses)
+  // fall through to the keyword scan → Network.
+  const statusMatch = /^HTTP\s+(\d{3})/.exec(msg);
+  if (statusMatch) {
+    const status = Number(statusMatch[1]);
+    if (status === 401 || status === 403) return 'Auth';
+    if (status === 404 || status === 405 || status === 410 || status === 421) return 'Endpoint';
+    if (status >= 500 && status < 600) return 'Server';
+  }
+
   // Auth: any 401/403, or keywords like "unauthorized"/"forbidden"/"invalid key".
   // Case-insensitive to match varying server error formats.
   // \b word boundaries prevent partial matches inside other identifiers.

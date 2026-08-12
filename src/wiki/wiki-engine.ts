@@ -19,7 +19,6 @@ import { PROMPTS } from '../prompts';
 import { getText } from '../core/i18n';
 import { formatTaskUsage, snapshotTaskUsage, taskUsageSince } from '../core/llm-task-usage';
 import { TEXTS } from '../texts';
-import { buildIngestStatusBarText } from '../core/status-bar';
 import { renderTemplate } from '../core/template-renderer';
 import { slugify } from '../core/slug';
 import { resolveSourceSlug } from '../core/source-slug';
@@ -669,14 +668,14 @@ export class WikiEngine {
     // real i18n keys; if a future stage is added to STAGE_KEYS it is
     // automatically picked up here.
     const setPdfStage = (stageKey: keyof typeof TEXTS.en) =>
-      this.updateStatusBar(
-        buildIngestStatusBarText(
-          getText(lang, 'ingestionStatusBar'),
-          file.basename,
-          undefined,
-          getText(lang, stageKey),
-        ),
-      );
+      // B2 (v1.26.3 PATCH, DocT CR): emit RAW segments (filename · stage),
+      // NOT a buildIngestStatusBarText result. command-registry routes the
+      // update through composeStatusBarUpdate, which appends the always-
+      // visible base label ("Ingesting... click to cancel") — pre-fix this
+      // emitter already embedded that label, so every PDF stage showed the
+      // cancel affordance twice ("… · Ingesting… · Ingesting…"). Composition
+      // now happens in exactly one place.
+      this.updateStatusBar([file.basename, getText(lang, stageKey)].join(' · '));
     setPdfStage('pdfStageReading');
 
     let conversionResult;
@@ -878,7 +877,9 @@ export class WikiEngine {
       console.debug(`[Long Source] ${file.basename}: ${lineCount} lines, ${sizeKB}KB — long ingestion expected`);
     }
 
-    this.onProgress?.(`Analyzing: ${file.basename}`);
+    this.onProgress?.(
+      getText(this.settings.language, 'ingestAnalyzing').replace('{filename}', file.basename)
+    );
 
     const failedItems: Array<{ type: 'entity' | 'concept'; name: string; reason: string }> = [];
     const collisions: Array<{ name: string; sourceType: 'entity' | 'concept'; targetType: 'entity' | 'concept'; targetPath: string }> = [];
@@ -913,7 +914,11 @@ export class WikiEngine {
         plannedPaths.push(normalizePath(`${this.settings.wikiFolder}/concepts/${slugify(concept.name, preserveCase)}.md`));
       }
 
-      this.onProgress?.(`[${step}/${totalSteps}] Creating summary...`);
+      this.onProgress?.(
+        getText(this.settings.language, 'ingestCreatingSummary')
+          .replace('{step}', String(step))
+          .replace('{totalSteps}', String(totalSteps))
+      );
       await this.apiDelay();
 
       // Issue #155: derive the source slug (<basename>-<path fingerprint>) ONCE,
@@ -966,7 +971,14 @@ export class WikiEngine {
           const task = pageGenTasks[step - 1]?.payload;
           if (task) {
             this.onProgress?.(
-              `[${step}/${totalSteps}] ${task.type === 'entity' ? 'Entity' : 'Concept'}: ${task.name}`
+              getText(this.settings.language, 'ingestCreatingItem')
+                .replace('{step}', String(step))
+                .replace('{totalSteps}', String(totalSteps))
+                .replace('{type}', getText(
+                  this.settings.language,
+                  task.type === 'entity' ? 'ingestItemTypeEntity' : 'ingestItemTypeConcept'
+                ))
+                .replace('{name}', task.name)
             );
           }
         },
@@ -1062,7 +1074,12 @@ export class WikiEngine {
         onProgress: (id) => {
           const task = relatedTasks.find(t => t.id === id);
           if (task) {
-            this.onProgress?.(`[${task.payload.stepNum}/${totalSteps}] Updating: ${task.payload.name}`);
+            this.onProgress?.(
+              getText(this.settings.language, 'ingestUpdating')
+                .replace('{step}', String(task.payload.stepNum))
+                .replace('{totalSteps}', String(totalSteps))
+                .replace('{name}', task.payload.name)
+            );
           }
         },
         execute: async (task) => {
@@ -1117,7 +1134,11 @@ export class WikiEngine {
       // Stage 6: Index & Log Update
       const indexStart = Date.now();
       step++;
-      this.onProgress?.(`[${step}/${totalSteps}] Generating index...`);
+      this.onProgress?.(
+        getText(this.settings.language, 'ingestGeneratingIndex')
+          .replace('{step}', String(step))
+          .replace('{totalSteps}', String(totalSteps))
+      );
       await this.generateIndexFromEngine();
       // Compute total elapsed wall time + source bytes BEFORE updateLog so the
       // log entry can record both (issue #122 v3.1: ingest history needs timing).

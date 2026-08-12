@@ -99,7 +99,7 @@ export const ES_TEXTS = {
     fetchErrorEndpoint: 'Endpoint no encontrado (HTTP 404). Verifica la URL del endpoint, o introduce un ID de modelo y haz clic en Probar conexión.',
     fetchErrorServer: 'Error del servidor del proveedor (HTTP 5xx). Inténtalo más tarde, o introduce un ID de modelo y haz clic en Probar conexión.',
     fetchErrorEmpty: 'Este endpoint no expone lista de modelos. Introduce un ID de modelo y haz clic en Probar conexión.',
-    fetchErrorNetwork: 'Falló la solicitud de red. Verifica tu conexión a internet, la URL del endpoint o la configuración del proxy. También puedes introducir un ID de modelo y hacer clic en Probar conexión.',
+    fetchErrorNetwork: 'Falló la solicitud de red. Verifica tu conexión a internet, la URL del endpoint, la configuración del proxy o la clave API. También puedes introducir un ID de modelo y hacer clic en Probar conexión.',
 
     selectModelName: 'Seleccionar modelo',
     selectModelDesc: 'Elige entre {} modelos disponibles',
@@ -508,6 +508,9 @@ export const ES_TEXTS = {
     cmdViewHistory: 'Ver historial de ingesta',
     noActiveFile: 'No hay ningún archivo abierto',
     mdOnlyFile: 'Solo se pueden ingerir archivos Markdown',
+    ingestSingleFileStart: 'Procesando: {filename}',
+    ingestCheckingExisting: 'Comprobando archivos ya procesados...',
+    lintFindingsSummary: '{total} hallazgos',
 
     // Ingestion status bar
     ingestionStatusBar: 'Ingiriendo... clic para cancelar',
@@ -532,6 +535,25 @@ export const ES_TEXTS = {
     ingestionCancelling: 'Cancelando — se detendrá tras el lote actual',
     ingestionCancelled: 'Ingesta cancelada',
     crossTypeCollisionNotice: '{count} elementos fusionados como alias cross-type (duplicados entidad ↔ concepto evitados)',
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
+    ingestBatchInitial: 'Analizando lote 1/{total}...',
+    ingestBatchProgress: 'Analizando lote {current}/{total} ({entities} entidades, {concepts} conceptos hasta ahora)...',
+    ingestBatchProcessed: 'Lote {current} analizado, procesando...',
+    ingestAnalyzing: 'Analizando: {filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] Creando resumen...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type}: {name}',
+    ingestUpdating: '[{step}/{totalSteps}] Actualizando: {name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] Generando índice...',
+    ingestItemTypeEntity: 'Entidad',
+    ingestItemTypeConcept: 'Concepto',
+    convAnalyzing: 'Analizando conversación...',
+    convCheckingExisting: 'Comprobando conocimiento existente...',
+    convAlreadyExists: 'Este conocimiento ya existe en el Wiki',
+    convCreatingSummary: 'Creando página de resumen...',
+    convGeneratingSummary: 'Generando página de resumen...',
+    convSavingEntity: 'Guardando entidad: {name}',
+    convSavingConcept: 'Guardando concepto: {name}',
+    convGeneratingIndex: 'Generando índice...',
 
     // Lint Report
     lintReportTitle: 'Informe de verificación lint de la Wiki',

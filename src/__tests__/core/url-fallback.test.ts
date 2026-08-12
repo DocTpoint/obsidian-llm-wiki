@@ -322,4 +322,95 @@ describe('fetchModelsWithFallback', () => {
     expect(models).toEqual([]);
     expect(fetchFn).not.toHaveBeenCalled();
   });
+
+  // B1 fix (v1.26.3 PATCH follow-up): when fetchFn throws an error with
+  // HTTP status info (e.g., fetchOneUrl in model-section.ts throws
+  // "HTTP 401: ..." for an invalid API key), the orchestrator must
+  // re-throw that last error after all candidates fail. Otherwise the
+  // classifier at settings-helpers.ts:7 never sees the 401 status code
+  // and every fetch failure is misreported as "fetchErrorNetwork".
+  describe('fetchFn throws with HTTP status', () => {
+    it('re-throws the last HTTP-status error when all candidates fail', async () => {
+      const authError = new Error('HTTP 401: {"error":{"message":"Invalid API Key"}}');
+      const fetchFn = vi.fn().mockRejectedValue(authError);
+      await expect(
+        fetchModelsWithFallback({
+          baseUrl: 'https://api.example.com/v1',
+          provider: 'openai-compatible',
+          fetchFn,
+        })
+      ).rejects.toThrow(/HTTP 401/);
+    });
+
+    it('re-throws the last HTTP 404 error when all candidates fail (wrong baseURL)', async () => {
+      const notFoundError = new Error('HTTP 404: Not Found');
+      const fetchFn = vi.fn().mockRejectedValue(notFoundError);
+      await expect(
+        fetchModelsWithFallback({
+          baseUrl: 'https://wrong.example.com',
+          provider: 'openai-compatible',
+          fetchFn,
+        })
+      ).rejects.toThrow(/HTTP 404/);
+    });
+
+    it('re-throws the last HTTP 500 error when all candidates fail', async () => {
+      const serverError = new Error('HTTP 500: Internal Server Error');
+      const fetchFn = vi.fn().mockRejectedValue(serverError);
+      await expect(
+        fetchModelsWithFallback({
+          baseUrl: 'https://api.example.com/v1',
+          provider: 'openai-compatible',
+          fetchFn,
+        })
+      ).rejects.toThrow(/HTTP 500/);
+    });
+
+    it('still returns empty array when fetchFn returns [] (no status info)', async () => {
+      // No throw, no status — old behavior preserved.
+      const fetchFn = vi.fn().mockResolvedValue([]);
+      const models = await fetchModelsWithFallback({
+        baseUrl: 'https://api.example.com/v1',
+        provider: 'openai-compatible',
+        fetchFn,
+      });
+      expect(models).toEqual([]);
+    });
+
+    // B1 (v1.26.3 PATCH, DocT CR): a genuine network failure (DNS,
+    // refused, timeout) is wrapped as "Network error: …" by fetchOneUrl
+    // (model-section.ts), which does NOT match /^HTTP \d+/. Previously the
+    // orchestrator forgot it and returned [], so the caller's
+    // `empty model list` throw → classifyFetchError → fetchErrorEmpty —
+    // a disconnected user was told "Provider has no model list endpoint".
+    // The network error must be remembered and re-thrown → fetchErrorNetwork.
+    it('re-throws the last network error when all candidates fail (no HTTP status)', async () => {
+      const networkError = new Error('Network error: fetch failed (ECONNREFUSED)');
+      const fetchFn = vi.fn().mockRejectedValue(networkError);
+      await expect(
+        fetchModelsWithFallback({
+          baseUrl: 'https://api.example.com/v1',
+          provider: 'openai-compatible',
+          fetchFn,
+        })
+      ).rejects.toThrow(/Network error: fetch failed/);
+    });
+
+    it('prefers the HTTP-status error over a network error when both occur', async () => {
+      // First candidate URL: network failure; a later one: HTTP 401. The
+      // HTTP status carries more signal — it must win the final throw.
+      // baseUrl without /v1 so generateUrlCandidates produces ≥2 URLs and
+      // fetchFn is invoked multiple times.
+      const fetchFn = vi.fn()
+        .mockRejectedValueOnce(new Error('Network error: fetch failed'))
+        .mockRejectedValue(new Error('HTTP 401: {"error":{"message":"Invalid API Key"}}'));
+      await expect(
+        fetchModelsWithFallback({
+          baseUrl: 'https://api.example.com',
+          provider: 'openai-compatible',
+          fetchFn,
+        })
+      ).rejects.toThrow(/HTTP 401/);
+    });
+  });
 });

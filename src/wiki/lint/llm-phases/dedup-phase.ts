@@ -130,25 +130,25 @@ export async function runDedupPhase(
   // files when `lintDedupIncludeSources !== false` (the settings field
   // is `?: boolean` so undefined = on by default).
   //
-  // Cross-type behaviour (important — read before changing):
-  //   - The dedup-eligible set bundles entity + concept + source paths
-  //     together. The partition + signals DO compare across folders —
-  //     e.g. an entity `Transformer` and a source `Transcription` may
-  //     land in the same `tp:` bucket and surface bigram/sharedLinks
-  //     candidates.
-  //   - Cross-type is suppressed ONLY for sourceFingerprint (body-hash
-  //     equality is the deterministic source↔source tier-1 gate; the
-  //     other three signals fire regardless of folder).
-  //   - This is intentional: per #358 complementary memory model, a
-  //     source mentioning an entity by name is NOT a duplicate, but
-  //     the LLM verify path can down-rank such tier-2 candidates
-  //     independently. The false-positive risk is bounded by the LLM
-  //     token budget (500 candidates max) and the user's
-  //     `lintDedupIncludeSources` opt-out toggle.
-  //   - If cross-type suppression becomes a real recall problem, add
-  //     a `pageTypeOf(path)` guard inside `runSharedLinksSignal` /
-  //     `runBigramCrossLangSignal` / `runCaseVariantSignal` — see
-  //     Altitude-review Q7 in the Batch 2 review record.
+  // Cross-type behaviour (post v1.26.3 PATCH follow-up — was a known
+  // gap in v1.26.0 Batch 2):
+  //   - Pair-level rejection happens inside generateDuplicateCandidates
+  //     via isCrossTypePairAllowed (added in v1.26.3 PATCH B3 fix).
+  //     The forbidden combinations are entity↔source and
+  //     concept↔source (in any order); the allowed combinations are
+  //     entity↔entity, concept↔concept, entity↔concept, and
+  //     source↔source. Pages outside the three content folders
+  //     (log.md, schema/, index.md) are still filtered at file level.
+  //   - Why this matters per #358 complementary memory model: a source
+  //     that mentions an entity by name is NOT a duplicate of the
+  //     entity — they live in different cognitive registers. Showing
+  //     "is this entity page a duplicate of this source page?" to the
+  //     LLM verify path was misleading noise that the LLM tended to
+  //     return false-positives on (especially on small vaults with
+  //     shared bigram titles like Transformer / Transformer Reference).
+  //   - Source↔source detection still uses sourceFingerprint
+  //     (body-hash equality) as its tier-1 gate; the cross-type
+  //     filter does not affect that path.
   const includeSources = ctx.settings.lintDedupIncludeSources !== false;
   const dedupEligibleFiles = input.wikiFiles.filter(f =>
     f.path.includes(`/${WIKI_SUBFOLDERS.entities}/`) ||
@@ -194,6 +194,11 @@ export async function runDedupPhase(
     // link) instead of the previous O(N) Array.find, dropping the
     // build from O(N² × L) to O(N × L).
     const incomingIndex = buildIncomingLinkIndex(pagesForDedup);
+    // B3 (v1.26.3 PATCH, DocT CR): count pairs rejected by the cross-type
+    // filter so its effect shows up in the dedup debug output below —
+    // without this number the filter is silent and a path-convention drift
+    // would degrade dedup to a no-op with no signal.
+    let crossTypeRejected = 0;
     const allCandidates = await generateDuplicateCandidates(pagesForDedup, {
       jaccardLinkThreshold: ctx.settings.lintJaccardLinkThreshold,
       jaccardBodyGate: ctx.settings.lintJaccardBodyGate,
@@ -205,6 +210,7 @@ export async function runDedupPhase(
       // bucket fan-out on a 2000-page vault can no longer block cancel
       // for the full scan duration.
       checkCancelled,
+      onCrossTypeRejected: (count) => { crossTypeRejected = count; },
     }, incomingIndex);
     if (allCandidates.length === 0) {
       console.debug('lintWiki: no duplicate candidates found — wiki is clean');
@@ -216,7 +222,7 @@ export async function runDedupPhase(
     // the constants.ts docblock). It controls which generated candidates
     // the LLM sees, not whether a candidate is generated.
     const { tier1, tier2 } = classifyTiers(allCandidates);
-    console.debug(`lintWiki: ${allCandidates.length} candidates → Tier 1: ${tier1.length}, Tier 2: ${tier2.length}`);
+    console.debug(`lintWiki: ${allCandidates.length} candidates → Tier 1: ${tier1.length}, Tier 2: ${tier2.length}${crossTypeRejected > 0 ? ` (${crossTypeRejected} cross-type pairs rejected by #358 filter)` : ''}`);
     // v1.24.0: log candidate breakdown by signal (preserved from the
     // OLD controller.ts:runLintWiki lines 200-204 diagnostic; was
     // accidentally dropped during refactor).

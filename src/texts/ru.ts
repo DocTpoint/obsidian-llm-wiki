@@ -107,7 +107,7 @@ export const RU_TEXTS = {
     fetchErrorEndpoint: 'Эндпоинт не найден (HTTP 404). Проверьте BaseURL или введите Model ID и нажмите «Проверить подключение».',
     fetchErrorServer: 'Ошибка сервера провайдера (HTTP 5xx). Повторите попытку позже или введите Model ID и нажмите «Проверить подключение».',
     fetchErrorEmpty: 'У провайдера нет эндпоинта списка моделей. Введите Model ID ниже и нажмите «Проверить подключение».',
-    fetchErrorNetwork: 'Сбой сетевого запроса. Проверьте интернет-соединение, BaseURL или настройки прокси. Также можно ввести Model ID ниже и нажать «Проверить подключение».',
+    fetchErrorNetwork: 'Сбой сетевого запроса. Проверьте интернет-соединение, BaseURL, настройки прокси или ключ API. Также можно ввести Model ID ниже и нажать «Проверить подключение».',
 
     selectModelName: 'Выберите модель',
     selectModelDesc: 'Выберите из {} доступных моделей',
@@ -508,6 +508,9 @@ export const RU_TEXTS = {
     cmdViewHistory: 'Просмотр истории операций',
     noActiveFile: 'В настоящее время ни один файл не открыт',
     mdOnlyFile: 'Можно импортировать только файлы Markdown',
+    ingestSingleFileStart: 'Обработка: {filename}',
+    ingestCheckingExisting: 'Проверка уже обработанных файлов...',
+    lintFindingsSummary: 'найдено {total}',
 
     // Строка статуса импорта
     ingestionStatusBar: 'Импорт... нажмите для отмены',
@@ -537,6 +540,25 @@ export const RU_TEXTS = {
     ingestionCancelling: 'Отмена — остановится после завершения текущего пакета',
     ingestionCancelled: 'Импорт отменён',
     crossTypeCollisionNotice: '{count} элементов объединены как межтиповые псевдонимы (дубликаты entity ↔ concept предотвращены)',
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
+    ingestBatchInitial: 'Анализ партии 1/{total}...',
+    ingestBatchProgress: 'Анализ партии {current}/{total} ({entities} сущностей, {concepts} концепций пока)...',
+    ingestBatchProcessed: 'Партия {current} проанализирована, обработка...',
+    ingestAnalyzing: 'Анализ: {filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] Создание сводки...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type}: {name}',
+    ingestUpdating: '[{step}/{totalSteps}] Обновление: {name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] Создание индекса...',
+    ingestItemTypeEntity: 'Сущность',
+    ingestItemTypeConcept: 'Концепция',
+    convAnalyzing: 'Анализ разговора...',
+    convCheckingExisting: 'Проверка существующих знаний...',
+    convAlreadyExists: 'Эти знания уже существуют в Wiki',
+    convCreatingSummary: 'Создание страницы сводки...',
+    convGeneratingSummary: 'Генерация страницы сводки...',
+    convSavingEntity: 'Сохранение сущности: {name}',
+    convSavingConcept: 'Сохранение концепции: {name}',
+    convGeneratingIndex: 'Создание индекса...',
 
     // Отчёт Lint
     lintReportTitle: 'Отчёт lint Wiki',

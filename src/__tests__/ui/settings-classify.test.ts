@@ -58,6 +58,22 @@ describe('classifyFetchError', () => {
       expect(classifyFetchError('HTTP 599')).toBe('Server');
     });
 
+    // B1 (v1.26.3 PATCH, DocT CR): classify by the leading HTTP status
+    // FIRST, before the keyword regexes — a 5xx whose body mentions
+    // "unauthorized" must be Server, not Auth. The auth keyword scan
+    // must only run on messages with no status prefix.
+    it('classifies 5xx by leading status even when body contains "unauthorized"', () => {
+      expect(classifyFetchError('HTTP 500: {"error":{"message":"unauthorized"}}')).toBe('Server');
+      expect(classifyFetchError('HTTP 503: unauthorized')).toBe('Server');
+    });
+
+    it('classifies 4xx/2xx by leading status, falling through for unknown statuses', () => {
+      // 404 stays Endpoint (not affected by the "not found" body here).
+      expect(classifyFetchError('HTTP 404: unauthorized')).toBe('Endpoint');
+      // 2xx has no dedicated category — falls through to keyword scan → Network.
+      expect(classifyFetchError('HTTP 200: {}')).toBe('Network');
+    });
+
     it('matches bare 5xx and server error keywords', () => {
       expect(classifyFetchError('Request failed with status code 500')).toBe('Server');
       expect(classifyFetchError('Internal server error')).toBe('Server');

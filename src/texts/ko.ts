@@ -99,7 +99,7 @@ export const KO_TEXTS = {
     fetchErrorEndpoint: '엔드포인트를 찾을 수 없음 (HTTP 404). BaseURL을 확인하거나 모델 ID를 직접 입력한 후 테스트 연결을 클릭하여 검증하세요.',
     fetchErrorServer: 'Provider 서버 오류 (HTTP 5xx). 나중에 다시 시도하거나 모델 ID를 직접 입력한 후 테스트 연결을 클릭하여 검증하세요.',
     fetchErrorEmpty: '이 엔드포인트는 모델 목록을 제공하지 않습니다. 모델 ID를 직접 입력한 후 테스트 연결을 클릭하여 검증하세요.',
-    fetchErrorNetwork: '네트워크 요청 실패. 인터넷 연결, BaseURL 또는 프록시 설정을 확인하세요. 모델 ID를 직접 입력한 후 테스트 연결을 클릭하여 검증할 수도 있습니다.',
+    fetchErrorNetwork: '네트워크 요청 실패. 인터넷 연결, BaseURL, 프록시 설정 또는 API Key를 확인하세요. 모델 ID를 직접 입력한 후 테스트 연결을 클릭하여 검증할 수도 있습니다.',
 
     selectModelName: '모델 선택',
     selectModelDesc: '{}개의 사용 가능한 모델 중에서 선택',
@@ -508,6 +508,9 @@ export const KO_TEXTS = {
     cmdViewHistory: '수집 이력 보기',
     noActiveFile: '열려 있는 파일이 없습니다',
     mdOnlyFile: 'Markdown 파일만 수집할 수 있습니다',
+    ingestSingleFileStart: '수집 중: {filename}',
+    ingestCheckingExisting: '이미 수집된 파일 확인 중...',
+    lintFindingsSummary: '발견 {total}건',
 
     // Ingestion status bar
     ingestionStatusBar: '수집 중... 클릭하여 취소',
@@ -537,6 +540,25 @@ export const KO_TEXTS = {
     ingestionCancelling: '취소 중 — 현재 배치 완료 후 중지됩니다',
     ingestionCancelled: '수집이 취소되었습니다',
     crossTypeCollisionNotice: '{count}개 항목이 크로스타입 별칭으로 병합됨（엔티티 ↔ 컨셉 중복 방지）',
+    // v1.26.3 PATCH follow-up (B2.5): status-bar progress text i18n
+    ingestBatchInitial: '배치 1/{total} 분석 중...',
+    ingestBatchProgress: '배치 {current}/{total} 분석 중（엔티티 {entities}개, 컨셉 {concepts}개까지）...',
+    ingestBatchProcessed: '배치 {current} 분석 완료, 처리 중...',
+    ingestAnalyzing: '분석 중: {filename}',
+    ingestCreatingSummary: '[{step}/{totalSteps}] 요약 생성 중...',
+    ingestCreatingItem: '[{step}/{totalSteps}] {type}: {name}',
+    ingestUpdating: '[{step}/{totalSteps}] 업데이트 중: {name}',
+    ingestGeneratingIndex: '[{step}/{totalSteps}] 인덱스 생성 중...',
+    ingestItemTypeEntity: '엔티티',
+    ingestItemTypeConcept: '컨셉',
+    convAnalyzing: '대화 분석 중...',
+    convCheckingExisting: '기존 지식 확인 중...',
+    convAlreadyExists: '이 지식은 이미 Wiki에 존재합니다',
+    convCreatingSummary: '요약 페이지 생성 중...',
+    convGeneratingSummary: '요약 페이지 생성 중...',
+    convSavingEntity: '엔티티 저장 중: {name}',
+    convSavingConcept: '컨셉 저장 중: {name}',
+    convGeneratingIndex: '인덱스 생성 중...',
 
     // Lint Report
     lintReportTitle: '위키 린트 보고서',
