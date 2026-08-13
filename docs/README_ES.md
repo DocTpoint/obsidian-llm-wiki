@@ -28,12 +28,13 @@
 - [🚀 Inicio rápido](#-inicio-rápido)
 - [✨ Características](#-características)
 - [🌐 Ecosistema](#-ecosistema)
-- [🛠️ CLI sin interfaz](#-cli-sin-interfaz)
+- [🧰 CLI sin interfaz](#-cli-sin-interfaz)
 - [🔍 Cómo funciona la recuperación](#-cómo-funciona-la-recuperación)
 - [🤖 Modelos](#-modelos)
 - [❓ FAQ](#-faq)
 - [🔒 Privacidad](#-privacidad)
 - [💖 Apoyar el proyecto](#-apoyar-el-proyecto)
+- [🔭 Otros proyectos](#-otros-proyectos)
 - [📜 Licencia y créditos](#-licencia-y-créditos)
 
 ---
@@ -187,76 +188,6 @@ Tres rutas, elige la que se ajuste a tu configuración:
 
 ---
 
-## 🔍 Cómo funciona la recuperación
-
-La mayoría de los plugins de "búsqueda AI" fragmentan tus notas en trozos y los incrustan en una base de datos vectorial. Nosotros no. El argumento de Karpathy contra RAG es que la fragmentación rompe la capacidad del LLM para razonar a través de todo tu grafo de conocimiento — y ese argumento se sostiene en la práctica. En su lugar, recorremos el grafo que ya mantienes al escribir `[[wiki-links]]`.
-
-### La cascada de selección de semillas de 5 etapas
-
-Cuando preguntas "Quién fundó Microsoft?", Query Wiki ejecuta cinco etapas antes de comenzar a generar cualquier respuesta:
-
-1. **Ruta rápida Lex** — superposición directa de tokens contra cada título de entidad/concepto y sus alias. Gratis, instantánea, y es el paso de control para todo lo que sigue.
-2. **Generación de palabras clave LLM** — el LLM propone de 8 a 12 palabras clave inter-idiomas a partir de tu consulta (maneja sinónimos, abreviaturas y términos resistentes a la superposición de tokens en una sola llamada LLM).
-3. **Escaneo local de subcadenas** — cada palabra clave generada se vuelve a cotejar localmente contra títulos de página, alias y fragmentos del cuerpo. Sin llamada LLM adicional; completa el recall tolerante al ruido.
-4. **Fallback LLM KB** — cuando lex + escaneo de palabras clave devuelven señales débiles, el LLM resiembra los N mejores candidatos contra el wiki completo en una pasada semántica.
-5. **Expansión de grafo PPR** — Personalized PageRank (Haveliwala 2002) sobre el grafo `[[wiki-link]]` partiendo del conjunto de semillas candidatas. Esto es lo que proporciona contexto multi-hop consciente del grafo: "Bill Gates" → "Microsoft" → "competidores", no solo superposición literal de títulos.
-
-La cascada se trunca en el paso que devuelva suficiente señal — sin costo fijo de 5 etapas, sin llamadas LLM cuando lex es suficiente, sin pérdida de precisión cuando se necesita aumento LLM.
-
-### Personalized PageRank a escala
-
-Usamos Monte Carlo PPR (Fogaras 2005) — 3000 caminatas aleatorias × 50 pasos cada una — con la regla de dead-end de Haveliwala 2002. El costo es **O(K × L)** independiente del número de páginas, por lo que un vault de 2000 páginas ve la misma latencia de expansión que uno de 200 páginas.
-
-**PPR @5 = 27.1% vs línea base knn puro 24.1%** en el corpus de benchmark del proyecto (el único benchmark de recuperación publicado en este espacio open-source de LLM-Wiki).
-
-### Por qué no embeddings
-
-Rechazamos deliberadamente la ruta de embeddings en [Issue #175](https://github.com/green-dalii/obsidian-llm-wiki/issues/175). La señal del grafo ya está ahí — cada `[[wiki-link]]` es una arista "estos están relacionados" curada a mano, y la mayoría de los proveedores que soportamos (Ollama, LM Studio, Anthropic, Bedrock, Kimi, GLM, MiniMax) no tienen ningún endpoint `/v1/embeddings`. Añadir un modelo de embeddings significaría una descarga por página, un adaptador por proveedor y cero beneficio en la calidad de recuperación.
-
----
-
-## 🤖 Modelos
-
-**Proveedores compatibles (12+, cotejados con models.dev en 2026-07):**
-
-| Proveedor | Series | Notas |
-|-----------|--------|-------|
-| **Anthropic** | Claude 5 series | PDF nativo; protocolo `/v1/messages` |
-| **OpenAI** | GPT-5.6 series (Sol / Terra / Luna) | PDF nativo; clave API Platform |
-| **Google Gemini** | Gemini 3.6 series | PDF nativo (file parts desde 1.5); endpoint compatible con OpenAI |
-| **DeepSeek** | DeepSeek V4 series | Compatible con OpenAI; nivel de costo más bajo |
-| **Alibaba Qwen** | Qwen3.7/3.8 series | Compatible con OpenAI (DashScope) |
-| **xAI Grok** | Grok 4 series | Compatible con OpenAI; contexto largo |
-| **Moonshot Kimi** | Kimi K3 series | Compatible con OpenAI; 2.8T MoE frontier |
-| **Zhipu GLM** | GLM-5 series | Compatible con OpenAI; bilingüe fuerte |
-| **MiniMax** | MiniMax M3 series | Compatible con OpenAI; contexto de 1M |
-| **Step (阶跃星辰)** | Step 3 series (Flash) | Compatible con OpenAI; inferencia rápida |
-| **Tencent Hunyuan** | Hy3 series | Compatible con OpenAI; MoE de peso abierto |
-| **Xiaomi MiMo** | MiMo V2.5 series | MIT open-source; precio plano |
-| **Google Gemma** | Gemma 4 series | Peso abierto; contexto 262K |
-| **AWS Bedrock** | Variantes Anthropic + OpenAI | Ruta VPC / cumplimiento normativo |
-| **ChatGPT Plan (Codex OAuth)** | Codex Responses API | Inicio de sesión por navegador/código de dispositivo; SecretStorage |
-| **Local: Ollama, LM Studio, OpenRouter, Anthropic-Compatible** | Cualquier modelo de protocolo OpenAI-/Anthropic- | Custom OpenAI-Compatible + Anthropic-Compatible (Token Plan / Coding Plan) |
-
-Este plugin alimenta al LLM con el contexto completo de tu Wiki por consulta — por lo que **los modelos de contexto largo ganan**. La tabla completa por niveles (cloud + local) vive en [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md), cotejada con [models.dev](https://models.dev/) para que las recomendaciones se mantengan actualizadas.
-
-### Qué importa
-
-- **🧠 Ventana de contexto ≥ 200K tokens** para vaults de más de ~500 páginas. Por debajo de 200K, el contexto ensamblado de la cascada empieza a truncarse.
-- **⚖️ La calidad de seguimiento de instrucciones importa más que el IQ bruto** para la tarea de extracción — elige un modelo que siga la plantilla del esquema, no el número más grande en el leaderboard.
-- **🔌 El endpoint de embeddings es irrelevante** — no usamos embeddings. Un proveedor que carezca de `/v1/embeddings` funciona bien (la mayoría de nuestros 12+ proveedores lo son).
-- **🦙 Local funciona para consulta, cloud para ingesta** — la ingesta en un vault de 2000 páginas normalmente necesita un modelo cloud de contexto largo; un modelo local de 262K cubre la mayoría de las consultas.
-
-### Anthropic vs OpenAI vs Codex OAuth — son proveedores distintos
-
-- **Anthropic** (y su variante Bedrock) — clave API de Anthropic Platform facturada por separado.
-- **OpenAI** — clave API de OpenAI Platform facturada por separado.
-- **ChatGPT Plan (Codex OAuth)** — experimental, proveedor distinto que usa la asignación Codex elegible después de iniciar sesión por navegador o código de dispositivo; la disponibilidad sigue las políticas de autenticación y asignación de OpenAI Codex, no el nombre del plan. Compatibilidad de terceros con Codex, no una asociación con OpenAI ni una API general de ChatGPT.
-
-> 📖 **Tabla completa de selección** (cloud + local + OCR PDF + Codex OAuth + cuantización + niveles de hardware) → [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
-
----
-
 ## 🌐 Ecosistema
 
 El plugin se combina con el resto de tu stack de Obsidian — cada herramienta de abajo se conecta al grafo `[[wiki-link]]` sin cambios de código.
@@ -272,7 +203,7 @@ El plugin se combina con el resto de tu stack de Obsidian — cada herramienta d
 
 ---
 
-## 🛠️ CLI sin interfaz
+## 🧰 CLI sin interfaz
 
 El mismo pipeline de ingestión que usa el plugin, pero funcionando bajo Node puro. Úsalo cuando Obsidian no está a mano — CI, jobs por lotes, ejecuciones con script.
 
@@ -368,6 +299,76 @@ El repositorio hermano está en **v0.1.0-dev, aún sin publicar en npm** a fecha
 
 ---
 
+## 🔍 Cómo funciona la recuperación
+
+La mayoría de los plugins de "búsqueda AI" fragmentan tus notas en trozos y los incrustan en una base de datos vectorial. Nosotros no. El argumento de Karpathy contra RAG es que la fragmentación rompe la capacidad del LLM para razonar a través de todo tu grafo de conocimiento — y ese argumento se sostiene en la práctica. En su lugar, recorremos el grafo que ya mantienes al escribir `[[wiki-links]]`.
+
+### La cascada de selección de semillas de 5 etapas
+
+Cuando preguntas "Quién fundó Microsoft?", Query Wiki ejecuta cinco etapas antes de comenzar a generar cualquier respuesta:
+
+1. **Ruta rápida Lex** — superposición directa de tokens contra cada título de entidad/concepto y sus alias. Gratis, instantánea, y es el paso de control para todo lo que sigue.
+2. **Generación de palabras clave LLM** — el LLM propone de 8 a 12 palabras clave inter-idiomas a partir de tu consulta (maneja sinónimos, abreviaturas y términos resistentes a la superposición de tokens en una sola llamada LLM).
+3. **Escaneo local de subcadenas** — cada palabra clave generada se vuelve a cotejar localmente contra títulos de página, alias y fragmentos del cuerpo. Sin llamada LLM adicional; completa el recall tolerante al ruido.
+4. **Fallback LLM KB** — cuando lex + escaneo de palabras clave devuelven señales débiles, el LLM resiembra los N mejores candidatos contra el wiki completo en una pasada semántica.
+5. **Expansión de grafo PPR** — Personalized PageRank (Haveliwala 2002) sobre el grafo `[[wiki-link]]` partiendo del conjunto de semillas candidatas. Esto es lo que proporciona contexto multi-hop consciente del grafo: "Bill Gates" → "Microsoft" → "competidores", no solo superposición literal de títulos.
+
+La cascada se trunca en el paso que devuelva suficiente señal — sin costo fijo de 5 etapas, sin llamadas LLM cuando lex es suficiente, sin pérdida de precisión cuando se necesita aumento LLM.
+
+### Personalized PageRank a escala
+
+Usamos Monte Carlo PPR (Fogaras 2005) — 3000 caminatas aleatorias × 50 pasos cada una — con la regla de dead-end de Haveliwala 2002. El costo es **O(K × L)** independiente del número de páginas, por lo que un vault de 2000 páginas ve la misma latencia de expansión que uno de 200 páginas.
+
+**PPR @5 = 27.1% vs línea base knn puro 24.1%** en el corpus de benchmark del proyecto (el único benchmark de recuperación publicado en este espacio open-source de LLM-Wiki).
+
+### Por qué no embeddings
+
+Rechazamos deliberadamente la ruta de embeddings en [Issue #175](https://github.com/green-dalii/obsidian-llm-wiki/issues/175). La señal del grafo ya está ahí — cada `[[wiki-link]]` es una arista "estos están relacionados" curada a mano, y la mayoría de los proveedores que soportamos (Ollama, LM Studio, Anthropic, Bedrock, Kimi, GLM, MiniMax) no tienen ningún endpoint `/v1/embeddings`. Añadir un modelo de embeddings significaría una descarga por página, un adaptador por proveedor y cero beneficio en la calidad de recuperación.
+
+---
+
+## 🤖 Modelos
+
+**Proveedores compatibles (12+, cotejados con models.dev en 2026-07):**
+
+| Proveedor | Series | Notas |
+|-----------|--------|-------|
+| **Anthropic** | Claude 5 series | PDF nativo; protocolo `/v1/messages` |
+| **OpenAI** | GPT-5.6 series (Sol / Terra / Luna) | PDF nativo; clave API Platform |
+| **Google Gemini** | Gemini 3.6 series | PDF nativo (file parts desde 1.5); endpoint compatible con OpenAI |
+| **DeepSeek** | DeepSeek V4 series | Compatible con OpenAI; nivel de costo más bajo |
+| **Alibaba Qwen** | Qwen3.7/3.8 series | Compatible con OpenAI (DashScope) |
+| **xAI Grok** | Grok 4 series | Compatible con OpenAI; contexto largo |
+| **Moonshot Kimi** | Kimi K3 series | Compatible con OpenAI; 2.8T MoE frontier |
+| **Zhipu GLM** | GLM-5 series | Compatible con OpenAI; bilingüe fuerte |
+| **MiniMax** | MiniMax M3 series | Compatible con OpenAI; contexto de 1M |
+| **Step (阶跃星辰)** | Step 3 series (Flash) | Compatible con OpenAI; inferencia rápida |
+| **Tencent Hunyuan** | Hy3 series | Compatible con OpenAI; MoE de peso abierto |
+| **Xiaomi MiMo** | MiMo V2.5 series | MIT open-source; precio plano |
+| **Google Gemma** | Gemma 4 series | Peso abierto; contexto 262K |
+| **AWS Bedrock** | Variantes Anthropic + OpenAI | Ruta VPC / cumplimiento normativo |
+| **ChatGPT Plan (Codex OAuth)** | Codex Responses API | Inicio de sesión por navegador/código de dispositivo; SecretStorage |
+| **Local: Ollama, LM Studio, OpenRouter, Anthropic-Compatible** | Cualquier modelo de protocolo OpenAI-/Anthropic- | Custom OpenAI-Compatible + Anthropic-Compatible (Token Plan / Coding Plan) |
+
+Este plugin alimenta al LLM con el contexto completo de tu Wiki por consulta — por lo que **los modelos de contexto largo ganan**. La tabla completa por niveles (cloud + local) vive en [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md), cotejada con [models.dev](https://models.dev/) para que las recomendaciones se mantengan actualizadas.
+
+### Qué importa
+
+- **🧠 Ventana de contexto ≥ 200K tokens** para vaults de más de ~500 páginas. Por debajo de 200K, el contexto ensamblado de la cascada empieza a truncarse.
+- **⚖️ La calidad de seguimiento de instrucciones importa más que el IQ bruto** para la tarea de extracción — elige un modelo que siga la plantilla del esquema, no el número más grande en el leaderboard.
+- **🔌 El endpoint de embeddings es irrelevante** — no usamos embeddings. Un proveedor que carezca de `/v1/embeddings` funciona bien (la mayoría de nuestros 12+ proveedores lo son).
+- **🦙 Local funciona para consulta, cloud para ingesta** — la ingesta en un vault de 2000 páginas normalmente necesita un modelo cloud de contexto largo; un modelo local de 262K cubre la mayoría de las consultas.
+
+### Anthropic vs OpenAI vs Codex OAuth — son proveedores distintos
+
+- **Anthropic** (y su variante Bedrock) — clave API de Anthropic Platform facturada por separado.
+- **OpenAI** — clave API de OpenAI Platform facturada por separado.
+- **ChatGPT Plan (Codex OAuth)** — experimental, proveedor distinto que usa la asignación Codex elegible después de iniciar sesión por navegador o código de dispositivo; la disponibilidad sigue las políticas de autenticación y asignación de OpenAI Codex, no el nombre del plan. Compatibilidad de terceros con Codex, no una asociación con OpenAI ni una API general de ChatGPT.
+
+> 📖 **Tabla completa de selección** (cloud + local + OCR PDF + Codex OAuth + cuantización + niveles de hardware) → [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
+
+---
+
 ## ❓ FAQ
 
 ### Qué hace exactamente el plugin?
@@ -441,6 +442,15 @@ El patrocinio es totalmente opcional. El plugin sigue siendo Apache-2.0 y comple
 Gracias a los siguientes por apoyar el proyecto:
 
 [@jameses-cyber](https://github.com/jameses-cyber), [@issaqua](https://github.com/issaqua), Dikson Choi
+
+---
+
+## 🔭 Otros proyectos
+
+Otras cosas que hago:
+
+- **[obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli)** — la CLI de ingesta sin interfaz, saliendo de este repositorio al suyo propio para que el bot de revisión del mercado de Obsidian deje de señalar la estructura de una CLI de Node. Ejecuta el mismo `WikiEngine` sobre una bóveda en disco, sin renderizador. Sigue en la v0.1 en desarrollo y no está en npm; hasta la v1.27.0 usa `pnpm llm-wiki` desde este repositorio.
+- **[pi-shift-router](https://github.com/green-dalii/pi-shift-router)** — un enrutador a nivel de tarea para [pi-coding-agent](https://github.com/earendil-works/pi). Antes de cada turno, un juez LLM pequeño clasifica tu mensaje como rutinario o de peso, y el nivel elegido ejecuta el turno entero. En tareas complejas va más lejos: el nivel Smart actúa como un CTO que planifica el trabajo, delega la implementación en subagentes Fast, revisa cada resultado e itera. Subir de nivel es inmediato; bajar espera a que la tendencia se sostenga, y las cadenas de respaldo por nivel absorben los 429 y 5xx. Cero dependencias en tiempo de ejecución, MIT. → [shiftrouter.greenerai.top](https://shiftrouter.greenerai.top)
 
 ---
 
