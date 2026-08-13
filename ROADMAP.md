@@ -62,10 +62,15 @@ See [CLAUDE.md §"📦 Development Workflow"](./CLAUDE.md) + [`.claude/skills/ob
 
 **v1.26.1 shipped with 21 PRs.** All v1.26.x PATCH items (1-14) landed: #403 caps, CR-1 halving, #419/#435 H1, #424 yaml devDep, #398 silent-save, #407 Stage 0, #423 seed, items 13/14, #439 deps, #409 timing. Full composition in [CHANGELOG.md v1.26.1 entry](./CHANGELOG.md#1261---2026-08-08).
 
+**Shipped in v1.26.3 PATCH (composition landing in [CHANGELOG.md v1.26.3 / Unreleased](./CHANGELOG.md#unreleased)):**
+- **#438** — frontmatter writer data-loss (`sources:` emptied by `enforceFrontmatterConstraints` + blank-line cosmetic) — merged via PR #450 (commits `1931dfd`). Per-vault impact: 321 affected pages in user's vault.
+- **#443 / Path 2 / Phase B / welcome translation** — JSON-schema wire reach + NoObjectGeneratedError path + 11 caller migrations — merged via PR #447 (commits `54fa8ee` → `d985878`).
+- **#414** — `repetitionPenalty` per-backend dialect dispatch (`lmstudio` / `ollama` → `repeat_penalty`; `kimi` / `openrouter` / `custom` → `repetition_penalty`; `deepseek` / `gemini` / `minimax` / `glm` → dropped; `anthropic` client drops entirely). Per-id-key passthrough via AI SDK's openai-compat `[this.providerOptionsName]` lookup at `@ai-sdk/openai-compatible@2.0.62/dist/index.mjs:525-540`. Lands in this branch (commit pending — `fix/414-repetition-penalty-dialect` from `d985878`). Closes #414. **Known limitation:** `wrapWithAdvancedSettings` `Object.create(client)` stream-path bug still drops all settings on Query Wiki stream — tracked as [#451](https://github.com/green-dalii/obsidian-llm-wiki/issues/451) for v1.27.0.
+- **B1 + B2 + B3** — provider-error classification + status-bar cancel label + dedup cross-type filter (`#358` complementary-memory filter) — in-flight on `fix/ux-b1-b2-b3-provider-statusbar-dedup` (PR #448, DocT re-review pending).
+
 **Remaining follow-ups (moved to v1.27.0 window):**
 - **#407 Stages 1+2** — port the 8 silent-failure call sites (`path-resolution.ts:220` + `conversation-ingest.ts:337` first), one PR per blast radius.
-- **#414** — `repetitionPenalty` → `repeat_penalty` per-backend spelling transform (LM Studio measured; DeepSeek / Kimi / GLM / Ollama / vLLM gap).
-- **#438** — frontmatter writer data-loss (awaiting vaclavdobsicek's PR; two defects split into A cosmetic / B data-loss).
+- **#451** — `wrapWithAdvancedSettings` `createMessageStream` settings-injection bug. `Object.create(client)` prototype inheritance bypasses settings injection on the stream path (Query Wiki, streaming UI). Affects temperature / top_p / seed / repetitionPenalty / enableThinking.
 
 **Bedrock Stage 2 — SSO/Profile auth (decision 2026-08-07; cancels the prior "≥3 user requests" gate).** Now scoped to **v1.27.0** via a **zero-AWS-SDK** path: hand-rolled IAM Identity Center OIDC (reusing the Codex OAuth skeleton at `src/llm-sdk/openai-codex/`) → `GetRoleCredentials` → temp IAM creds → **hand-written SigV4** → existing `bedrock-mantle` endpoint. ~+10 KB, zero new npm deps (vs the rejected PR #263's +1.2 MB). Rationale: the `bedrock-mantle` endpoint accepts AWS credentials (SigV4) per AWS docs and speaks standard OpenAI/Anthropic protocols over plain SSE — no native ConverseStream event-stream signing needed. Design plan + implementation checklist: [[project_bedrock_stage2_codex_style_sigv4]].
 

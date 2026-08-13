@@ -167,6 +167,17 @@ export class AnthropicSdkClient implements LLMClient {
    * with `{type: 'enabled' | 'disabled', budgetTokens?: number}`.
    * We map `enableThinking=false` → `{type: 'disabled'}` for parity
    * with the OpenAI reasoningEffort='low' path.
+   *
+   * Issue #414: `repetitionPenalty` is intentionally NOT propagated
+   * here. Anthropic's Messages API has no `repetition_penalty` (only
+   * `temperature` / `top_p` / `top_k`); the AI SDK's `@ai-sdk/anthropic`
+   * zod schema also has no entry for it. Sending it would put an
+   * unknown field on the wire (Claude silently ignores unknown fields
+   * — same silent-no-op class as #414). The user's opt-in setting is
+   * honored by being dropped before emit, which matches the 10-locale
+   * i18n text ("cloud providers will silently ignore it"). A future
+   * Anthropic-side implementation could re-enable propagation by
+   * accepting a custom field name here.
    */
   private buildProviderOptions(opts: {
     enableThinking?: boolean;
@@ -176,12 +187,6 @@ export class AnthropicSdkClient implements LLMClient {
 
     if (opts.enableThinking === false) {
       anthropicOpts.thinking = { type: 'disabled' };
-    }
-
-    if (opts.repetitionPenalty !== undefined) {
-      // llama.cpp extension — Anthropic doesn't natively support but we
-      // pass through; compatible proxies (GLM-Anthropic, etc.) handle it.
-      anthropicOpts.repetitionPenalty = opts.repetitionPenalty;
     }
 
     return Object.keys(anthropicOpts).length > 0 ? { anthropic: anthropicOpts } : {};

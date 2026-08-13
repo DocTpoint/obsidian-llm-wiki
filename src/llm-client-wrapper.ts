@@ -46,6 +46,18 @@ export interface WrapperSettings {
  * enumerable properties, which drops all prototype methods.
  * `Object.create(client)` preserves the prototype chain, so the
  * wrapper inherits `createMessageStream` from the original client.
+ *
+ * **Known bug (v1.26.3 PATCH discovered):** prototype inheritance of
+ * `createMessageStream` means settings (temperature / top_p / seed /
+ * repetitionPenalty / enableThinking) are NOT injected on the stream
+ * path. PR #443 Phase B added explicit `createMessageWithOutput`
+ * wrapping (which works correctly), but `createMessageStream` still
+ * relies on prototype inheritance and silently bypasses the wrapper.
+ * Affects Query Wiki + streaming UI. Tracked as a separate v1.27.0
+ * issue — the fix requires either explicit stream wrapping or a
+ * different wrapper strategy that does not rely on `Object.create`.
+ * See [project_v1_26_3_ux_patch] for the discovery + CHANGELOG
+ * #414 entry for the full context.
  */
 export function wrapWithAdvancedSettings(
   client: LLMClient,

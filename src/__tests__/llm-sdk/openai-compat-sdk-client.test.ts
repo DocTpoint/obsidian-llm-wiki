@@ -34,7 +34,7 @@ vi.mock('@ai-sdk/openai-compatible', async () => {
 
 import { generateText } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { OpenAICompatSdkClient } from '../../llm-sdk/openai-compat-sdk-client';
+import { OpenAICompatSdkClient, repetitionPenaltyWireField } from '../../llm-sdk/openai-compat-sdk-client';
 
 const mockGenerateText = vi.mocked(generateText);
 const mockCreateOpenAICompatible = vi.mocked(createOpenAICompatible);
@@ -196,8 +196,15 @@ describe('OpenAICompatSdkClient', () => {
       // (line 541). Prior Batch 2 PR #410 used `thinking.type` +
       // `chat_template_kwargs` which are stripped by the filter and
       // never leave the process.
+      //
+      // Issue #414: `buildProviderOptions` now returns under the
+      // per-id provider key (`deepseek` here), not the legacy
+      // `openaiCompatible` key. The SDK's openai-compat passthrough at
+      // @ai-sdk/openai-compatible@2.0.62/dist/index.mjs:525-540 reads
+      // from this per-id key — which is the fix that lets
+      // `reasoningEffort` (and `repetition_penalty`) reach the wire.
       expect(call.providerOptions).toEqual({
-        openaiCompatible: {
+        deepseek: {
           reasoningEffort: 'none',
         },
       });
@@ -478,8 +485,9 @@ describe('OpenAICompatSdkClient', () => {
 
       // First call: reasoningEffort='none' is present
       const firstCall = mockGenerateText.mock.calls[0][0] as Record<string, unknown>;
+      // Issue #414: per-id provider key (deepseek), not openaiCompatible.
       expect(firstCall.providerOptions).toEqual({
-        openaiCompatible: { reasoningEffort: 'none' },
+        deepseek: { reasoningEffort: 'none' },
       });
 
       // Second call: reasoningEffort stripped
@@ -1580,6 +1588,45 @@ describe('OpenAICompatSdkClient', () => {
           response_format: { type: 'json_object', schema },
         }),
       ).rejects.toBe(err);
+    });
+  });
+
+  // Issue #414: the dialect dispatch table is exported as a pure module
+  // function precisely so the table itself can be unit-tested without
+  // spinning up the full client (which would need a stubbed fetch and
+  // AI SDK mocks). Each branch — llama.cpp dialect (lmstudio / ollama),
+  // OpenAI-spec dialect (kimi / openrouter / custom), and the
+  // drop-silently default (deepseek / others) — gets one assertion.
+  // Hoisted to a top-level import (vs the dynamic `await import(...)`
+  // pattern) so the binding is visible at module scope and tests can't
+  // drift against a stale module record.
+  describe('Issue #414: repetitionPenaltyWireField dispatch table', () => {
+    it('returns repeat_penalty for llama.cpp dialect providers (lmstudio)', () => {
+      expect(repetitionPenaltyWireField('lmstudio')).toBe('repeat_penalty');
+    });
+
+    it('returns repeat_penalty for llama.cpp dialect providers (ollama)', () => {
+      expect(repetitionPenaltyWireField('ollama')).toBe('repeat_penalty');
+    });
+
+    it('returns repetition_penalty for OpenAI-spec dialect providers (kimi / openrouter / custom)', () => {
+      for (const provider of ['kimi', 'openrouter', 'custom'] as const) {
+        expect(repetitionPenaltyWireField(provider), provider).toBe('repetition_penalty');
+      }
+    });
+
+    it('returns null for providers whose public API does not document the field (drop silently)', () => {
+      for (const provider of ['deepseek', 'gemini', 'minimax', 'glm', 'bedrock-openai'] as const) {
+        expect(repetitionPenaltyWireField(provider), provider).toBeNull();
+      }
+    });
+
+    it('returns null for unknown / malformed provider ids (defensive — covers future providers not in the table)', () => {
+      expect(repetitionPenaltyWireField('unknown-provider')).toBeNull();
+      // `undefined as any` simulates a runtime miss where the caller
+      // somehow passes nothing — type system normally prevents this but
+      // we defend at the dispatch boundary.
+      expect(repetitionPenaltyWireField(undefined as unknown as string)).toBeNull();
     });
   });
 });
