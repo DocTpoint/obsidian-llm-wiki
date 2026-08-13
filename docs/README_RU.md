@@ -28,7 +28,7 @@
 - [Быстрый старт](#-быстрый-старт)
 - [Возможности](#-возможности)
 - [Экосистема](#-экосистема)
-- [Инструменты](#-инструменты)
+- [🛠️ Headless CLI](#-headless-cli)
 - [Как работает поиск](#-как-работает-поиск)
 - [Модели](#-модели)
 - [FAQ](#-faq)
@@ -203,15 +203,101 @@
 
 ---
 
-## 🛠️ Инструменты
+## 🛠️ Headless CLI
 
-Плагин поставляется с headless CLI в этом репозитории, чтобы вы могли запускать тот же конвейер импорта против хранилища на диске — без Obsidian, без Electron, без дисплея. Движок, анализатор, фабрика страниц, менеджер схемы и клиенты LLM импортируются напрямую из `src/`; только хост (`obsidian`, живое хранилище, metadataCache) заменяется шимом. Полезно для CI, скриптовых запусков, сравнения параметров выборки между ветками и профилирования цикла извлечения на одном источнике.
+Тот же конвейер импорта, что и в плагине, но под чистым Node. Используйте, когда Obsidian недоступен — CI, пакетные задачи, скриптовые запуски.
+
+### Как запустить
+
+CLI лежит в этом репозитории в `tools/llm-wiki-cli/`. После `pnpm install` он появляется как бинарник `llm-wiki`:
 
 ```bash
-pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+WIKI_API_KEY=... pnpm llm-wiki ingest \
+  --vault /path/to/your/vault \
+  --source "notes/foo.md" \
+  --dry-run
 ```
 
-См. полный справочник флагов, требования к окружению и предостережения по шиму в [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md).
+Вот и всё. `--dry-run` держит все страницы в памяти и ничего не пишет; уберите его для настоящей записи.
+
+### Конфигурация: откуда берутся мои настройки?
+
+У CLI нет собственных настроек — он читает тот же `<vault>/.obsidian/plugins/karpathywiki/data.json`, что пишет Obsidian. Перед использованием CLI:
+
+1. **Настройте провайдер в Obsidian один раз.** Настройки → LLM Wiki → выберите провайдер, вставьте API-ключ, нажмите **Test Connection**, сохраните. CLI прочитает то, что вы сохранили.
+2. **Передайте API-ключ через `WIKI_API_KEY`.** v1.25.3 перенёс ключи в SecretStorage Obsidian (связка ключей ОС), а Node не умеет читать SecretStorage. Так что CLI берёт ключ из окружения; отсутствующий ключ — жёсткая ошибка, и CLI напечатает подходящую команду для вашей ОС:
+
+   ```bash
+   # macOS — взять из связки ключей
+   WIKI_API_KEY=$(security find-generic-password -s "obsidian-lw-plugin-karpathywiki" -w) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Linux (libsecret)
+   WIKI_API_KEY=$(secret-tool lookup service obsidian-lw-plugin-karpathywiki) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Windows
+   # Диспетчер учётных данных → Учётные данные Windows → «obsidian-lw-plugin-karpathywiki» → Показать
+   $env:WIKI_API_KEY = "sk-..."
+   pnpm llm-wiki ingest --vault C:\path\to\vault --source "notes\foo.md"
+   ```
+
+   Для локальных эндпоинтов без ключа (Ollama, LM Studio) сгодится любой непустой плейсхолдер (`WIKI_API_KEY=unused`). Ключ никогда не логируется и не записывается в файл.
+3. **Требуется Node 24+.** Совпадает с `.nvmrc` плагина; `crypto.subtle` и `fetch` встроены. Должен быть установлен `obsidian-llm-wiki/node_modules`.
+
+### Флаги
+
+Набор флагов небольшой. Основные:
+
+| Флаг | Что делает |
+|---|---|
+| `--vault` | Корень хранилища. Обязателен. |
+| `--source` | Файл-источник относительно хранилища. Обязателен. Один источник на запуск — для пакетов выполняйте в цикле. |
+| `--dry-run` | Прогоняет весь конвейер, держа все записи в памяти. Уберите для реальной записи. |
+| `--force` | Повторно импортирует, даже если шлюз дубликатов говорит, что это дубликат. |
+| `--extract-only` | Останавливается после извлечения. Подразумевает `--dry-run` — этим флагом нельзя случайно записать. |
+| `--model` | Переопределяет модель из `data.json`. Удобно для A/B-сравнений. |
+| `--temperature` / `--top-p` | Переопределения сэмплирования. Передавайте парой: пресет — это пара. |
+| `--seed` | Seed по возможности. Учитывается Chat Completions; некоторые локальные серверы принимают и игнорируют (так делает LM Studio — там единственная настоящая ручка воспроизводимости это `--temperature 0`). |
+| `--thinking-mode` | `data-json` / `plugin-off` / `server-default`. |
+| `--granularity` | `fine` / `standard` / `coarse` / `minimal` / `custom`. Управляет размером пакета, лимитом элементов и потолком раундов одновременно. |
+| `--batch-size` / `--round-base` | Ручки более низкого уровня. Под `--granularity custom` лимиты по типу могут их переопределять. |
+| `--max-tokens-per-call` | Потолок `max_tokens` на вызов. `0` снимает потолок (минимум извлечения всё равно 16000). |
+| `--max-rounds` | Устарел; бросает ошибку. Используйте `--round-base`. |
+
+Полная таблица флагов + оговорки шима + что не воспроизводится (SecretStorage, стриминг, события хранилища, `metadataCache.links`/`.headings`): см. [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md).
+
+### Вывод
+
+`console.debug` движка идёт в stdout. `console.warn`/`console.error` идут в stderr. Тосты печатаются как `[Notice] …`, прогресс как `[progress] …`, завершённые записи как `[write] …`. Запуск завершается сводкой: раунды извлечения, всего LLM-вызовов, сущности, концепции, созданные и обновлённые страницы, входные + выходные токены, прошедшее время.
+
+### Что входит в бандл
+
+CLI импортирует продакшен-`WikiEngine`, `SourceAnalyzer`, `PageFactory`, `SchemaManager` и LLM-клиенты прямо из `../../src/`. Заменяется только хост (`obsidian`, живое хранилище, metadataCache) — esbuild собирает `tools/llm-wiki-cli/src/main.ts` под Node и переписывает каждый `from 'obsidian'` в `tools/llm-wiki-cli/src/obsidian.ts`. Один общий модуль — это один общий класс `TFile`, и именно поэтому работают проверки `instanceof TFile` в движке.
+
+### Будущее: отдельный репозиторий
+
+CLI **уйдёт из этого репозитория** в отдельный родственный репозиторий по адресу [`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli). Почему: бот ревью маркетплейса Obsidian линтит весь `.ts`-дерево репозитория, не только `src/`, и выдаёт ~60 структурных Warnings на любой Node CLI, живущий рядом с плагином Obsidian (статические импорты `node:`, вывод `console.log`, шим `globalThis` — всё неисправимо, не сломав саму суть CLI).
+
+Миграция состоит из четырёх фаз — **Boot → Coexist → Deprecate → Demote** — описанных в [`obsidian-llm-wiki-cli/SPEC.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md). Коротко:
+
+- **Сейчас (окно v1.26.x PATCH):** родственный репозиторий стартует; `pnpm llm-wiki` здесь пока единственный пользовательский CLI.
+- **v1.27.0:** публикуется npm-пакет `karpathywiki-cli`; оба CLI работают, но npm-вариант — рекомендуемый путь.
+- **v1.28.0:** CLI в дереве объявляет о прекращении поддержки.
+- **После Demote:** `tools/llm-wiki-cli/` становится тестовой обвязкой только для разработчиков, ссылающейся на `../../src/`, а не целью установки для пользователей.
+
+Родственный репозиторий на 2026-08-13 находится в состоянии **v0.1.0-dev, ещё не опубликован в npm**. До фазы Coexist v1.27.0 `pnpm llm-wiki` здесь — канонический CLI, пользуйтесь им пока. Если вы в Obsidian нажимали только на иконку ленты, всё это вас не касается; плагин по-прежнему поставляется и обновляется через Community Plugins.
+
+### Ссылки
+
+- 📘 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md) — справочник по флагам, окружение, оговорки шима
+- 📘 [github.com/green-dalii/obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli) — родственный репозиторий (v0.1.0-dev, ещё не в npm)
+- 🏛️ [`obsidian-llm-wiki-cli/SPEC.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md) — почему разделение, развёртывание в 4 фазы
+- 🗺️ [`obsidian-llm-wiki-cli/ROADMAP.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/ROADMAP.md) — отслеживание фаз
+
+> 💡 **Пока не выйдет v1.27.0**, используйте `pnpm llm-wiki` из этого репозитория. Родственный репозиторий — параллельная разработка, а не опубликованная установка.
+
+---
 
 ---
 

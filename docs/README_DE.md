@@ -30,7 +30,7 @@
 - [🚀 Schnellstart](#-schnellstart)
 - [✨ Funktionen](#-funktionen)
 - [🌐 Ökosystem](#-ökosystem)
-- [🛠️ Werkzeuge](#-werkzeuge)
+- [🛠️ Headless-CLI](#-headless-cli)
 - [🔍 Wie die Suche funktioniert](#-wie-die-suche-funktioniert)
 - [🤖 Modelle](#-modelle)
 - [❓ FAQ](#-faq)
@@ -274,15 +274,99 @@ Das Plugin ergänzt sich mit dem Rest Ihres Obsidian-Stacks — jedes der folgen
 
 ---
 
-## 🛠️ Werkzeuge
+## 🛠️ Headless-CLI
 
-Das Plugin liefert ein Headless-CLI in diesem Repository, mit dem Sie dieselbe Ingest-Pipeline gegen einen Vault auf der Festplatte ausführen können — ohne Obsidian, ohne Electron, ohne Anzeige. Engine, Analyzer, Page Factory, Schema Manager und LLM-Clients werden direkt aus `src/` importiert; nur der Host (`obsidian`, Live-Vault, metadataCache) wird durch einen Shim ersetzt. Nützlich für CI, Skript-Läufe, den Vergleich von Sampling-Parametern zwischen Armen und das Profiling der Extraktionsschleife auf einer einzelnen Quelle.
+Genau dieselbe Ingest-Pipeline wie im Plugin, aber unter reinem Node. Nimm sie, wenn Obsidian nicht da ist — CI, Batch-Jobs, Skript-Läufe.
+
+### Ausführen
+
+Die CLI liegt in diesem Repo unter `tools/llm-wiki-cli/`. Nach `pnpm install` taucht sie als Binärdatei `llm-wiki` auf:
 
 ```bash
-pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+WIKI_API_KEY=... pnpm llm-wiki ingest \
+  --vault /path/to/your/vault \
+  --source "notes/foo.md" \
+  --dry-run
 ```
 
-Vollständige Flag-Referenz, Umgebungsanforderungen und Shim-Hinweise finden Sie in [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md).
+Das war's. `--dry-run` hält alle Seiten im Speicher und schreibt nichts; lass es weg, um wirklich zu schreiben.
+
+### Konfiguration: woher kommen meine Einstellungen?
+
+Die CLI hat keine eigene Konfiguration — sie liest dieselbe `<vault>/.obsidian/plugins/karpathywiki/data.json`, die Obsidian schreibt. Bevor du die CLI nutzt:
+
+1. **Richte den Provider einmal in Obsidian ein.** Einstellungen → LLM Wiki → Provider wählen, API-Key einfügen, **Test Connection** klicken, speichern. Die CLI liest das, was du dort gespeichert hast.
+2. **API-Key via `WIKI_API_KEY` übergeben.** v1.25.3 hat die Schlüssel in Obsidians SecretStorage (den OS-Schlüsselbund) verschoben, den Node nicht lesen kann. Die CLI holt den Schlüssel also aus der Umgebung; ein fehlender Schlüssel ist ein harter Fehler — sie gibt den passenden Befehl für dein OS aus:
+
+   ```bash
+   # macOS — aus dem Schlüsselbund holen
+   WIKI_API_KEY=$(security find-generic-password -s "obsidian-lw-plugin-karpathywiki" -w) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Linux (libsecret)
+   WIKI_API_KEY=$(secret-tool lookup service obsidian-lw-plugin-karpathywiki) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Windows
+   # Credential Manager → Windows Credentials → "obsidian-lw-plugin-karpathywiki" → Anzeigen
+   $env:WIKI_API_KEY = "sk-..."
+   pnpm llm-wiki ingest --vault C:\path\to\vault --source "notes\foo.md"
+   ```
+
+   Für lokale Endpunkte ohne Schlüssel (Ollama, LM Studio) funktioniert jeder beliebige nichtleere Platzhalter (`WIKI_API_KEY=unused`). Der Schlüssel wird nie geloggt, nie in eine Datei geschrieben.
+3. **Node 24+ erforderlich.** Passt zur `.nvmrc` des Plugins; `crypto.subtle` und `fetch` sind nativ. `obsidian-llm-wiki/node_modules` muss installiert sein.
+
+### Flags
+
+Die Flag-Liste ist kurz. Die wichtigsten:
+
+| Flag | Was sie tut |
+|---|---|
+| `--vault` | Vault-Wurzel. Erforderlich. |
+| `--source` | Quelldatei relativ zum Vault. Erforderlich. Eine Quelle pro Lauf — für Batches in einer Schleife. |
+| `--dry-run` | Gesamte Pipeline läuft, jeder Schreibvorgang bleibt im Speicher. Weglassen, um wirklich zu schreiben. |
+| `--force` | Ingest erneut ausführen, auch wenn das Duplikat-Gate sagt, es sei ein Duplikat. |
+| `--extract-only` | Stoppt nach der Extraktion. Impliziert `--dry-run` — du kannst mit diesem Flag nicht versehentlich schreiben. |
+| `--model` | Modell aus `data.json` überschreiben. Praktisch für A/B-Vergleiche. |
+| `--temperature` / `--top-p` | Sampling-Overrides. Zusammen übergeben: ein Preset ist das Paar. |
+| `--seed` | Best-Effort-Seed. Wird von Chat Completions respektiert; manche lokalen Server akzeptieren und ignorieren (LM Studio macht das — `--temperature 0` ist dort der einzige echte Reproduzierbarkeitshebel). |
+| `--thinking-mode` | `data-json` / `plugin-off` / `server-default`. |
+| `--granularity` | `fine` / `standard` / `coarse` / `minimal` / `custom`. Steuert Batch-Größe + Item-Limit + Runden-Ceiling zusammen. |
+| `--batch-size` / `--round-base` | Tiefere Regler. Unter `--granularity custom` können die Per-Typ-Limits sie überschreiben. |
+| `--max-tokens-per-call` | Cap für `max_tokens` pro Aufruf. `0` hebt das Cap auf (das Extraktions-Minimum bleibt 16000). |
+| `--max-rounds` | Veraltet; wirft. Nutze `--round-base`. |
+
+Volle Flag-Tabelle + Shim-Hinweise + was nicht reproduziert wird (SecretStorage, Streaming, Vault-Events, `metadataCache.links`/`.headings`): siehe [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md).
+
+### Ausgabe
+
+`console.debug` der Engine geht nach stdout. `console.warn`/`console.error` gehen nach stderr. Toasts werden als `[Notice] …` ausgegeben, Fortschritt als `[progress] …`, abgeschlossene Schreibvorgänge als `[write] …`. Der Lauf endet mit einer Zusammenfassung: Extraktionsrunden, LLM-Aufrufe insgesamt, Entitäten, Konzepte, erstellte und aktualisierte Seiten, Input- + Output-Tokens, verstrichene Zeit.
+
+### Was im Bundle steckt
+
+Die CLI importiert `WikiEngine`, `SourceAnalyzer`, `PageFactory`, `SchemaManager` und die LLM-Clients direkt aus `../../src/`. Nur der Host wird ersetzt (`obsidian`, das Live-Vault, der metadataCache) — esbuild bündelt `tools/llm-wiki-cli/src/main.ts` für Node und schreibt jedes `from 'obsidian'` zu `tools/llm-wiki-cli/src/obsidian.ts` um. Ein geteiltes Modul heißt eine geteilte `TFile`-Klasse — deshalb funktionieren die `instanceof TFile`-Checks der Engine.
+
+### Zukunft: eigenständiges Repo
+
+Die CLI **zieht aus diesem Repo aus** — in ein eigenständiges Schwester-Repository unter [`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli). Grund: Der Obsidian-Marketplace-Review-Bot lintet den gesamten `.ts`-Baum des Repos, nicht nur `src/`, und meldet ~60 strukturelle Warnungen für jede Node-CLI neben einem Obsidian-Plugin (statische `node:`-Imports, `console.log`-Ausgabe, `globalThis`-Shim — alles nicht behebbar, ohne das kaputtzumachen, was die CLI ist).
+
+Die Migration läuft in vier Phasen — **Boot → Coexist → Deprecate → Demote** — beschrieben in [`obsidian-llm-wiki-cli/SPEC.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md). Kurzfassung:
+
+- **Heute (v1.26.x PATCH-Fenster):** Das Schwester-Repo startet; `pnpm llm-wiki` hier ist weiterhin die einzige CLI für Endnutzer.
+- **v1.27.0:** Das npm-Paket `karpathywiki-cli` wird veröffentlicht; beide CLIs funktionieren, aber die npm-Variante ist der empfohlene Weg.
+- **v1.28.0:** Die In-Tree-CLI kündigt ihr EOL an.
+- **Nach Demote:** `tools/llm-wiki-cli/` wird zum Dev-only-Test-Harness, das auf `../../src/` verweist — kein Install-Ziel für Endnutzer mehr.
+
+Das Schwester-Repo liegt zum 2026-08-13 bei **v0.1.0-dev, noch nicht auf npm**. Bis zur Coexist-Phase von v1.27.0 ist `pnpm llm-wiki` hier die kanonische CLI — bitte vorerst hier nutzen. Wenn du in Obsidian jemals nur das Ribbon-Symbol angeklickt hast, geht dich das alles nichts an; das Plugin wird wie gehabt über Community Plugins ausgeliefert und aktualisiert.
+
+### Verweise
+
+- 📘 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md) — Flag-Referenz, Umgebung, Shim-Hinweise
+- 📘 [github.com/green-dalii/obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli) — Schwester-Repo (v0.1.0-dev, noch nicht auf npm)
+- 🏛️ [`obsidian-llm-wiki-cli/SPEC.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md) — Warum der Split, 4-Phasen-Rollout
+- 🗺️ [`obsidian-llm-wiki-cli/ROADMAP.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/ROADMAP.md) — Phasen-Tracking
+
+> 💡 **Bis v1.27.0 erscheint**, nutze `pnpm llm-wiki` aus diesem Repo. Das Schwester-Repo ist parallele Entwicklung, kein veröffentlichtes Install.
 
 ---
 

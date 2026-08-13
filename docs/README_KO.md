@@ -28,7 +28,7 @@
 - [🚀 빠른 시작](#-빠른-시작)
 - [✨ 주요 기능](#-주요-기능)
 - [🌐 생태계](#-생태계)
-- [🛠️ 도구](#-도구)
+- [🛠️ 헤드리스 CLI](#-헤드리스-cli)
 - [🔍 검색 작동 방식](#-검색-작동-방식)
 - [🤖 모델](#-모델)
 - [❓ FAQ](#-faq)
@@ -272,15 +272,99 @@ Monte Carlo PPR (Fogaras 2005)을 사용합니다 — 3,000개의 랜덤 워크 
 
 ---
 
-## 🛠️ 도구
+## 🛠️ 헤드리스 CLI
 
-이 저장소에는 디스크상의 vault에 대해 동일한 수집 파이프라인을 실행할 수 있는 헤드리스 CLI가 포함되어 있습니다 — Obsidian, Electron, 디스플레이가 필요 없습니다. 엔진, 분석기, 페이지 팩토리, 스키마 관리자, LLM 클라이언트는 `src/` 에서 직접 가져오며, 호스트(`obsidian`, 실시간 vault, metadataCache)만 shim으로 대체됩니다. CI, 스크립트 실행, 팔 단위 샘플링 파라미터 비교, 단일 소스에서 추출 루프 프로파일링에 유용합니다.
+플러그인과 동일한 수집 파이프라인, 다만 순수 Node에서 돌아갑니다. Obsidian이 없는 환경 — CI, 배치 작업, 스크립트 실행 — 에 사용하세요.
+
+### 실행
+
+CLI는 본 리포지토리의 `tools/llm-wiki-cli/`에 들어 있습니다. `pnpm install` 후 `llm-wiki` 바이너리로 노출됩니다:
 
 ```bash
-pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+WIKI_API_KEY=... pnpm llm-wiki ingest \
+  --vault /path/to/your/vault \
+  --source "notes/foo.md" \
+  --dry-run
 ```
 
-전체 플래그 참조, 환경 요구사항, shim 주의사항은 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md) 를 참조하세요.
+이게 전부입니다. `--dry-run`은 모든 페이지를 메모리에만 두고 쓰지 않습니다; 빼면 실제 쓰기가 일어납니다.
+
+### 설정: 내 설정은 어디서 오나요?
+
+CLI는 자체 설정을 갖지 않습니다 — Obsidian이 쓰는 `<vault>/.obsidian/plugins/karpathywiki/data.json`을 그대로 읽습니다. CLI를 사용하기 전:
+
+1. **먼저 Obsidian에서 provider를 설정하세요.** 설정 → LLM Wiki → provider 선택, API 키 붙여넣기, **Test Connection** 클릭, 저장. CLI는 거기 저장된 것을 읽습니다.
+2. **`WIKI_API_KEY`로 API 키 전달.** v1.25.3에서 키가 Obsidian SecretStorage (OS 키체인)로 옮겨졌고, Node는 SecretStorage를 읽을 수 없습니다. 따라서 CLI는 환경 변수에서 키를 읽으며, 키가 없으면 하드 오류가 발생하고 OS별 추출 명령을 출력합니다:
+
+   ```bash
+   # macOS — 키체인에서 추출
+   WIKI_API_KEY=$(security find-generic-password -s "obsidian-lw-plugin-karpathywiki" -w) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Linux (libsecret)
+   WIKI_API_KEY=$(secret-tool lookup service obsidian-lw-plugin-karpathywiki) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Windows
+   # 자격 증명 관리자 → Windows 자격 증명 → "obsidian-lw-plugin-karpathywiki" → 표시
+   $env:WIKI_API_KEY = "sk-..."
+   pnpm llm-wiki ingest --vault C:\path\to\vault --source "notes\foo.md"
+   ```
+
+   키가 필요 없는 로컬 엔드포인트 (Ollama, LM Studio)의 경우 빈 값이 아닌 아무 placeholder든 동작합니다 (`WIKI_API_KEY=unused`). 키는 절대 로그에 남지 않고, 파일에도 쓰여지지 않습니다.
+3. **Node 24+ 필수.** 플러그인의 `.nvmrc`와 일치; `crypto.subtle`과 `fetch`는 네이티브. `obsidian-llm-wiki/node_modules`가 설치되어 있어야 합니다.
+
+### 플래그
+
+플래그 세트는 작습니다. 주요 항목:
+
+| 플래그 | 기능 |
+|---|---|
+| `--vault` | vault 루트. 필수. |
+| `--source` | vault 기준 상대 경로의 소스 파일. 필수. 한 번 실행에 한 소스 — 배치는 본 플래그를 반복. |
+| `--dry-run` | 전체 파이프라인을 실행하되 모든 쓰기를 메모리에 유지. 빼면 실제 쓰기. |
+| `--force` | 중복 콘텐츠 게이트가 중복이라 해도 강제로 재수집. |
+| `--extract-only` | 추출 후 중단. `--dry-run` 포함 — 본 플래그만으로는 절대로 쓸 수 없음. |
+| `--model` | `data.json`의 모델을 덮어씀. A/B 비교에 유용. |
+| `--temperature` / `--top-p` | 샘플링 오버라이드. 둘을 함께 전달: 프리셋은 한 쌍. |
+| `--seed` | 베스트 에포트 시드. Chat Completions는 준수; 일부 로컬 서버는 받아서 무시 (LM Studio가 그렇습니다 — 거기서는 `--temperature 0`이 유일한 진정한 재현성 손잡이). |
+| `--thinking-mode` | `data-json` / `plugin-off` / `server-default`. |
+| `--granularity` | `fine` / `standard` / `coarse` / `minimal` / `custom`. 배치 크기 + 아이템 한도 + 라운드 상한을 함께 결정. |
+| `--batch-size` / `--round-base` | 하위 레벨 손잡이. `--granularity custom`에서는 타입별 캡이 이를 덮을 수 있음. |
+| `--max-tokens-per-call` | 호출당 `max_tokens` 상한. `0`은 상한 해제 (추출의 최솟값은 여전히 16000). |
+| `--max-rounds` | 사용 중단; 던짐. `--round-base` 사용. |
+
+전체 플래그 표 + shim 주의사항 + 재현되지 않는 것들 (SecretStorage, 스트리밍, vault 이벤트, `metadataCache.links`/`.headings`): [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md) 참조.
+
+### 출력
+
+엔진의 `console.debug`는 stdout으로. `console.warn`/`console.error`는 stderr로. 토스트는 `[Notice] …`, 진행은 `[progress] …`, 완료된 쓰기는 `[write] …`로 출력됩니다. 실행 종료 시 요약이 따라옵니다: 추출 라운드, 총 LLM 호출 수, 엔티티, 컨셉, 생성/갱신된 페이지 수, 입력 + 출력 토큰, 경과 시간.
+
+### 번들 내용
+
+CLI는 프로덕션의 `WikiEngine`, `SourceAnalyzer`, `PageFactory`, `SchemaManager`, LLM 클라이언트를 `../../src/`에서 그대로 가져옵니다. 교체되는 것은 호스트 (`obsidian`, 실시간 vault, metadataCache)뿐 — esbuild가 Node용으로 `tools/llm-wiki-cli/src/main.ts`를 번들하고 모든 `from 'obsidian'`을 `tools/llm-wiki-cli/src/obsidian.ts`로 다시 씁니다. 모듈이 하나 공유된다는 것은 `TFile` 클래스도 하나 공유된다는 뜻이며, 이 덕분에 엔진의 `instanceof TFile` 검사가 동작합니다.
+
+### 미래: 독립 리포지토리
+
+CLI는 본 리포지토리를 **벗어날 예정**이며 [`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli)의 독립 형제 리포지토리로 이동합니다. 이유: Obsidian 마켓플레이스 리뷰 봇은 `src/`만이 아니라 리포지토리 전체 `.ts` 트리를 lint하며, Obsidian 플러그인 옆에 사는 Node CLI에 대해 ~60개의 구조적 Warning을 띄웁니다 (정적 `node:` import, `console.log` 출력, `globalThis` shim — 전부 CLI의 정체성을 깨지 않고는 고칠 수 없음).
+
+마이그레이션은 네 단계 — **Boot → Coexist → Deprecate → Demote** — 로 진행되며, [`obsidian-llm-wiki-cli/SPEC.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md)에 정리되어 있습니다. 짧게 요약하면:
+
+- **현재 (v1.26.x PATCH 윈도우):** 형제 리포지토리가 부팅; 본 리포지토리의 `pnpm llm-wiki`가 여전히 유일한 사용자용 CLI.
+- **v1.27.0:** npm 패키지 `karpathywiki-cli` 배포; 두 CLI 모두 동작하지만 npm 쪽이 추천 경로.
+- **v1.28.0:** 트리 내 CLI가 EOL 공지.
+- **Demote 이후:** `tools/llm-wiki-cli/`는 사용자용 설치 대상이 아니라 `../../src/`를 참조하는 dev-only 테스트 하니스가 됨.
+
+형제 리포지토리는 2026-08-13 시점에 **v0.1.0-dev, 아직 npm 미배포** 상태입니다. v1.27.0의 Coexist 단계까지, 본 리포지토리의 `pnpm llm-wiki`가 정식 CLI입니다 — 당분간은 이쪽을 사용하세요. Obsidian에서 리본 아이콘만 눌러본 적이 있다면 본 항목은 여러분과 무관합니다; 플러그인은 종전처럼 Community Plugins를 통해 배포/갱신됩니다.
+
+### 참조
+
+- 📘 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md) — 플래그 참조, 환경, shim 주의사항
+- 📘 [github.com/green-dalii/obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli) — 형제 리포지토리 (v0.1.0-dev, 아직 npm 미배포)
+- 🏛️ [`obsidian-llm-wiki-cli/SPEC.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md) — 분할의 이유, 4 단계 롤아웃
+- 🗺️ [`obsidian-llm-wiki-cli/ROADMAP.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/ROADMAP.md) — 단계 추적
+
+> 💡 **v1.27.0 출시 전까지**, 본 리포지토리의 `pnpm llm-wiki`를 사용하세요. 형제 리포지토리는 병렬 개발일 뿐, 배포된 설치본이 아닙니다.
 
 ---
 

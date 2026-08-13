@@ -46,10 +46,6 @@ pnpm css-lint      # styles.css contains no !important declarations
 - **llmReady guard**: New core features must call `requireLLMReady()` at entry points. The plugin requires a successful connection test before core features are available.
 - **i18n**: UI strings use the TEXTS system. English strings in `src/texts/en.ts` are the canonical source; all 9 other languages must be updated in lockstep.
 
-> **v1.25.1 PATCH release notes (2026-07-20):** Single PATCH shipped (8 audit findings + 3 triage fixes folded in). Phase A Obsidian bot 0.4.1 lint upgrade deferred to v1.26.x (Path C per `feedback_eslint_plugin_obsidianmd_0_4_skip`); controller-level parallel dedup + LLM health batches remain v1.26.0 work. PR #304 (DocTpoint updatedPages split) deferred to **v1.25.2 PATCH** — needs DocTpoint rebase onto Phase C-PR1 wiki-engine refactor's `runBatchedWithRetry<T>` closure.
-
-> **Shipped in v1.25.1 (2026-07-20):** (1) `wiki-engine.ts` 1799 → 1617 LOC with 657 LOC of pure helpers extracted into `engine-internals/{graph-cache,index-generator,log-writer,page-batch-runner,dedup-pages}.ts`; (2) `ui/settings.ts` 1439 → 357 LOC with 8 settings-sections totaling 1183 LOC; (3) `main.ts` 1304 → 300 LOC with 6 main-commands totaling 915 LOC (mixin pattern, PR #313); (4) `core/disk-cache.ts` 412 LOC generic abstraction (TTL + size cap + LRU-by-mtime eviction + ledger optimization); (5) `core/section-header-canonicalizer.ts` new module housing `classifyHeader` + `preserveExistingSections` (4-arg signature) + `canonicalizeSectionHeaders` + `snapHeaderToCanonical`; (6) bug fix #288 (silent Mentions loss on Related re-ingest) — Related path now mirrors merge path through canonicalize + correct + preserveExistingSections; (7) LM Studio no-key ingest (#272) via `core/local-no-key-provider.ts`.
-
 > **Historical release notes** (v1.23.0+llm-client removal, v1.24.0 splits, v1.24.1 Bedrock + PPR + page-factory, v1.25.0 PDF Ingest): see [CHANGELOG.md](../CHANGELOG.md). Keep a Changelog format is the canonical record; this file documents the project structure as it stands.
 
 ## Project Structure
@@ -223,19 +219,22 @@ src/
 │   ├── tag-chip-input.ts
 │   └── schema-diff-modal.ts
 ├── texts/               # i18n (11 languages: EN/ZH/ZH-Hant/JA/KO/DE/FR/ES/PT/IT/RU; Russian added v1.26.0 PR #397)
-└── __tests__/           # Unit tests (vitest, 2992 tests across 218 files; v1.26.1 PATCH release-prep, +64 net since v1.26.0)
+└── __tests__/           # Unit tests (vitest, 3305 tests; v1.26.3 PATCH release-prep)
 
-tools/                  # CLI toolchain (out-of-tree, ships via package.json bin)
+tools/                  # CLI toolchain (in-tree, ships via package.json bin) — see also the standalone sibling repo
 └── llm-wiki-cli/       # Headless ingest CLI (v1.26.0, PRs #372 + #387)
     ├── run-llm-wiki.mjs # Executable entry point (`pnpm llm-wiki`)
-    ├── README.md        # CLI flag reference
+    ├── README.md        # CLI flag reference (deprecated path — see obsidian-llm-wiki-cli)
     ├── tsconfig.json    # Separate tsconfig (@types/node@22)
     └── src/
         ├── main.ts          # dispatchCli + parseCliOptions + runIngest (v1.26.0, 671 LOC)
         ├── node-globals.ts  # dynamic `node:module` + createRequire guard (Platform.isDesktop-style boundary)
         ├── node-util.d.ts   # Ambient @types/node@22 module declarations
-        └── obsidian.ts      # Obsidian API shim used by the CLI (vault + app stubs)
+        ├── obsidian.ts      # Obsidian API shim used by the CLI (vault + app stubs)
+        └── vault.ts         # Node `fs/promises` vault adapter (read/write/list)
 ```
+
+> **Note on `tools/llm-wiki-cli/` (current authoritative CLI, scheduled to move):** The in-tree CLI is the **current user-facing install path** — `pnpm llm-wiki` (or `node tools/llm-wiki-cli/run-llm-wiki.mjs ingest ...`) is the only way to run the ingest pipeline headlessly until the v1.27.0 Coexist phase ships. It is scheduled to move to a standalone sibling repo ([`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli)) under npm package name `karpathywiki-cli` (see [SPEC v2.0](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md) and [ROADMAP v1.27.0 CLI split](ROADMAP.md#v1270-minor-design-track)). The sibling repo is at **v0.1.0-dev, NOT yet published to npm** as of 2026-08-13. After the v1.28.0 Demote phase, the in-tree `tools/llm-wiki-cli/` becomes a **dev-only test harness** referencing `../../src/` — not a user-facing CLI. Until then, `tools/llm-wiki-cli/` is the canonical CLI source.
 
 ## Internationalization
 
