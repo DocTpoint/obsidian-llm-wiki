@@ -130,20 +130,13 @@ The answer should be...
 // predicate must flag every empty-key / empty-value variant so the SDK
 // demote fires, not just the string-shaped one.
 describe('isPlaceholderJsonText — empty-value variants (#443 follow-up)', () => {
-  it('flags {"": ""} (string value, original shape)', () => {
-    expect(isPlaceholderJsonText('{"": ""}')).toBe(true);
-  });
-
-  it('flags {"": {}} (empty-object value, user E2E 2026-08-13)', () => {
-    expect(isPlaceholderJsonText('{"": {}}')).toBe(true);
-  });
-
-  it('flags {"": []} (empty-array value)', () => {
-    expect(isPlaceholderJsonText('{"": []}')).toBe(true);
-  });
-
-  it('flags {"": null} (null value)', () => {
-    expect(isPlaceholderJsonText('{"": null}')).toBe(true);
+  it.each([
+    ['{"": ""}', 'string value, original shape'],
+    ['{"": {}}', 'empty-object value, user E2E 2026-08-13'],
+    ['{"": []}', 'empty-array value'],
+    ['{"": null}', 'null value'],
+  ])('flags %s (%s)', (json) => {
+    expect(isPlaceholderJsonText(json)).toBe(true);
   });
 
   it('does NOT flag a real object with non-empty keys', () => {
