@@ -28,12 +28,13 @@
 - [🚀 빠른 시작](#-빠른-시작)
 - [✨ 주요 기능](#-주요-기능)
 - [🌐 생태계](#-생태계)
-- [🛠️ 헤드리스 CLI](#-헤드리스-cli)
+- [🧰 헤드리스 CLI](#-헤드리스-cli)
 - [🔍 검색 작동 방식](#-검색-작동-방식)
 - [🤖 모델](#-모델)
 - [❓ FAQ](#-faq)
 - [🔒 개인정보](#-개인정보)
 - [💖 프로젝트 지원하기](#-프로젝트-지원하기)
+- [🔭 다른 프로젝트](#-다른-프로젝트)
 - [📜 라이선스 및 크레딧](#-라이선스-및-크레딧)
 
 ---
@@ -187,76 +188,6 @@
 
 ---
 
-## 🔍 검색 작동 방식
-
-대부분의 "AI 검색" 플러그인은 노트를 청크로 분할하고 벡터 DB에 임베딩합니다. 저희는 그렇게 하지 않습니다. Karpathy가 RAG에 반대한 이유는 청킹이 LLM의 전체 지식 그래프 추론 능력을 저해하기 때문이며 — 이 주장은 실제로도 유효합니다. 대신, 여러분이 `[[wiki-links]]`를 작성하여 이미 유지 관리하고 있는 그래프를 탐색합니다.
-
-### 5단계 시드 선택 캐스케이드
-
-"Microsoft 창업자는 누구인가?"라고 질문하면, Query Wiki는 답변 생성 전에 5단계를 실행합니다:
-
-1. **Lex 빠른 경로** — 모든 Entity/Concept 제목 및 alias에 대한 직접 토큰 중복 체크. 무료, 즉시, 이후 모든 단계의 게이트 역할.
-2. **LLM 키워드 생성** — LLM이 쿼리로부터 8–12개의 다국어 키워드 생성 (동의어, 약어, 토큰 중복에 취약한 용어를 단일 LLM 호출로 처리).
-3. **로컬 부분문자열 스캔** — 생성된 각 키워드를 페이지 제목, alias, 본문 스니펫에 대해 로컬에서 재매칭. 추가 LLM 호출 없음, 노이즈 허용 재현율 보완.
-4. **LLM KB 폴백** — lex + 키워드 스캔의 신호가 약할 때, LLM이 전체 Wiki에 대해 top-N 후보를 한 번 의미적으로 재시드.
-5. **PPR 그래프 확장** — 후보 시드 집합에서 `[[wiki-link]]` 그래프 위 Personalized PageRank (Haveliwala 2002) 실행. 이것이 그래프 인지 멀티홉 컨텍스트를 제공합니다: "Bill Gates" → "Microsoft" → "경쟁사", 단순한 제목 일치가 아닌.
-
-캐스케이드는 충분한 신호를 반환한 단계에서 자동으로 절단됩니다 — 고정된 5단계 비용 없음, lex로 충분할 때는 LLM 호출 없음, LLM 보강이 필요할 때는 정밀도 손실 없음.
-
-### 규모에 맞는 Personalized PageRank
-
-Monte Carlo PPR (Fogaras 2005)을 사용합니다 — 3,000개의 랜덤 워크 × 각 50단계, Haveliwala 2002의 데드엔드 규칙 적용. 비용은 **O(K × L)**로 페이지 수와 무관하므로, 2000페이지 볼트에서도 200페이지 볼트와 동일한 확장 지연 시간을 보입니다.
-
-**PPR @5 = 27.1% vs 순수 kNN 기준 24.1%** (이 오픈소스 LLM-Wiki 분야에서 유일하게 공개된 검색 벤치마크).
-
-### 임베딩을 사용하지 않는 이유
-
-[Issue #175](https://github.com/green-dalii/obsidian-llm-wiki/issues/175)에서 임베딩 경로를 의도적으로 거부했습니다. 그래프 신호는 이미 존재합니다 — 모든 `[[wiki-link]]`는 "이것들은 서로 관련있다"는 직접 큐레이팅된 엣지이며, 저희가 지원하는 대부분의 공급자(Ollama, LM Studio, Anthropic, Bedrock, Kimi, GLM, MiniMax)는 `/v1/embeddings` 엔드포인트를 전혀 제공하지 않습니다. 임베딩 모델을 추가하면 페이지당 다운로드, 공급자별 어댑터가 필요하고 검색 품질에는 이점이 전혀 없을 것입니다.
-
----
-
-## 🤖 모델
-
-**지원 공급자 (12+, 2026-07 기준 models.dev 교차 확인):**
-
-| 공급자 | 시리즈 | 비고 |
-|--------|--------|------|
-| **Anthropic** | Claude 5 시리즈 | 네이티브 PDF; `/v1/messages` 프로토콜 |
-| **OpenAI** | GPT-5.6 시리즈 (Sol / Terra / Luna) | 네이티브 PDF; Platform API 키 |
-| **Google Gemini** | Gemini 3.6 시리즈 | 네이티브 PDF (1.5부터 파일 파트); OpenAI 호환 엔드포인트 |
-| **DeepSeek** | DeepSeek V4 시리즈 | OpenAI 호환; 최저 비용 계층 |
-| **Alibaba Qwen** | Qwen3.7/3.8 시리즈 | OpenAI 호환 (DashScope) |
-| **xAI Grok** | Grok 4 시리즈 | OpenAI 호환; 긴 컨텍스트 |
-| **Moonshot Kimi** | Kimi K3 시리즈 | OpenAI 호환; 2.8T MoE 프론티어 |
-| **Zhipu GLM** | GLM-5 시리즈 | OpenAI 호환; 강력한 이중 언어 |
-| **MiniMax** | MiniMax M3 시리즈 | OpenAI 호환; 1M 컨텍스트 |
-| **Step (阶跃星辰)** | Step 3 시리즈 (Flash) | OpenAI 호환; 빠른 추론 |
-| **Tencent Hunyuan** | Hy3 시리즈 | OpenAI 호환; 오픈웨이트 MoE |
-| **Xiaomi MiMo** | MiMo V2.5 시리즈 | MIT 오픈소스; 플랫 가격 |
-| **Google Gemma** | Gemma 4 시리즈 | 오픈웨이트; 262K 컨텍스트 |
-| **AWS Bedrock** | Anthropic + OpenAI 변형 | VPC / 규정 준수 경로 |
-| **ChatGPT Plan (Codex OAuth)** | Codex Responses API | 브라우저/기기 코드 로그인; SecretStorage |
-| **로컬: Ollama, LM Studio, OpenRouter, Anthropic-Compatible** | 모든 OpenAI/Anthropic 프로토콜 모델 | Custom OpenAI-Compatible + Anthropic-Compatible (Token Plan / Coding Plan) |
-
-이 플러그인은 LLM에 전체 Wiki 컨텍스트를 제공하므로 — **긴 컨텍스트 모델이 유리합니다**. 전체 계층형 표 (클라우드 + 로컬)는 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)에 있으며, [models.dev](https://models.dev/)와 교차 확인되어 최신 상태를 유지합니다.
-
-### 중요한 요소
-
-- **🧠 컨텍스트 창 ≥ 200K 토큰** — 약 500페이지 이상의 볼트에서 필요. 200K 미만이면 캐스케이드의 조립된 컨텍스트가 잘리기 시작합니다.
-- **⚖️ 명령 수행 품질** — 추출 작업에서는 원시 IQ보다 명령 수행 능력이 더 중요합니다. 스키마 템플릿을 따르는 모델을 선택하세요, 가장 큰 리더보드 숫자가 아닙니다.
-- **🔌 임베딩 엔드포인트는 무관합니다** — 저희는 임베딩을 사용하지 않습니다. `/v1/embeddings`가 없는 공급자도 괜찮습니다 (저희 12+ 공급자 대부분이 그렇습니다).
-- **🦙 조회는 로컬, 수집은 클라우드** — 2000페이지 볼트 수집은 보통 긴 컨텍스트 클라우드 모델이 필요합니다; 262K 로컬 모델은 대부분의 조회를 커버합니다.
-
-### Anthropic vs OpenAI vs Codex OAuth — 서로 다른 공급자입니다
-
-- **Anthropic** (및 Bedrock 변형) — 별도 청구되는 Anthropic Platform API 키.
-- **OpenAI** — 별도 청구되는 OpenAI Platform API 키.
-- **ChatGPT Plan (Codex OAuth)** — 실험적, 별도 공급자로 브라우저 또는 기기 코드 로그인 후 적격 Codex 사용 한도를 사용합니다. 사용 가능 여부는 OpenAI Codex 인증 및 사용 한도 정책을 따르며, 플랜 이름으로 보장되지 않습니다. 서드파티 Codex 호환 기능이며, OpenAI 파트너십이나 범용 ChatGPT API가 아닙니다.
-
-> 📖 **전체 선택 표** (클라우드 + 로컬 + PDF OCR + Codex OAuth + 양자화 + 하드웨어 계층) → [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
-
----
-
 ## 🌐 생태계
 
 이 플러그인은 Obsidian의 다른 도구들과 함께 작동합니다 — 아래 도구들은 모두 코드 변경 없이 `[[wiki-link]]` 그래프와 연동됩니다.
@@ -272,7 +203,7 @@ Monte Carlo PPR (Fogaras 2005)을 사용합니다 — 3,000개의 랜덤 워크 
 
 ---
 
-## 🛠️ 헤드리스 CLI
+## 🧰 헤드리스 CLI
 
 플러그인과 동일한 수집 파이프라인, 다만 순수 Node에서 돌아갑니다. Obsidian이 없는 환경 — CI, 배치 작업, 스크립트 실행 — 에 사용하세요.
 
@@ -368,6 +299,76 @@ CLI는 본 리포지토리를 **벗어날 예정**이며 [`green-dalii/obsidian-
 
 ---
 
+## 🔍 검색 작동 방식
+
+대부분의 "AI 검색" 플러그인은 노트를 청크로 분할하고 벡터 DB에 임베딩합니다. 저희는 그렇게 하지 않습니다. Karpathy가 RAG에 반대한 이유는 청킹이 LLM의 전체 지식 그래프 추론 능력을 저해하기 때문이며 — 이 주장은 실제로도 유효합니다. 대신, 여러분이 `[[wiki-links]]`를 작성하여 이미 유지 관리하고 있는 그래프를 탐색합니다.
+
+### 5단계 시드 선택 캐스케이드
+
+"Microsoft 창업자는 누구인가?"라고 질문하면, Query Wiki는 답변 생성 전에 5단계를 실행합니다:
+
+1. **Lex 빠른 경로** — 모든 Entity/Concept 제목 및 alias에 대한 직접 토큰 중복 체크. 무료, 즉시, 이후 모든 단계의 게이트 역할.
+2. **LLM 키워드 생성** — LLM이 쿼리로부터 8–12개의 다국어 키워드 생성 (동의어, 약어, 토큰 중복에 취약한 용어를 단일 LLM 호출로 처리).
+3. **로컬 부분문자열 스캔** — 생성된 각 키워드를 페이지 제목, alias, 본문 스니펫에 대해 로컬에서 재매칭. 추가 LLM 호출 없음, 노이즈 허용 재현율 보완.
+4. **LLM KB 폴백** — lex + 키워드 스캔의 신호가 약할 때, LLM이 전체 Wiki에 대해 top-N 후보를 한 번 의미적으로 재시드.
+5. **PPR 그래프 확장** — 후보 시드 집합에서 `[[wiki-link]]` 그래프 위 Personalized PageRank (Haveliwala 2002) 실행. 이것이 그래프 인지 멀티홉 컨텍스트를 제공합니다: "Bill Gates" → "Microsoft" → "경쟁사", 단순한 제목 일치가 아닌.
+
+캐스케이드는 충분한 신호를 반환한 단계에서 자동으로 절단됩니다 — 고정된 5단계 비용 없음, lex로 충분할 때는 LLM 호출 없음, LLM 보강이 필요할 때는 정밀도 손실 없음.
+
+### 규모에 맞는 Personalized PageRank
+
+Monte Carlo PPR (Fogaras 2005)을 사용합니다 — 3,000개의 랜덤 워크 × 각 50단계, Haveliwala 2002의 데드엔드 규칙 적용. 비용은 **O(K × L)**로 페이지 수와 무관하므로, 2000페이지 볼트에서도 200페이지 볼트와 동일한 확장 지연 시간을 보입니다.
+
+**PPR @5 = 27.1% vs 순수 kNN 기준 24.1%** (이 오픈소스 LLM-Wiki 분야에서 유일하게 공개된 검색 벤치마크).
+
+### 임베딩을 사용하지 않는 이유
+
+[Issue #175](https://github.com/green-dalii/obsidian-llm-wiki/issues/175)에서 임베딩 경로를 의도적으로 거부했습니다. 그래프 신호는 이미 존재합니다 — 모든 `[[wiki-link]]`는 "이것들은 서로 관련있다"는 직접 큐레이팅된 엣지이며, 저희가 지원하는 대부분의 공급자(Ollama, LM Studio, Anthropic, Bedrock, Kimi, GLM, MiniMax)는 `/v1/embeddings` 엔드포인트를 전혀 제공하지 않습니다. 임베딩 모델을 추가하면 페이지당 다운로드, 공급자별 어댑터가 필요하고 검색 품질에는 이점이 전혀 없을 것입니다.
+
+---
+
+## 🤖 모델
+
+**지원 공급자 (12+, 2026-07 기준 models.dev 교차 확인):**
+
+| 공급자 | 시리즈 | 비고 |
+|--------|--------|------|
+| **Anthropic** | Claude 5 시리즈 | 네이티브 PDF; `/v1/messages` 프로토콜 |
+| **OpenAI** | GPT-5.6 시리즈 (Sol / Terra / Luna) | 네이티브 PDF; Platform API 키 |
+| **Google Gemini** | Gemini 3.6 시리즈 | 네이티브 PDF (1.5부터 파일 파트); OpenAI 호환 엔드포인트 |
+| **DeepSeek** | DeepSeek V4 시리즈 | OpenAI 호환; 최저 비용 계층 |
+| **Alibaba Qwen** | Qwen3.7/3.8 시리즈 | OpenAI 호환 (DashScope) |
+| **xAI Grok** | Grok 4 시리즈 | OpenAI 호환; 긴 컨텍스트 |
+| **Moonshot Kimi** | Kimi K3 시리즈 | OpenAI 호환; 2.8T MoE 프론티어 |
+| **Zhipu GLM** | GLM-5 시리즈 | OpenAI 호환; 강력한 이중 언어 |
+| **MiniMax** | MiniMax M3 시리즈 | OpenAI 호환; 1M 컨텍스트 |
+| **Step (阶跃星辰)** | Step 3 시리즈 (Flash) | OpenAI 호환; 빠른 추론 |
+| **Tencent Hunyuan** | Hy3 시리즈 | OpenAI 호환; 오픈웨이트 MoE |
+| **Xiaomi MiMo** | MiMo V2.5 시리즈 | MIT 오픈소스; 플랫 가격 |
+| **Google Gemma** | Gemma 4 시리즈 | 오픈웨이트; 262K 컨텍스트 |
+| **AWS Bedrock** | Anthropic + OpenAI 변형 | VPC / 규정 준수 경로 |
+| **ChatGPT Plan (Codex OAuth)** | Codex Responses API | 브라우저/기기 코드 로그인; SecretStorage |
+| **로컬: Ollama, LM Studio, OpenRouter, Anthropic-Compatible** | 모든 OpenAI/Anthropic 프로토콜 모델 | Custom OpenAI-Compatible + Anthropic-Compatible (Token Plan / Coding Plan) |
+
+이 플러그인은 LLM에 전체 Wiki 컨텍스트를 제공하므로 — **긴 컨텍스트 모델이 유리합니다**. 전체 계층형 표 (클라우드 + 로컬)는 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)에 있으며, [models.dev](https://models.dev/)와 교차 확인되어 최신 상태를 유지합니다.
+
+### 중요한 요소
+
+- **🧠 컨텍스트 창 ≥ 200K 토큰** — 약 500페이지 이상의 볼트에서 필요. 200K 미만이면 캐스케이드의 조립된 컨텍스트가 잘리기 시작합니다.
+- **⚖️ 명령 수행 품질** — 추출 작업에서는 원시 IQ보다 명령 수행 능력이 더 중요합니다. 스키마 템플릿을 따르는 모델을 선택하세요, 가장 큰 리더보드 숫자가 아닙니다.
+- **🔌 임베딩 엔드포인트는 무관합니다** — 저희는 임베딩을 사용하지 않습니다. `/v1/embeddings`가 없는 공급자도 괜찮습니다 (저희 12+ 공급자 대부분이 그렇습니다).
+- **🦙 조회는 로컬, 수집은 클라우드** — 2000페이지 볼트 수집은 보통 긴 컨텍스트 클라우드 모델이 필요합니다; 262K 로컬 모델은 대부분의 조회를 커버합니다.
+
+### Anthropic vs OpenAI vs Codex OAuth — 서로 다른 공급자입니다
+
+- **Anthropic** (및 Bedrock 변형) — 별도 청구되는 Anthropic Platform API 키.
+- **OpenAI** — 별도 청구되는 OpenAI Platform API 키.
+- **ChatGPT Plan (Codex OAuth)** — 실험적, 별도 공급자로 브라우저 또는 기기 코드 로그인 후 적격 Codex 사용 한도를 사용합니다. 사용 가능 여부는 OpenAI Codex 인증 및 사용 한도 정책을 따르며, 플랜 이름으로 보장되지 않습니다. 서드파티 Codex 호환 기능이며, OpenAI 파트너십이나 범용 ChatGPT API가 아닙니다.
+
+> 📖 **전체 선택 표** (클라우드 + 로컬 + PDF OCR + Codex OAuth + 양자화 + 하드웨어 계층) → [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
+
+---
+
 ## ❓ FAQ
 
 ### 이 플러그인은 실제로 무엇을 하나요?
@@ -441,6 +442,15 @@ LLM-Wiki가 여러분의 지식 워크플로에서 중요한 부분이 되었다
 프로젝트를 지원해 주신 분들께 감사드립니다：
 
 [@jameses-cyber](https://github.com/jameses-cyber)、[@issaqua](https://github.com/issaqua)、Dikson Choi
+
+---
+
+## 🔭 다른 프로젝트
+
+제가 만드는 다른 프로젝트입니다.
+
+- **[obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli)** — 헤드리스 인제스트 CLI로, Obsidian 마켓플레이스 검토 봇이 Node CLI 구조를 문제 삼지 않도록 이 저장소에서 독립 저장소로 옮겨 가는 중입니다. 디스크의 vault를 대상으로 같은 `WikiEngine`을 실행하며 렌더러가 필요 없습니다. 아직 개발 중인 v0.1이고 npm에 올라가지 않았으니, v1.27.0 전까지는 이 저장소의 `pnpm llm-wiki`를 사용하세요.
+- **[pi-shift-router](https://github.com/green-dalii/pi-shift-router)** — [pi-coding-agent](https://github.com/earendil-works/pi)를 위한 작업 단위 라우터입니다. 매 턴 전에 작은 LLM 심판이 메시지를 일상적인 일과 중요한 일로 나누고, 선택된 단이 그 턴 전체를 맡습니다. 복잡한 작업에서는 한 걸음 더 나아가 Smart 단이 CTO처럼 계획을 세우고 구현을 Fast 서브에이전트에 위임한 뒤 결과를 하나씩 검토하며 반복합니다. 상향은 즉시, 하향은 추세가 이어질 때만 이루어지고, 단별 폴백 체인이 429와 5xx를 감당합니다. 런타임 의존성 없음, MIT. → [shiftrouter.greenerai.top](https://shiftrouter.greenerai.top)
 
 ---
 

@@ -59,6 +59,7 @@ SEO metadata (not user-visible, parsed by crawlers / LLMs):
 - [FAQ](#-faq)
 - [Privacy](#-privacy)
 - [Support](#-support)
+- [Other projects](#-other-projects)
 - [License & Credits](#-license--credits)
 
 ---
@@ -228,7 +229,7 @@ The plugin composes with the rest of your Obsidian stack — each tool below plu
 
 ---
 
-## 🛠️ Headless CLI
+## 🧰 Headless CLI
 
 Same ingest pipeline as the plugin, but running under plain Node. Use it when Obsidian isn't around — CI, batch jobs, scripted runs.
 
@@ -466,6 +467,15 @@ Sponsorship is entirely optional. The plugin stays Apache-2.0-licensed and featu
 Thanks to the following for supporting the project:
 
 [@jameses-cyber](https://github.com/jameses-cyber), [@issaqua](https://github.com/issaqua), Dikson Choi
+
+---
+
+## 🔭 Other projects
+
+Other things I build and maintain:
+
+- **[obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli)** — the headless ingest CLI, moving out of this repo into its own so the Obsidian marketplace bot stops flagging Node-CLI structure. Runs the same `WikiEngine` against a vault on disk, no renderer. Still v0.1 in development and not on npm; use `pnpm llm-wiki` from this repo until v1.27.0.
+- **[pi-shift-router](https://github.com/green-dalii/pi-shift-router)** — a task-level router for [pi-coding-agent](https://github.com/earendil-works/pi). Before each turn a small LLM judge marks your message routine or consequential, and the tier it picks drives the whole turn. Complex tasks go further: the Smart tier runs as a CTO that plans the work, delegates implementation to Fast subagents, reviews each result and iterates. Upgrades are instant, downgrades wait for a sustained trend; per-tier fallback chains ride out 429s and 5xx. Zero runtime deps, MIT. → [shiftrouter.greenerai.top](https://shiftrouter.greenerai.top)
 
 ---
 

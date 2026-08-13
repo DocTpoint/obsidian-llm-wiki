@@ -31,12 +31,13 @@
 - [🚀 快速开始](#-快速开始)
 - [✨ 核心特性](#-核心特性)
 - [🌐 生态](#-生态)
-- [🛠️ 无头 CLI](#-无头-cli)
+- [🧰 无头 CLI](#-无头-cli)
 - [🔍 检索工作原理](#-检索工作原理)
 - [🤖 模型推荐](#-模型推荐)
 - [❓ 常见问题](#-常见问题)
 - [🔒 隐私](#-隐私)
 - [💖 支持项目](#-支持项目)
+- [🔭 其他项目](#-其他项目)
 - [📜 许可证与致谢](#-许可证与致谢)
 
 ---
@@ -193,76 +194,6 @@
 
 ---
 
-## 🔍 检索工作原理
-
-大多数"AI 搜索"插件将你的笔记分块并嵌入到向量数据库中。我们不这样做。Karpathy 反对 RAG 的理由是分块破坏了 LLM 在完整知识图谱上的推理能力——这个论点在实践中成立。相反，我们遍历你通过写 `[[wiki-links]]` 已经维护的图谱。
-
-### 5 级种子选择级联
-
-当你在问"谁创立了微软？"时，查询 Wiki 在任何答案生成之前运行五个阶段：
-
-1. **Lex 快速路径** — 直接对每个实体/概念的标题和别名做 token 重叠匹配。免费、即时，也是后续所有阶段的把关者。
-2. **LLM 关键词生成** — LLM 从你的查询中提出 8–12 个跨语言关键词（在一次 LLM 调用中处理同义词、缩写和 token 重叠不敏感的术语）。
-3. **本地子串扫描** — 每个生成的关键词在本地对页面标题、别名和正文片段重新匹配。无需额外 LLM 调用；补足噪声容忍的召回。
-4. **LLM KB 回退** — 当 lex + 关键词扫描返回的信号不足时，LLM 对 top-N 候选重新针对完整 Wiki 做一次语义筛选。
-5. **PPR 图扩展** — 在 `[[wiki-link]]` 图上从候选种子集运行 Personalized PageRank（Haveliwala 2002）。这是实现图感知多跳上下文的关键："比尔·盖茨" → "微软" → "竞争对手"，而不只是字面标题重叠。
-
-级联在任一阶段返回足够信号时截断——没有固定的 5 步开销，lex 足够时无需 LLM 调用，LLM 增强时不损失精度。
-
-### 规模化的 Personalized PageRank
-
-我们使用 Monte Carlo PPR（Fogaras 2005）——3,000 次随机游走 × 每次 50 步——配合 Haveliwala 2002 的死端规则。开销为 **O(K × L)**，与页面数量无关，因此 2000 页 vault 的扩展延迟与 200 页 vault 相同。
-
-**PPR @5 = 27.1% vs 纯 knn 基线 24.1%** —— 基于项目自有基准语料（该开源 LLM-Wiki 领域唯一已发布的检索基准）。
-
-### 为什么不需要嵌入
-
-我们在 [Issue #175](https://github.com/green-dalii/obsidian-llm-wiki/issues/175) 中有意拒绝了嵌入路径。图谱信号已经在那里——每个 `[[wiki-link]]` 都是一条手动 curated 的"这些内容相关"边，而我们支持的大多数 Provider（Ollama、LM Studio、Anthropic、Bedrock、Kimi、GLM、MiniMax）根本没有 `/v1/embeddings` 端点。添加嵌入模型意味着每个页面一次下载、每个 Provider 一个适配器，而对检索质量没有任何提升。
-
----
-
-## 🤖 模型推荐
-
-**支持的 Provider（12+，基于 2026-07 来自 models.dev 的交叉核对）：**
-
-| Provider | 系列 | 备注 |
-|----------|------|------|
-| **Anthropic** | Claude 5 系列 | 原生 PDF；`/v1/messages` 协议 |
-| **OpenAI** | GPT-5.6 系列（Sol / Terra / Luna） | 原生 PDF；Platform API Key |
-| **Google Gemini** | Gemini 3.6 系列 | 原生 PDF（自 1.5 开始支持文件部分）；OpenAI 兼容端点 |
-| **DeepSeek** | DeepSeek V4 系列 | OpenAI 兼容；最低成本档 |
-| **Alibaba Qwen** | Qwen3.7/3.8 系列 | OpenAI 兼容（DashScope）|
-| **xAI Grok** | Grok 4 系列 | OpenAI 兼容；长上下文 |
-| **Moonshot Kimi** | Kimi K3 系列 | OpenAI 兼容；2.8T MoE 前沿 |
-| **Zhipu GLM** | GLM-5 系列 | OpenAI 兼容；双语言能力强 |
-| **MiniMax** | MiniMax M3 系列 | OpenAI 兼容；1M 上下文 |
-| **Step（阶跃星辰）** | Step 3 系列（Flash） | OpenAI 兼容；快速推理 |
-| **Tencent Hunyuan** | Hy3 系列 | OpenAI 兼容；开放权重 MoE |
-| **Xiaomi MiMo** | MiMo V2.5 系列 | MIT 开源；统一低价 |
-| **Google Gemma** | Gemma 4 系列 | 开放权重；262K 上下文 |
-| **AWS Bedrock** | Anthropic + OpenAI 变种 | VPC / 合规路径 |
-| **ChatGPT Plan (Codex OAuth)** | Codex Responses API | 浏览器/设备代码登录；SecretStorage |
-| **本地：Ollama, LM Studio, OpenRouter, Anthropic 兼容** | 任何 OpenAI/Anthropic 协议模型 | 自定义 OpenAI 兼容 + Anthropic 兼容（Token Plan / Coding Plan）|
-
-本插件每次查询向 LLM 提供完整的 Wiki 上下文——因此 **长上下文模型胜出**。完整的分级表格（云端 + 本地）见 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)，来自 [models.dev](https://models.dev/) 交叉核对以确保推荐持续有效。
-
-### 什么更重要
-
-- **🧠 上下文窗口 ≥ 200K tokens**，对于超过 ~500 页的 vault。低于 200K 时，级联组装的上下文会开始被截断。
-- **⚖️ 指令遵循质量** 对提取任务比原始 IQ 更重要——选择一个能遵循 Schema 模板的模型，而非排行榜上最大的数字。
-- **🔌 嵌入端点无关紧要**——我们不使用嵌入。缺乏 `/v1/embeddings` 的 Provider 完全没问题（我们 12+ 个 Provider 中大部分都没有）。
-- **🦙 本地用于查询，云端用于摄入**——2000 页 vault 的摄入通常需要长上下文云端模型；262K 的本地模型覆盖大部分查询。
-
-### Anthropic vs OpenAI vs Codex OAuth —— 它们是不同的 Provider
-
-- **Anthropic**（及其 Bedrock 变种）—— 单独计费的 Anthropic Platform API Key。
-- **OpenAI** —— 单独计费的 OpenAI Platform API Key。
-- **ChatGPT Plan (Codex OAuth)** —— 实验性、独立的 Provider，在浏览器或设备代码登录后使用符合条件的 Codex 额度；可用性遵循 OpenAI Codex 身份验证和额度政策，而非计划名称。第三方 Codex 兼容功能，非 OpenAI 合作项目或通用 ChatGPT API。
-
-> 📖 **完整选择表格**（云端 + 本地 + PDF OCR + Codex OAuth + 量化 + 硬件等级）→ [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
-
----
-
 ## 🌐 生态
 
 本插件与你的其他 Obsidian 工具无缝协作——以下工具皆可直接对接 `[[wiki-link]]` 图谱，无需任何代码改动。
@@ -278,7 +209,7 @@
 
 ---
 
-## 🛠️ 无头 CLI
+## 🧰 无头 CLI
 
 在磁盘上的 vault 上运行同一摄取流水线——**无需 Obsidian、无需 Electron、无需界面**。适用于 CI、脚本化运行、批量评估、无头回归基准测试，以及任何没有 Obsidian 本身的环境。
 
@@ -378,6 +309,76 @@ CLI 复用你的插件设置——没有独立的 CLI 配置面。设置从 `<va
 
 ---
 
+## 🔍 检索工作原理
+
+大多数"AI 搜索"插件将你的笔记分块并嵌入到向量数据库中。我们不这样做。Karpathy 反对 RAG 的理由是分块破坏了 LLM 在完整知识图谱上的推理能力——这个论点在实践中成立。相反，我们遍历你通过写 `[[wiki-links]]` 已经维护的图谱。
+
+### 5 级种子选择级联
+
+当你在问"谁创立了微软？"时，查询 Wiki 在任何答案生成之前运行五个阶段：
+
+1. **Lex 快速路径** — 直接对每个实体/概念的标题和别名做 token 重叠匹配。免费、即时，也是后续所有阶段的把关者。
+2. **LLM 关键词生成** — LLM 从你的查询中提出 8–12 个跨语言关键词（在一次 LLM 调用中处理同义词、缩写和 token 重叠不敏感的术语）。
+3. **本地子串扫描** — 每个生成的关键词在本地对页面标题、别名和正文片段重新匹配。无需额外 LLM 调用；补足噪声容忍的召回。
+4. **LLM KB 回退** — 当 lex + 关键词扫描返回的信号不足时，LLM 对 top-N 候选重新针对完整 Wiki 做一次语义筛选。
+5. **PPR 图扩展** — 在 `[[wiki-link]]` 图上从候选种子集运行 Personalized PageRank（Haveliwala 2002）。这是实现图感知多跳上下文的关键："比尔·盖茨" → "微软" → "竞争对手"，而不只是字面标题重叠。
+
+级联在任一阶段返回足够信号时截断——没有固定的 5 步开销，lex 足够时无需 LLM 调用，LLM 增强时不损失精度。
+
+### 规模化的 Personalized PageRank
+
+我们使用 Monte Carlo PPR（Fogaras 2005）——3,000 次随机游走 × 每次 50 步——配合 Haveliwala 2002 的死端规则。开销为 **O(K × L)**，与页面数量无关，因此 2000 页 vault 的扩展延迟与 200 页 vault 相同。
+
+**PPR @5 = 27.1% vs 纯 knn 基线 24.1%** —— 基于项目自有基准语料（该开源 LLM-Wiki 领域唯一已发布的检索基准）。
+
+### 为什么不需要嵌入
+
+我们在 [Issue #175](https://github.com/green-dalii/obsidian-llm-wiki/issues/175) 中有意拒绝了嵌入路径。图谱信号已经在那里——每个 `[[wiki-link]]` 都是一条手动 curated 的"这些内容相关"边，而我们支持的大多数 Provider（Ollama、LM Studio、Anthropic、Bedrock、Kimi、GLM、MiniMax）根本没有 `/v1/embeddings` 端点。添加嵌入模型意味着每个页面一次下载、每个 Provider 一个适配器，而对检索质量没有任何提升。
+
+---
+
+## 🤖 模型推荐
+
+**支持的 Provider（12+，基于 2026-07 来自 models.dev 的交叉核对）：**
+
+| Provider | 系列 | 备注 |
+|----------|------|------|
+| **Anthropic** | Claude 5 系列 | 原生 PDF；`/v1/messages` 协议 |
+| **OpenAI** | GPT-5.6 系列（Sol / Terra / Luna） | 原生 PDF；Platform API Key |
+| **Google Gemini** | Gemini 3.6 系列 | 原生 PDF（自 1.5 开始支持文件部分）；OpenAI 兼容端点 |
+| **DeepSeek** | DeepSeek V4 系列 | OpenAI 兼容；最低成本档 |
+| **Alibaba Qwen** | Qwen3.7/3.8 系列 | OpenAI 兼容（DashScope）|
+| **xAI Grok** | Grok 4 系列 | OpenAI 兼容；长上下文 |
+| **Moonshot Kimi** | Kimi K3 系列 | OpenAI 兼容；2.8T MoE 前沿 |
+| **Zhipu GLM** | GLM-5 系列 | OpenAI 兼容；双语言能力强 |
+| **MiniMax** | MiniMax M3 系列 | OpenAI 兼容；1M 上下文 |
+| **Step（阶跃星辰）** | Step 3 系列（Flash） | OpenAI 兼容；快速推理 |
+| **Tencent Hunyuan** | Hy3 系列 | OpenAI 兼容；开放权重 MoE |
+| **Xiaomi MiMo** | MiMo V2.5 系列 | MIT 开源；统一低价 |
+| **Google Gemma** | Gemma 4 系列 | 开放权重；262K 上下文 |
+| **AWS Bedrock** | Anthropic + OpenAI 变种 | VPC / 合规路径 |
+| **ChatGPT Plan (Codex OAuth)** | Codex Responses API | 浏览器/设备代码登录；SecretStorage |
+| **本地：Ollama, LM Studio, OpenRouter, Anthropic 兼容** | 任何 OpenAI/Anthropic 协议模型 | 自定义 OpenAI 兼容 + Anthropic 兼容（Token Plan / Coding Plan）|
+
+本插件每次查询向 LLM 提供完整的 Wiki 上下文——因此 **长上下文模型胜出**。完整的分级表格（云端 + 本地）见 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)，来自 [models.dev](https://models.dev/) 交叉核对以确保推荐持续有效。
+
+### 什么更重要
+
+- **🧠 上下文窗口 ≥ 200K tokens**，对于超过 ~500 页的 vault。低于 200K 时，级联组装的上下文会开始被截断。
+- **⚖️ 指令遵循质量** 对提取任务比原始 IQ 更重要——选择一个能遵循 Schema 模板的模型，而非排行榜上最大的数字。
+- **🔌 嵌入端点无关紧要**——我们不使用嵌入。缺乏 `/v1/embeddings` 的 Provider 完全没问题（我们 12+ 个 Provider 中大部分都没有）。
+- **🦙 本地用于查询，云端用于摄入**——2000 页 vault 的摄入通常需要长上下文云端模型；262K 的本地模型覆盖大部分查询。
+
+### Anthropic vs OpenAI vs Codex OAuth —— 它们是不同的 Provider
+
+- **Anthropic**（及其 Bedrock 变种）—— 单独计费的 Anthropic Platform API Key。
+- **OpenAI** —— 单独计费的 OpenAI Platform API Key。
+- **ChatGPT Plan (Codex OAuth)** —— 实验性、独立的 Provider，在浏览器或设备代码登录后使用符合条件的 Codex 额度；可用性遵循 OpenAI Codex 身份验证和额度政策，而非计划名称。第三方 Codex 兼容功能，非 OpenAI 合作项目或通用 ChatGPT API。
+
+> 📖 **完整选择表格**（云端 + 本地 + PDF OCR + Codex OAuth + 量化 + 硬件等级）→ [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
+
+---
+
 ## ❓ 常见问题
 
 ### 这个插件到底能做什么？
@@ -451,6 +452,15 @@ CLI 复用你的插件设置——没有独立的 CLI 配置面。设置从 `<va
 感谢以下赞助者对项目的支持：
 
 [@jameses-cyber](https://github.com/jameses-cyber)、[@issaqua](https://github.com/issaqua)、Dikson Choi
+
+---
+
+## 🔭 其他项目
+
+我做的其他项目：
+
+- **[obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli)** — 无头摄入 CLI，正在从本仓库迁出、独立成库，好让 Obsidian 市场审核 Bot 不再对 Node CLI 的结构报警。它对着磁盘上的 vault 跑同一套 `WikiEngine`，不需要渲染器。目前仍是开发中的 v0.1，尚未发布到 npm；在 v1.27.0 之前请用本仓库的 `pnpm llm-wiki`。
+- **[pi-shift-router](https://github.com/green-dalii/pi-shift-router)** — [pi-coding-agent](https://github.com/earendil-works/pi) 的任务级路由器。每轮开始前，一个小模型判定把你的消息分成例行还是要紧，选中的档位接管整轮。复杂任务还会更进一步：Smart 档像 CTO 一样规划，把实现派发给 Fast 子代理，逐项审核并迭代。升档立即生效，降档要等趋势稳住；每档的回退链能扛住 429 和 5xx。零运行时依赖，MIT。→ [shiftrouter.greenerai.top](https://shiftrouter.greenerai.top)
 
 ---
 

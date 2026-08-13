@@ -28,12 +28,13 @@
 - [🚀 快速開始](#-快速開始)
 - [✨ 核心特性](#-核心特性)
 - [🌐 生態](#-生態)
-- [🛠️ 無頭 CLI](#-無頭-cli)
+- [🧰 無頭 CLI](#-無頭-cli)
 - [🔍 檢索原理](#-檢索原理)
 - [🤖 模型](#-模型)
 - [❓ 常見問題 (FAQ)](#-常見問題-faq)
 - [🔒 隱私](#-隱私)
 - [💖 支持專案](#-支持專案)
+- [🔭 其他專案](#-其他專案)
 - [📜 許可證與致謝](#-許可證與致謝)
 
 ---
@@ -188,76 +189,6 @@
 
 ---
 
-## 🔍 檢索原理
-
-大多數「AI 搜尋」外掛會將你的筆記切成區塊並嵌入向量資料庫。我們不這麼做。Karpathy 反對 RAG 的理由是：區塊化破壞了 LLM 在整個知識圖譜上推理的能力——而這個論點在實務上是成立的。我們的做法是：在你透過編寫 `[[wiki-links]]` 已經維護的圖譜上直接走訪。
-
-### 5 階段種子選擇級聯
-
-當你問「誰創辦了 Microsoft？」時，查詢 Wiki 在生成任何答案之前會執行五個階段：
-
-1. **Lex 快速路徑** — 直接對每個實體/概念標題與別名做 token 重疊匹配。免費、即時，且為後續階段的把關步驟。
-2. **LLM 關鍵詞生成** — LLM 從你的查詢中提出 8–12 個跨語言關鍵詞（一次 LLM 呼叫即可處理同義詞、縮寫和 token 重疊不敏感的術語）。
-3. **本地子字串掃描** — 每個生成的關鍵詞在本地對頁面標題、別名與正文片段重新匹配。無額外 LLM 呼叫；補滿雜訊容忍的召回。
-4. **LLM KB 回退** — 當 lex + 關鍵詞掃描信號不足時，LLM 對 top-N 候選針對完整 wiki 重新做一次語義篩選。
-5. **PPR 圖擴展** — 從候選種子集開始，在 `[[wiki-link]]` 圖譜上執行 Personalized PageRank（Haveliwala 2002）。這就是提供圖感知多跳上下文的機制：「比爾蓋茲」→「Microsoft」→「競爭對手」，而非僅靠字面標題重疊。
-
-級聯會在第一個提供足夠信號的步驟處截斷——沒有固定的 5 步開銷，lex 足夠時無需 LLM 呼叫，需要 LLM 增強時也不會損失精度。
-
-### 規模化的 Personalized PageRank
-
-我們使用 Monte Carlo PPR（Fogaras 2005）——3,000 條隨機漫步 × 每條 50 步——搭配 Haveliwala 2002 的 dead-end 規則。成本為 **O(K × L)**，與頁面數量無關，因此 2000 頁的 vault 與 200 頁的 vault 有相同的擴展延遲。
-
-**PPR @5 = 27.1% vs 純 kNN 基線 24.1%**——以專案自有基準語料庫測試（此開源 LLM-Wiki 領域唯一公開的檢索基準）。
-
-### 爲什麼不使用嵌入
-
-我們在 [Issue #175](https://github.com/green-dalii/obsidian-llm-wiki/issues/175) 中刻意拒絕了嵌入路徑。圖譜訊號已經存在——每個 `[[wiki-link]]` 都是一條手工維護的「這些內容相關」的邊，而且我們支援的大多數 Provider（Ollama、LM Studio、Anthropic、Bedrock、Kimi、GLM、MiniMax）根本沒有 `/v1/embeddings` 端點。加入嵌入模型意味著每次頁面下載、每個 Provider 適配器，而檢索品質上沒有任何提升。
-
----
-
-## 🤖 模型
-
-**支援的 Provider（12 種以上，2026-07 經 models.dev 交叉驗證）：**
-
-| Provider | 系列 | 備註 |
-|----------|------|------|
-| **Anthropic** | Claude 5 系列 | 原生 PDF；`/v1/messages` 協定 |
-| **OpenAI** | GPT-5.6 系列（Sol / Terra / Luna） | 原生 PDF；Platform API Key |
-| **Google Gemini** | Gemini 3.6 系列 | 原生 PDF（自 1.5 起支援檔案部分）；OpenAI 相容端點 |
-| **DeepSeek** | DeepSeek V4 系列 | OpenAI 相容；最低成本 |
-| **Alibaba Qwen** | Qwen3.7/3.8 系列 | OpenAI 相容（DashScope） |
-| **xAI Grok** | Grok 4 系列 | OpenAI 相容；長上下文 |
-| **Moonshot Kimi** | Kimi K3 系列 | OpenAI 相容；2.8T MoE 前沿模型 |
-| **Zhipu GLM** | GLM-5 系列 | OpenAI 相容；雙語能力強 |
-| **MiniMax** | MiniMax M3 系列 | OpenAI 相容；1M 上下文 |
-| **Step（階躍星辰）** | Step 3 系列（Flash） | OpenAI 相容；推理速度快 |
-| **Tencent Hunyuan** | Hy3 系列 | OpenAI 相容；開源權重 MoE |
-| **Xiaomi MiMo** | MiMo V2.5 系列 | MIT 開源；平價方案 |
-| **Google Gemma** | Gemma 4 系列 | 開源權重；262K 上下文 |
-| **AWS Bedrock** | Anthropic + OpenAI 變體 | VPC / 合規路徑 |
-| **ChatGPT Plan (Codex OAuth)** | Codex Responses API | 瀏覽器/裝置代碼登入；SecretStorage |
-| **本地：Ollama、LM Studio、OpenRouter、Anthropic 相容** | 任何 OpenAI/Anthropic 協定模型 | Custom OpenAI-Compatible + Anthropic-Compatible（Token Plan / Coding Plan） |
-
-此外掛在每次查詢時會將完整的 Wiki 上下文餵給 LLM——所以**長上下文模型勝出**。完整的分級表（雲端 + 本地）請見 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)，已與 [models.dev](https://models.dev/) 交叉驗證以確保建議保持最新。
-
-### 什麼才重要
-
-- **🧠 上下文窗口 ≥ 200K tokens**——適用於超過 ~500 頁的 vault。低於 200K 時，級聯組合的上下文會開始被截斷。
-- **⚖️ 指令遵循品質比原始 IQ 更重要**——提取任務選擇能正確遵循 schema 模板的模型，而不是排行榜上最大的數字。
-- **🔌 嵌入端點無關緊要**——我們不使用嵌入。沒有 `/v1/embeddings` 的 Provider 完全沒問題（我們 12 種以上的 Provider 大多如此）。
-- **🦙 本地用於查詢，雲端用於攝入**——2000 頁 vault 的攝入通常需要長上下文雲端模型；262K 的本地模型可涵蓋大多數查詢。
-
-### Anthropic vs OpenAI vs Codex OAuth——三者是不同的 Provider
-
-- **Anthropic**（及其 Bedrock 變體）——單獨計費的 Anthropic Platform API Key。
-- **OpenAI**——單獨計費的 OpenAI Platform API Key。
-- **ChatGPT Plan (Codex OAuth)**——實驗性的獨立 Provider，在瀏覽器或裝置代碼登入後使用符合資格的 Codex 方案額度；可用性取決於 OpenAI Codex 的驗證和額度政策，而非僅憑方案名稱。這是第三方 Codex 相容功能，並非 OpenAI 合作項目或通用 ChatGPT API。
-
-> 📖 **完整選擇表**（雲端 + 本地 + PDF OCR + Codex OAuth + 量化 + 硬體分級）→ [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
-
----
-
 ## 🌐 生態
 
 本外掛與你的其他 Obsidian 工具無縫協作——以下工具皆可直接接入 `[[wiki-link]]` 圖譜，無需任何程式碼改動。
@@ -271,7 +202,7 @@
 - **🖼️ Canvas** —— Obsidian 原生無限畫布。把 Wiki 卡片拖到 Canvas 上，無需離開 vault 即可拼裝學習指南、心智圖或研究概覽，所有內容均透過 `[[wiki-links]]` 互聯。
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** —— 本地語音備忘錄與會議錄製（macOS 上使用 whisper.cpp，音訊資料不出本機）的配套外掛。產生帶說話者標記的轉錄檔案與自有 wiki 中心頁面。與本外掛相互獨立——可在同一 vault 共存而無需耦合。
 
-## 🛠️ 無頭 CLI
+## 🧰 無頭 CLI
 
 在磁碟上的 vault 上執行同一攝入管線——**無需 Obsidian、無需 Electron、無需介面**。適用於 CI、腳本化執行、批次評估、無頭迴歸基準測試，以及任何沒有 Obsidian 本身的環境。
 
@@ -371,6 +302,76 @@ CLI 複用你的外掛設定——沒有獨立的 CLI 設定介面。設定從 `
 
 ---
 
+## 🔍 檢索原理
+
+大多數「AI 搜尋」外掛會將你的筆記切成區塊並嵌入向量資料庫。我們不這麼做。Karpathy 反對 RAG 的理由是：區塊化破壞了 LLM 在整個知識圖譜上推理的能力——而這個論點在實務上是成立的。我們的做法是：在你透過編寫 `[[wiki-links]]` 已經維護的圖譜上直接走訪。
+
+### 5 階段種子選擇級聯
+
+當你問「誰創辦了 Microsoft？」時，查詢 Wiki 在生成任何答案之前會執行五個階段：
+
+1. **Lex 快速路徑** — 直接對每個實體/概念標題與別名做 token 重疊匹配。免費、即時，且為後續階段的把關步驟。
+2. **LLM 關鍵詞生成** — LLM 從你的查詢中提出 8–12 個跨語言關鍵詞（一次 LLM 呼叫即可處理同義詞、縮寫和 token 重疊不敏感的術語）。
+3. **本地子字串掃描** — 每個生成的關鍵詞在本地對頁面標題、別名與正文片段重新匹配。無額外 LLM 呼叫；補滿雜訊容忍的召回。
+4. **LLM KB 回退** — 當 lex + 關鍵詞掃描信號不足時，LLM 對 top-N 候選針對完整 wiki 重新做一次語義篩選。
+5. **PPR 圖擴展** — 從候選種子集開始，在 `[[wiki-link]]` 圖譜上執行 Personalized PageRank（Haveliwala 2002）。這就是提供圖感知多跳上下文的機制：「比爾蓋茲」→「Microsoft」→「競爭對手」，而非僅靠字面標題重疊。
+
+級聯會在第一個提供足夠信號的步驟處截斷——沒有固定的 5 步開銷，lex 足夠時無需 LLM 呼叫，需要 LLM 增強時也不會損失精度。
+
+### 規模化的 Personalized PageRank
+
+我們使用 Monte Carlo PPR（Fogaras 2005）——3,000 條隨機漫步 × 每條 50 步——搭配 Haveliwala 2002 的 dead-end 規則。成本為 **O(K × L)**，與頁面數量無關，因此 2000 頁的 vault 與 200 頁的 vault 有相同的擴展延遲。
+
+**PPR @5 = 27.1% vs 純 kNN 基線 24.1%**——以專案自有基準語料庫測試（此開源 LLM-Wiki 領域唯一公開的檢索基準）。
+
+### 爲什麼不使用嵌入
+
+我們在 [Issue #175](https://github.com/green-dalii/obsidian-llm-wiki/issues/175) 中刻意拒絕了嵌入路徑。圖譜訊號已經存在——每個 `[[wiki-link]]` 都是一條手工維護的「這些內容相關」的邊，而且我們支援的大多數 Provider（Ollama、LM Studio、Anthropic、Bedrock、Kimi、GLM、MiniMax）根本沒有 `/v1/embeddings` 端點。加入嵌入模型意味著每次頁面下載、每個 Provider 適配器，而檢索品質上沒有任何提升。
+
+---
+
+## 🤖 模型
+
+**支援的 Provider（12 種以上，2026-07 經 models.dev 交叉驗證）：**
+
+| Provider | 系列 | 備註 |
+|----------|------|------|
+| **Anthropic** | Claude 5 系列 | 原生 PDF；`/v1/messages` 協定 |
+| **OpenAI** | GPT-5.6 系列（Sol / Terra / Luna） | 原生 PDF；Platform API Key |
+| **Google Gemini** | Gemini 3.6 系列 | 原生 PDF（自 1.5 起支援檔案部分）；OpenAI 相容端點 |
+| **DeepSeek** | DeepSeek V4 系列 | OpenAI 相容；最低成本 |
+| **Alibaba Qwen** | Qwen3.7/3.8 系列 | OpenAI 相容（DashScope） |
+| **xAI Grok** | Grok 4 系列 | OpenAI 相容；長上下文 |
+| **Moonshot Kimi** | Kimi K3 系列 | OpenAI 相容；2.8T MoE 前沿模型 |
+| **Zhipu GLM** | GLM-5 系列 | OpenAI 相容；雙語能力強 |
+| **MiniMax** | MiniMax M3 系列 | OpenAI 相容；1M 上下文 |
+| **Step（階躍星辰）** | Step 3 系列（Flash） | OpenAI 相容；推理速度快 |
+| **Tencent Hunyuan** | Hy3 系列 | OpenAI 相容；開源權重 MoE |
+| **Xiaomi MiMo** | MiMo V2.5 系列 | MIT 開源；平價方案 |
+| **Google Gemma** | Gemma 4 系列 | 開源權重；262K 上下文 |
+| **AWS Bedrock** | Anthropic + OpenAI 變體 | VPC / 合規路徑 |
+| **ChatGPT Plan (Codex OAuth)** | Codex Responses API | 瀏覽器/裝置代碼登入；SecretStorage |
+| **本地：Ollama、LM Studio、OpenRouter、Anthropic 相容** | 任何 OpenAI/Anthropic 協定模型 | Custom OpenAI-Compatible + Anthropic-Compatible（Token Plan / Coding Plan） |
+
+此外掛在每次查詢時會將完整的 Wiki 上下文餵給 LLM——所以**長上下文模型勝出**。完整的分級表（雲端 + 本地）請見 [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)，已與 [models.dev](https://models.dev/) 交叉驗證以確保建議保持最新。
+
+### 什麼才重要
+
+- **🧠 上下文窗口 ≥ 200K tokens**——適用於超過 ~500 頁的 vault。低於 200K 時，級聯組合的上下文會開始被截斷。
+- **⚖️ 指令遵循品質比原始 IQ 更重要**——提取任務選擇能正確遵循 schema 模板的模型，而不是排行榜上最大的數字。
+- **🔌 嵌入端點無關緊要**——我們不使用嵌入。沒有 `/v1/embeddings` 的 Provider 完全沒問題（我們 12 種以上的 Provider 大多如此）。
+- **🦙 本地用於查詢，雲端用於攝入**——2000 頁 vault 的攝入通常需要長上下文雲端模型；262K 的本地模型可涵蓋大多數查詢。
+
+### Anthropic vs OpenAI vs Codex OAuth——三者是不同的 Provider
+
+- **Anthropic**（及其 Bedrock 變體）——單獨計費的 Anthropic Platform API Key。
+- **OpenAI**——單獨計費的 OpenAI Platform API Key。
+- **ChatGPT Plan (Codex OAuth)**——實驗性的獨立 Provider，在瀏覽器或裝置代碼登入後使用符合資格的 Codex 方案額度；可用性取決於 OpenAI Codex 的驗證和額度政策，而非僅憑方案名稱。這是第三方 Codex 相容功能，並非 OpenAI 合作項目或通用 ChatGPT API。
+
+> 📖 **完整選擇表**（雲端 + 本地 + PDF OCR + Codex OAuth + 量化 + 硬體分級）→ [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
+
+---
+
 ## ❓ 常見問題 (FAQ)
 
 ### 此外掛到底能做什麼？
@@ -444,6 +445,15 @@ CLI 複用你的外掛設定——沒有獨立的 CLI 設定介面。設定從 `
 感謝以下贊助者對專案的支持：
 
 [@jameses-cyber](https://github.com/jameses-cyber)、[@issaqua](https://github.com/issaqua)、Dikson Choi
+
+---
+
+## 🔭 其他專案
+
+我做的其他專案：
+
+- **[obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli)** — 無頭匯入 CLI，正在從本倉庫遷出、獨立成庫，好讓 Obsidian 市集審查 Bot 不再對 Node CLI 的結構報警。它對著磁碟上的 vault 跑同一套 `WikiEngine`，不需要算繪器。目前仍是開發中的 v0.1，尚未發佈到 npm；在 v1.27.0 之前請用本倉庫的 `pnpm llm-wiki`。
+- **[pi-shift-router](https://github.com/green-dalii/pi-shift-router)** — [pi-coding-agent](https://github.com/earendil-works/pi) 的任務級路由器。每輪開始前，一個小模型判定把你的訊息分成例行還是要緊，選中的檔位接管整輪。複雜任務還會更進一步：Smart 檔像 CTO 一樣規劃，把實作派發給 Fast 子代理，逐項審核並迭代。升檔立即生效，降檔要等趨勢穩住；每檔的回退鏈能扛住 429 和 5xx。零執行時相依，MIT。→ [shiftrouter.greenerai.top](https://shiftrouter.greenerai.top)
 
 ---
 

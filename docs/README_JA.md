@@ -28,12 +28,13 @@
 - [クイックスタート](#-クイックスタート)
 - [特徴](#-特徴)
 - [エコシステム](#-エコシステム)
-- [🛠️ ヘッドレス CLI](#-ヘッドレス-cli)
+- [ヘッドレス CLI](#-ヘッドレス-cli)
 - [検索の仕組み](#-検索の仕組み)
 - [モデル](#-モデル)
 - [FAQ](#-faq)
 - [プライバシー](#-プライバシー)
 - [サポート](#-サポート)
+- [その他のプロジェクト](#-その他のプロジェクト)
 - [ライセンスとクレジット](#-ライセンスとクレジット)
 
 ---
@@ -187,76 +188,6 @@
 
 ---
 
-## 🔍 検索の仕組み
-
-ほとんどの「AI検索」プラグインはノートをチャンクに分割し、ベクトルDBに埋め込みます。このプラグインはそうしません。KarpathyがRAGに対して指摘した通り、チャンク化はLLMが知識グラフ全体を横断して推論する能力を損なうからです。代わりに、あなたが`[[wiki-links]]`を書くことで維持しているグラフをそのまま活用します。
-
-### 5段階シード選択カスケード
-
-「Microsoftの創業者は誰ですか？」と尋ねると、Query Wikiは回答生成前に5つの段階を実行します：
-
-1. **Lex高速パス** — すべてのエンティティ・概念タイトルとエイリアスに対してストレートなトークン重複チェック。無料・即時。以降の段階のゲートとなります。
-2. **LLMキーワード生成** — LLMがクエリから8〜12の多言語キーワードを生成（類義語、略語、トークン重複に弱い語を1回のLLM呼び出しで吸収）。
-3. **ローカル部分文字列スキャン** — 生成された各キーワードを、ページタイトル・エイリアス・本文断片に対してローカルで再マッチ。追加LLM呼び出しなし、ノイズ許容の再現率を補完。
-4. **LLM KBフォールバック** — lex＋キーワードスキャンのシグナルが弱い場合、LLMがwiki全体からトップN候補を1回だけ意味的に再シード。
-5. **PPRグラフ拡張** — 候補シード集合から`[[wiki-link]]`グラフ上でPersonalized PageRank（Haveliwala 2002）を実行。これがグラフ認識のマルチホップコンテキストを提供する仕組みです：「Bill Gates」→「Microsoft」→「競合他社」というように、単なる文字面のタイトル一致ではありません。
-
-カスケードは十分なシグナルが得られた段階で打ち切られます — 固定の5段階コストではなく、lexで十分な時はLLM呼び出しなし、LLM拡張が必要な時は精度を損なわない設計です。
-
-### Personalized PageRankのスケーリング
-
-Monte Carlo PPR（Fogaras 2005）を使用 — 3,000ランダムウォーク×50ステップ、Haveliwala 2002のデッドエンドルール付き。コストは**O(K×L)**でページ数に依存しないため、2,000ページのvaultでも200ページのvaultと同じ拡張レイテンシです。
-
-**PPR @5 = 27.1%（純粋kNNベースライン24.1%を上回る）** — このオープンソースLLM-Wiki分野で唯一公開されている検索ベンチマーク数値です。
-
-### なぜ埋め込みを使わないのか
-
-[Issue #175](https://github.com/green-dalii/obsidian-llm-wiki/issues/175)で埋め込みパスを意図的に却下しました。グラフ信号はすでにそこにあります — すべての`[[wiki-link]]`は手作業で作成された「これらは関連している」というエッジであり、対応するプロバイダー（Ollama、LM Studio、Anthropic、Bedrock、Kimi、GLM、MiniMax）のほとんどは`/v1/embeddings`エンドポイントすら提供していません。埋め込みモデルを追加すれば、ページごとのダウンロード、プロバイダーごとのアダプターが必要になり、検索品質への効果はゼロです。
-
----
-
-## 🤖 モデル
-
-**対応プロバイダー（12以上、2026-07月 models.dev クロスチェック済み）：**
-
-| プロバイダー | シリーズ | 備考 |
-|----------|--------|-------|
-| **Anthropic** | Claude 5シリーズ | ネイティブPDF、`/v1/messages`プロトコル |
-| **OpenAI** | GPT-5.6シリーズ（Sol / Terra / Luna） | ネイティブPDF、Platform APIキー |
-| **Google Gemini** | Gemini 3.6シリーズ | ネイティブPDF（1.5以降ファイルパーツ対応）、OpenAI互換エンドポイント |
-| **DeepSeek** | DeepSeek V4シリーズ | OpenAI互換、最安価格帯 |
-| **Alibaba Qwen** | Qwen3.7/3.8シリーズ | OpenAI互換（DashScope） |
-| **xAI Grok** | Grok 4シリーズ | OpenAI互換、長コンテキスト |
-| **Moonshot Kimi** | Kimi K3シリーズ | OpenAI互換、2.8T MoEフロンティア |
-| **Zhipu GLM** | GLM-5シリーズ | OpenAI互換、強力なバイリンガル |
-| **MiniMax** | MiniMax M3シリーズ | OpenAI互換、1Mコンテキスト |
-| **Step（階躍星辰）** | Step 3シリーズ（Flash） | OpenAI互換、高速推論 |
-| **Tencent Hunyuan** | Hy3シリーズ | OpenAI互換、オープンウェイトMoE |
-| **Xiaomi MiMo** | MiMo V2.5シリーズ | MITオープンソース、フラットプライシング |
-| **Google Gemma** | Gemma 4シリーズ | オープンウェイト、262Kコンテキスト |
-| **AWS Bedrock** | Anthropic + OpenAI派生 | VPC/コンプライアンスパス |
-| **ChatGPT Plan（Codex OAuth）** | Codex Responses API | ブラウザ/デバイスコードサインイン、SecretStorage |
-| **ローカル：Ollama、LM Studio、OpenRouter、Anthropic互換** | 任意のOpenAI-/Anthropic-プロトコルモデル | Custom OpenAI-Compatible + Anthropic-Compatible（Token Plan / Coding Plan） |
-
-このプラグインはLLMにWikiコンテキスト全体を1回のクエリで渡すため、**長コンテキストのモデルが有利**です。完全な階層テーブル（クラウド＋ローカル）は [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md) にあります（[models.dev](https://models.dev/)でクロスチェック済み）。
-
-### 重要な選択基準
-
-- **🧠 コンテキストウィンドウ 200Kトークン以上** — 約500ページ以上のvaultに推奨。200K未満だとカスケードが組み立てるコンテキストが切り詰められる可能性があります。
-- **⚖️ 指示追従の品質** — 抽出タスクでは生のIQよりも重要。スキーマテンプレートに従うモデルを選び、リーダーボードの最大値で選ばないでください。
-- **🔌 埋め込みエンドポイントは無関係** — 埋め込みは使用しません。`/v1/embeddings`がないプロバイダーでも問題ありません（対応プロバイダーのほとんどにありません）。
-- **🦙 ローカルはクエリ向き、クラウドは取り込み向き** — 2000ページのvault取り込みには通常、長コンテキストのクラウドモデルが必要。262Kのローカルモデルでほとんどのクエリはカバーできます。
-
-### Anthropic vs OpenAI vs Codex OAuth — それぞれ独立したプロバイダー
-
-- **Anthropic**（およびBedrock派生） — 別途請求されるAnthropic Platform APIキー。
-- **OpenAI** — 別途請求されるOpenAI Platform APIキー。
-- **ChatGPT Plan（Codex OAuth）** — 実験的かつ独立したプロバイダー。ブラウザまたはデバイスコードサインイン後、対象となるCodex利用枠を使用。提供状況はOpenAI Codexの認証・モデル・利用枠ポリシーに従い、プラン名だけで利用を保証するものではありません。OpenAIとのパートナーシップや汎用ChatGPT APIではなく、サードパーティのCodex互換機能です。
-
-> 📖 **完全な選択肢テーブル**（クラウド＋ローカル＋PDF OCR＋Codex OAuth＋量子化＋ハードウェア階層）→ [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
-
----
-
 ## 🌐 エコシステム
 
 このプラグインはObsidianの他のツールと組み合わせ可能——以下のツールはすべてコード変更なしで `[[wiki-link]]` グラフに統合できます。
@@ -272,7 +203,7 @@ Monte Carlo PPR（Fogaras 2005）を使用 — 3,000ランダムウォーク×50
 
 ---
 
-## 🛠️ ヘッドレス CLI
+## 🧰 ヘッドレス CLI
 
 ディスク上の vault に対して同じ取り込みパイプラインを実行できます——**Obsidian も Electron もディスプレイも不要**。CI、スクリプト実行、バッチ評価、ヘッドレス回帰ベンチマーク、Obsidian 自体が利用できないあらゆる環境で有用です。
 
@@ -372,6 +303,76 @@ CLI はあなたのプラグイン設定を再利用します——CLI 専用の
 
 ---
 
+## 🔍 検索の仕組み
+
+ほとんどの「AI検索」プラグインはノートをチャンクに分割し、ベクトルDBに埋め込みます。このプラグインはそうしません。KarpathyがRAGに対して指摘した通り、チャンク化はLLMが知識グラフ全体を横断して推論する能力を損なうからです。代わりに、あなたが`[[wiki-links]]`を書くことで維持しているグラフをそのまま活用します。
+
+### 5段階シード選択カスケード
+
+「Microsoftの創業者は誰ですか？」と尋ねると、Query Wikiは回答生成前に5つの段階を実行します：
+
+1. **Lex高速パス** — すべてのエンティティ・概念タイトルとエイリアスに対してストレートなトークン重複チェック。無料・即時。以降の段階のゲートとなります。
+2. **LLMキーワード生成** — LLMがクエリから8〜12の多言語キーワードを生成（類義語、略語、トークン重複に弱い語を1回のLLM呼び出しで吸収）。
+3. **ローカル部分文字列スキャン** — 生成された各キーワードを、ページタイトル・エイリアス・本文断片に対してローカルで再マッチ。追加LLM呼び出しなし、ノイズ許容の再現率を補完。
+4. **LLM KBフォールバック** — lex＋キーワードスキャンのシグナルが弱い場合、LLMがwiki全体からトップN候補を1回だけ意味的に再シード。
+5. **PPRグラフ拡張** — 候補シード集合から`[[wiki-link]]`グラフ上でPersonalized PageRank（Haveliwala 2002）を実行。これがグラフ認識のマルチホップコンテキストを提供する仕組みです：「Bill Gates」→「Microsoft」→「競合他社」というように、単なる文字面のタイトル一致ではありません。
+
+カスケードは十分なシグナルが得られた段階で打ち切られます — 固定の5段階コストではなく、lexで十分な時はLLM呼び出しなし、LLM拡張が必要な時は精度を損なわない設計です。
+
+### Personalized PageRankのスケーリング
+
+Monte Carlo PPR（Fogaras 2005）を使用 — 3,000ランダムウォーク×50ステップ、Haveliwala 2002のデッドエンドルール付き。コストは**O(K×L)**でページ数に依存しないため、2,000ページのvaultでも200ページのvaultと同じ拡張レイテンシです。
+
+**PPR @5 = 27.1%（純粋kNNベースライン24.1%を上回る）** — このオープンソースLLM-Wiki分野で唯一公開されている検索ベンチマーク数値です。
+
+### なぜ埋め込みを使わないのか
+
+[Issue #175](https://github.com/green-dalii/obsidian-llm-wiki/issues/175)で埋め込みパスを意図的に却下しました。グラフ信号はすでにそこにあります — すべての`[[wiki-link]]`は手作業で作成された「これらは関連している」というエッジであり、対応するプロバイダー（Ollama、LM Studio、Anthropic、Bedrock、Kimi、GLM、MiniMax）のほとんどは`/v1/embeddings`エンドポイントすら提供していません。埋め込みモデルを追加すれば、ページごとのダウンロード、プロバイダーごとのアダプターが必要になり、検索品質への効果はゼロです。
+
+---
+
+## 🤖 モデル
+
+**対応プロバイダー（12以上、2026-07月 models.dev クロスチェック済み）：**
+
+| プロバイダー | シリーズ | 備考 |
+|----------|--------|-------|
+| **Anthropic** | Claude 5シリーズ | ネイティブPDF、`/v1/messages`プロトコル |
+| **OpenAI** | GPT-5.6シリーズ（Sol / Terra / Luna） | ネイティブPDF、Platform APIキー |
+| **Google Gemini** | Gemini 3.6シリーズ | ネイティブPDF（1.5以降ファイルパーツ対応）、OpenAI互換エンドポイント |
+| **DeepSeek** | DeepSeek V4シリーズ | OpenAI互換、最安価格帯 |
+| **Alibaba Qwen** | Qwen3.7/3.8シリーズ | OpenAI互換（DashScope） |
+| **xAI Grok** | Grok 4シリーズ | OpenAI互換、長コンテキスト |
+| **Moonshot Kimi** | Kimi K3シリーズ | OpenAI互換、2.8T MoEフロンティア |
+| **Zhipu GLM** | GLM-5シリーズ | OpenAI互換、強力なバイリンガル |
+| **MiniMax** | MiniMax M3シリーズ | OpenAI互換、1Mコンテキスト |
+| **Step（階躍星辰）** | Step 3シリーズ（Flash） | OpenAI互換、高速推論 |
+| **Tencent Hunyuan** | Hy3シリーズ | OpenAI互換、オープンウェイトMoE |
+| **Xiaomi MiMo** | MiMo V2.5シリーズ | MITオープンソース、フラットプライシング |
+| **Google Gemma** | Gemma 4シリーズ | オープンウェイト、262Kコンテキスト |
+| **AWS Bedrock** | Anthropic + OpenAI派生 | VPC/コンプライアンスパス |
+| **ChatGPT Plan（Codex OAuth）** | Codex Responses API | ブラウザ/デバイスコードサインイン、SecretStorage |
+| **ローカル：Ollama、LM Studio、OpenRouter、Anthropic互換** | 任意のOpenAI-/Anthropic-プロトコルモデル | Custom OpenAI-Compatible + Anthropic-Compatible（Token Plan / Coding Plan） |
+
+このプラグインはLLMにWikiコンテキスト全体を1回のクエリで渡すため、**長コンテキストのモデルが有利**です。完全な階層テーブル（クラウド＋ローカル）は [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md) にあります（[models.dev](https://models.dev/)でクロスチェック済み）。
+
+### 重要な選択基準
+
+- **🧠 コンテキストウィンドウ 200Kトークン以上** — 約500ページ以上のvaultに推奨。200K未満だとカスケードが組み立てるコンテキストが切り詰められる可能性があります。
+- **⚖️ 指示追従の品質** — 抽出タスクでは生のIQよりも重要。スキーマテンプレートに従うモデルを選び、リーダーボードの最大値で選ばないでください。
+- **🔌 埋め込みエンドポイントは無関係** — 埋め込みは使用しません。`/v1/embeddings`がないプロバイダーでも問題ありません（対応プロバイダーのほとんどにありません）。
+- **🦙 ローカルはクエリ向き、クラウドは取り込み向き** — 2000ページのvault取り込みには通常、長コンテキストのクラウドモデルが必要。262Kのローカルモデルでほとんどのクエリはカバーできます。
+
+### Anthropic vs OpenAI vs Codex OAuth — それぞれ独立したプロバイダー
+
+- **Anthropic**（およびBedrock派生） — 別途請求されるAnthropic Platform APIキー。
+- **OpenAI** — 別途請求されるOpenAI Platform APIキー。
+- **ChatGPT Plan（Codex OAuth）** — 実験的かつ独立したプロバイダー。ブラウザまたはデバイスコードサインイン後、対象となるCodex利用枠を使用。提供状況はOpenAI Codexの認証・モデル・利用枠ポリシーに従い、プラン名だけで利用を保証するものではありません。OpenAIとのパートナーシップや汎用ChatGPT APIではなく、サードパーティのCodex互換機能です。
+
+> 📖 **完全な選択肢テーブル**（クラウド＋ローカル＋PDF OCR＋Codex OAuth＋量子化＋ハードウェア階層）→ [docs/MODEL-GUIDE.md](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/docs/MODEL-GUIDE.md)
+
+---
+
 ## ❓ FAQ
 
 ### このプラグインは実際に何をするのですか？
@@ -445,6 +446,15 @@ LLM-Wikiがあなたのナレッジワークフローの重要な一部になっ
 プロジェクトを支援してくださった方々：
 
 [@jameses-cyber](https://github.com/jameses-cyber)、[@issaqua](https://github.com/issaqua)、Dikson Choi
+
+---
+
+## 🔭 その他のプロジェクト
+
+私が作っている他のプロジェクトです。
+
+- **[obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli)** — ヘッドレス取り込み CLI。Obsidian マーケットプレイスの審査ボットが Node CLI の構造に警告を出さないよう、このリポジトリから独立したリポジトリへ移行中です。ディスク上の vault に対して同じ `WikiEngine` を実行し、レンダラーは不要です。現在も開発中の v0.1 で npm 未公開のため、v1.27.0 までは本リポジトリの `pnpm llm-wiki` をお使いください。
+- **[pi-shift-router](https://github.com/green-dalii/pi-shift-router)** — [pi-coding-agent](https://github.com/earendil-works/pi) 向けのタスクレベルルーター。各ターンの前に小さな LLM ジャッジがメッセージを日常的か重要かに仕分け、選ばれた段がそのターンを最後まで担当します。複雑なタスクではさらに一歩進み、Smart 段が CTO として計画を立て、実装を Fast サブエージェントに委譲し、結果を一つずつレビューして反復します。上げるのは即座に、下げるのは傾向が続いてから。段ごとのフォールバックチェーンが 429 や 5xx を吸収します。ランタイム依存ゼロ、MIT。→ [shiftrouter.greenerai.top](https://shiftrouter.greenerai.top)
 
 ---
 
