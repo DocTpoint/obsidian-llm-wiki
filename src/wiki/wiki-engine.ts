@@ -895,15 +895,16 @@ export class WikiEngine {
         ...(opts?.contentOverride !== undefined ? { contentOverride: opts.contentOverride } : {}),
       });
       if (!analysis) {
-        // v1.26.3 PATCH (user E2E 2026-08-13): when the user opted into a
-        // custom repetitionPenalty, append the localized hint — a value above
-        // 1.0 was confirmed to break grammar-constrained extraction on small
-        // local models (qwen3.5-9b / gemma-4-12b), producing exactly this
-        // "source analysis failed" null result. The hint makes the fix
-        // actionable instead of a dead-end error.
+        // When the user opted into a custom repetitionPenalty, append the
+        // localized hint so the failure names the likely cause (see
+        // repetition-penalty-hint.ts for the E2E rationale).
         throw new Error(
           `Source analysis failed for "${file.basename}". Check the developer console (Ctrl+Shift+I) for network or API errors. If you see SSL/network errors, verify your provider URL and network connection.` +
-          buildRepetitionPenaltyHint(this.settings.language, this.settings.repetitionPenalty),
+          buildRepetitionPenaltyHint(
+            this.settings.language,
+            this.settings.repetitionPenalty,
+            this.settings.provider,
+          ),
         );
       }
       const analysisTime = Date.now() - analysisStart;

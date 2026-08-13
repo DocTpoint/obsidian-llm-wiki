@@ -1,23 +1,26 @@
 import { getText } from './i18n';
+import { repetitionPenaltyWireField } from './repetition-penalty-dialect';
 
 /**
- * v1.26.3 PATCH follow-up (user E2E 2026-08-13): a custom `repetitionPenalty`
- * above 1.0 was confirmed to break grammar-constrained extraction on small
- * local models (qwen3.5-9b / gemma-4-12b on LM Studio) — the model bails
- * with empty or mis-structured JSON and the ingest fails with a generic
- * "Source analysis failed" message that never mentioned the setting.
+ * Localized hint appended to the "Source analysis failed" error when the
+ * user opted into a custom `repetitionPenalty` AND the current provider
+ * actually puts the field on the wire (see repetition-penalty-hint.test.ts
+ * for the E2E rationale).
  *
- * Returns a localized hint (with a leading space, ready to append to an
- * existing failure message) when the user opted into a custom value, or ''
- * when they did not. The hint is deliberately tied to the setting being
- * PRESENT (any defined value, including 1.0) rather than to a specific
- * threshold — the actionable advice ("reduce or clear") lives in the i18n
- * key `repetitionPenaltyErrorHint`, not in code.
+ * Returns a leading-space hint string (ready to append) for any DEFINED
+ * value — deliberately present-any-value, not threshold-based, so the hint
+ * surfaces for the exact failure class — or '' when the setting is unset
+ * or the provider drops the field (`repetitionPenaltyWireField` returns
+ * null, e.g. anthropic/deepseek/gemini/minimax/glm): naming a setting that
+ * was never sent would misattribute the failure. The actionable advice
+ * lives in the i18n key `repetitionPenaltyErrorHint`.
  */
 export function buildRepetitionPenaltyHint(
   language: string,
   value: number | undefined,
+  provider: string,
 ): string {
   if (value === undefined) return '';
+  if (repetitionPenaltyWireField(provider) === null) return '';
   return ' ' + getText(language, 'repetitionPenaltyErrorHint', { value: String(value) });
 }
