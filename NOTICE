@@ -12,7 +12,12 @@ listed in alphabetical order by GitHub handle:
   and `created:` provenance fix (PR #396, #388)
 - eucher — headless ingest CLI implementation (PR #372,
   `feat(tools): headless ingest CLI for running the engine under Node`),
-  CLI sampling/thinking controls, and plugin source resolution
+  CLI sampling/thinking controls, plugin source resolution,
+  per-step LLM call timing ledger (PR #409, `feat: name each LLM call by step,
+  and time the steps inside a phase`), and `repetitionPenalty` per-backend
+  dialect dispatch (PR #453, Issue #414: `repeat_penalty` for lmstudio/ollama,
+  `repetition_penalty` for kimi/openrouter/custom, dropped for anthropic/
+  deepseek/gemini/minimax/glm)
 - Franco Tampieri (FrancoTampieri) — code contributions
 - Greener-Dalii (green-dalii) — project maintainer and primary author
 - Hashim1999164 — wiki-folder-scope prefix fix (PR #384)

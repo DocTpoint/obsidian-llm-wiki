@@ -28,7 +28,7 @@
 - [クイックスタート](#-クイックスタート)
 - [特徴](#-特徴)
 - [エコシステム](#-エコシステム)
-- [ツール](#-ツール)
+- [🛠️ ヘッドレス CLI](#-ヘッドレス-cli)
 - [検索の仕組み](#-検索の仕組み)
 - [モデル](#-モデル)
 - [FAQ](#-faq)
@@ -272,15 +272,103 @@ Monte Carlo PPR（Fogaras 2005）を使用 — 3,000ランダムウォーク×50
 
 ---
 
-## 🛠️ ツール
+## 🛠️ ヘッドレス CLI
 
-プラグインにはこのリポジトリに headless CLI が付属しており、ディスク上の vault に対して同じ取り込みパイプラインを実行できます——Obsidian も Electron もディスプレイも不要です。エンジン、アナライザ、ページファクトリ、スキーママネージャ、LLM クライアントは `src/` から直接インポートされ、ホスト（`obsidian`、ライブ vault、metadataCache）のみが shim に置き換わります。CI、スクリプト実行、腕単位でのサンプリングパラメータ比較、単一ソースでの抽出ループのプロファイリングに有用です。
+ディスク上の vault に対して同じ取り込みパイプラインを実行できます——**Obsidian も Electron もディスプレイも不要**。CI、スクリプト実行、バッチ評価、ヘッドレス回帰ベンチマーク、Obsidian 自体が利用できないあらゆる環境で有用です。
+
+### 🚀 実行（リポジトリ内、現在の権威あるソース）
+
+CLI は本リポジトリの [`tools/llm-wiki-cli/`](https://github.com/green-dalii/obsidian-llm-wiki/tree/main/tools/llm-wiki-cli) に同梱されており、`pnpm llm-wiki` で実行します（bin エントリは `package.json` の `"bin": { "llm-wiki": "./tools/llm-wiki-cli/run-llm-wiki.mjs" }` で宣言済み）。bin 経由でも直接呼び出しても構いません：
 
 ```bash
-pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+# bin 経由（本プラグインリポジトリで `pnpm install` 実行後）
+WIKI_API_KEY=... pnpm llm-wiki ingest \
+  --vault /path/to/your/vault \
+  --source "notes/foo.md" \
+  --dry-run
+
+# 直接呼び出し（同じ効果）
+WIKI_API_KEY=... node tools/llm-wiki-cli/run-llm-wiki.mjs ingest \
+  --vault /path/to/your/vault \
+  --source "notes/foo.md" \
+  --dry-run
 ```
 
-全フラグリファレンス、環境要件、shim の注意事項は [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md) を参照してください。
+**エンジン、アナライザ、ページファクトリ、スキーママネージャ、LLM クライアント**——すべて `../../src/` から直接インポートされます。置き換えられるのはホスト（`obsidian`、ライブ vault、metadataCache）のみ。esbuild 駆動の shim（`tools/llm-wiki-cli/src/obsidian.ts` が `obsidian` モジュールシンボルを提供し、`tools/llm-wiki-cli/src/vault.ts` がファイルシステムアダプタを提供する）により、本番エンジンのコードが素の Node 上で動作します。
+
+### ⚙️ 設定の仕組み
+
+CLI はあなたのプラグイン設定を再利用します——CLI 専用の設定画面はありません。設定は `<vault>/.obsidian/plugins/karpathywiki/data.json`（Obsidian が書き込むのと同じファイル）から、プラグインの `applySettingsMigrations` 実行後に読み込まれます。CLI を使用するには：
+
+1. **まず Obsidian で provider を設定**——**設定 → LLM Wiki** を開き、provider を選び、API キーを入力し、**Test Connection** をクリックして保存してください。CLI はあなたが保存した内容を読み込みます。
+2. **`WIKI_API_KEY` で API キーを供給**——Obsidian は v1.25.3 で API キーを SecretStorage（OS のキーチェーン）に移行しており、Node は SecretStorage を読み込めません。CLI は環境変数からキーを読み取ります；キーが無い場合はハードエラーとなり、OS 別の抽出コマンドが出力されます：
+
+   ```bash
+   # macOS — キーチェーンから取得
+   WIKI_API_KEY=$(security find-generic-password -s "obsidian-lw-plugin-karpathywiki" -w) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Linux（libsecret）
+   WIKI_API_KEY=$(secret-tool lookup service obsidian-lw-plugin-karpathywiki) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Windows
+   # 資格情報マネージャー → Windows 資格情報 → "obsidian-lw-plugin-karpathywiki" → 表示
+   $env:WIKI_API_KEY = "sk-..."
+   pnpm llm-wiki ingest --vault C:\path\to\vault --source "notes\foo.md"
+   ```
+
+   キーが不要なローカルエンドポイント（Ollama、LM Studio）では、空でない任意のプレースホルダーで動作します（`WIKI_API_KEY=unused`）。キーは決してログされず、ファイルにも書き込まれません。
+3. **Node 24+ が必要**（プラグインの `.nvmrc` と一致；`crypto.subtle` と `fetch` はネイティブ）。`obsidian-llm-wiki/node_modules` がインストールされている必要があります——バンドラとすべての AI-SDK 依存関係はそこから解決されます。
+
+### 🏳️ フラグリファレンス
+
+| フラグ | 意味 |
+|---|---|
+| `--vault` | vault のルート。必須。 |
+| `--source` | ソースファイルのパス**vault からの相対パス**。必須。1 回の実行で 1 ソース。 |
+| `--dry-run` | 全工程を実行し、すべての書き込みをメモリ内に保持。ページ、`index.md`、`log.md`、schema は書き込まれない。 |
+| `--force` | 重複コンテンツゲートを無視して強制的に再取り込み。 |
+| `--extract-only` | 抽出後に停止。`--dry-run` を暗黙的に有効化（書き込みできない実行が 2 番目のフラグ忘れで vault を触ることを防ぐ）。 |
+| `--model` | `data.json` のモデルを上書き——ツーアーム比較用。 |
+| `--temperature` | サンプリング温度；独自に設定しないすべての `createMessage` をカバー。`--top-p` と一緒に渡してください。 |
+| `--top-p` | 核サンプリング。temperature / top-p のいずれか一方だけ上書きすると、プリセットの半分しか比較できない。 |
+| `--seed` | ベストエフォートのシード。Chat Completions では尊重される；一部のローカルサーバーは受け入れるが無視する。LM Studio で真の再現性が必要なら `--temperature 0` を使う。 |
+| `--thinking-mode` | `data-json` \| `plugin-off` \| `server-default`。 |
+| `--granularity` | `fine` \| `standard` \| `coarse` \| `minimal` \| `custom`。バッチサイズ + アイテム上限 + ラウンド上限を決定。 |
+| `--batch-size` | ラウンドあたりのアイテム数。`--granularity custom` 下ではタイプ別キャップが上書きする場合がある。 |
+| `--round-base` | 粒度のラウンドベース；上限は `min(base × 3, ceil(source_chars / 2000) + 2)`。 |
+| `--max-tokens-per-call` | すべての呼び出しの `max_tokens` を制限。`0` で上限解除；抽出の最小値は 16000 で「無制限」ではない。 |
+| `--max-rounds` | 非推奨；エラーをスロー。`--round-base` を使用してください。 |
+
+**`--dry-run` を付けない場合、CLI は実 vault に書き込みます**——Obsidian が使う書き込みパスと同一なので、ページ、`index.md`、`log.md`、schema ファイルが実際に作成・更新されます。
+
+完全なフラグ表 + shim の注意点 + 再現されないもの（SecretStorage、ストリーミング、vault イベント、`metadataCache.links` / `.headings`）：[`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md) を参照。
+
+### 📋 出力フォーマット
+
+エンジンからの `console.debug` は stdout へ（色付けは無効化、Obsidian DevTools とバイト単位で比較可能）。`console.warn` / `console.error` は stderr へ。`Notice` トーストは `[Notice] …`、進捗メッセージは `[progress] …`、完了した書き込みは `[write] …` と表示されます。実行終了時にはサマリが出力されます：抽出ラウンド、LLM 呼び出し合計、エンティティ、コンセプト、作成・更新ページ数、入力 + 出力トークン、経過時間。
+
+### 🔮 将来：スタンドアロン CLI リポジトリ
+
+リポジトリ内 CLI は v1.27.0 の CLI 分割の完了後、**独立した兄弟リポジトリ**（[`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli)）への**移行を予定**しています（[ROADMAP §v1.27.0 MINOR 設計トラック](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/ROADMAP.md#v1270-minor-design-track) を参照）。なぜ移行するのか：
+
+| 質問 | 回答 |
+|---|---|
+| なぜ本リポジトリから出すのか？ | Obsidian マーケットプレイスのレビューボットは**リポジトリ全体の `.ts` ツリー**を lint し（`src/` だけでなく）、Obsidian プラグインと並置された Node CLI に対して約 60 件の構造的 Warning を報告します（静的 `node:` import、`console.log` 出力、`globalThis` shim など——CLI の本質を壊さずにこれらを修正する方法はありません）。唯一の恒久的な解決策は、CLI をボットのスキャン範囲**外**に、そして `obsidian` ランタイム import を一切持たないリポジトリに置くことです。 |
+| マイグレーション計画は？ | **4 フェーズ展開**（[`obsidian-llm-wiki-cli/SPEC.md` §6](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md) を参照）：**Boot** → 新リポジトリが立ち上がり、リポジトリ内 CLI を権威として維持（v1.26.x PATCH ウィンドウ）→ **Coexist** → 両 CLI が動作、npm パッケージ名 `karpathywiki-cli` を発表（v1.27.0）→ **Deprecate** → リポジトリ内 CLI が EOL を宣言（v1.28.0）→ **Demote** → リポジトリ内 `tools/llm-wiki-cli/` が `../../src/` を参照する**開発専用テストハーネス**になる（ユーザー向けインストールはなし）。 |
+| プラグインのインストールフローは変わりますか？ | ❌ いいえ。プラグインは今後も Obsidian Community Plugins を通じて配布・更新されます。リボンアイコンをクリックするだけのプラグインユーザーは何も変わりません。 |
+| CLI ユーザーにとって何が変わる？ | 現在：本プラグインリポジトリで `pnpm llm-wiki` を実行（または `node tools/llm-wiki-cli/run-llm-wiki.mjs`）。v1.27.0 で `karpathywiki-cli` npm パッケージが公開された後：`npx karpathywiki-cli ingest …` が正規のユーザー向けエントリとなり、リポジトリ内 bin は非推奨とされます。v1.28.0 の Demote 後：リポジトリ内 `tools/llm-wiki-cli/` は開発専用（ユーザー向けインストール対象ではなくなります）。 |
+| 今日の状況は？ | 兄弟リポジトリ [`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli) は **v0.1.0-dev 段階で、まだ npm に公開されていません**。v1.27.0 の Coexist フェーズまで、本リポジトリの `pnpm llm-wiki` が**唯一の**ユーザー向けインストールパスです。 |
+
+### 🔍 リファレンス
+
+- 📘 **リポジトリ内 CLI README：** [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md)——フラグリファレンス、環境要件、shim の注意点、再現されないもの（SecretStorage / ストリーミング / vault イベント / metadataCache.links）。
+- 📘 **兄弟リポジトリ：** [github.com/green-dalii/obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli)——開発中（v0.1.0-dev、まだ npm 未公開）。
+- 🏛️ **アーキテクチャの根拠：** [`obsidian-llm-wiki-cli/SPEC.md` §1](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md)——なぜ分割がボット盲点問題に対する唯一の恒久的な答えなのか。
+- 🗺️ **フェーズ追跡：** [`obsidian-llm-wiki-cli/ROADMAP.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/ROADMAP.md)——4 フェーズの移行タイムライン。
+
+> 💡 **v1.27.0 がリリースされるまで**、リポジトリ内の `pnpm llm-wiki` が正規の CLI です。`green-dalii/obsidian-llm-wiki-cli` の兄弟リポジトリは並行開発であり、公開されたユーザー向けインストールではありません——しばらくは `pnpm llm-wiki` をご利用ください。
 
 ---
 

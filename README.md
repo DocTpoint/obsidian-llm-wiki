@@ -1,3 +1,28 @@
+<!--
+SEO metadata (not user-visible, parsed by crawlers / LLMs):
+- name: karpathy-llm-wiki-plugin-for-obsidian
+- type: software / Obsidian community plugin / knowledge-base generator / RAG alternative
+- license: Apache-2.0
+- language: TypeScript
+- runtime: Obsidian >= 1.11.4 (desktop + mobile)
+- dependencies: zero runtime dependencies (Vercel AI SDK v6 bundled)
+- obsidian-plugin-id: karpathywiki
+- obsidian-marketplace: https://community.obsidian.md/plugins/karpathywiki
+- repo: https://github.com/green-dalii/obsidian-llm-wiki
+- sister-cli-repo: https://github.com/green-dalii/obsidian-llm-wiki-cli
+- docs: README.md + docs/README_<locale>.md (11 locales) + docs/MODEL-GUIDE.md + docs/PDF-OCR-GUIDE.md
+- first-published: 2025-09 (v0.1.0)
+- latest: v1.26.3 (PATCH composition merged 2026-08-13; tag pending)
+- last-updated: 2026-08-13
+- alternate-names: Karpathy wiki, LLM wiki Obsidian, Obsidian wiki plugin, graph-based RAG, no-embedding RAG, Personalized PageRank retrieval, multi-agent knowledge base, Obsidian second brain
+- search-intents: "Obsidian RAG without embeddings", "Obsidian wiki plugin", "Personalized PageRank Obsidian", "graph-based note retrieval", "Karpathy LLM wiki implementation", "Obsidian knowledge base auto-generation", "Obsidian graph view + AI", "Obsidian second brain plugin", "Obsidian note link graph AI", "Obsidian plugin 11 languages", "Obsidian plugin 12 LLM providers", "no-vector-DB RAG", "Obsidian PDF ingest AI", "Obsidian Codex OAuth", "Obsidian Bedrock plugin"
+- features: graph-based retrieval, Personalized PageRank (Haveliwala 2002), Monte Carlo PPR (Fogaras 2005), 5-stage seed-selection cascade, Tier 1/Tier 2 duplicate detection, 11-language UI + 11-language wiki output (independent), 12+ LLM providers (Anthropic, OpenAI, Bedrock, Gemini, DeepSeek, Kimi, GLM, MiniMax, Ollama, LM Studio, OpenRouter, Anthropic-Compatible, Codex OAuth), PDF ingest (cache-only, OCR paths), lint health scan, Smart Fix All, Obsidian Graph View integration, zero-embedding zero-vector-DB architecture, local-first mode
+- direct-competitors: nashsu/llm_wiki (Tauri desktop app), SamurAIGPT/llm-wiki-agent (Claude Code skill), sdyckjq/llm-wiki-skill (Codex skill), atomicstrata/llm-wiki-compiler (Python pipeline)
+- retrieval-benchmark: PPR @5 = 27.1% vs pure-kNN 24.1% (project corpus, only published number in this open-source LLM-wiki space)
+- author: green-dalii / Greener-Dalii (https://github.com/green-dalii)
+- canonical: https://github.com/green-dalii/obsidian-llm-wiki/blob/main/README.md
+-->
+
 ![llm_wiki_banner](/docs/assets/llm_wiki_banner.webp)
 
 # 🧠 Karpathy LLM Wiki Plugin for Obsidian
@@ -15,7 +40,7 @@
 
 [Official Site](https://llmwiki.greenerai.top/) | [Obsidian Marketplace](https://community.obsidian.md/plugins/karpathywiki) | [Blog](https://llmwiki.greenerai.top/blog/) | [Discussions](https://github.com/green-dalii/obsidian-llm-wiki/discussions)
 
-🤔 [Why this plugin?](#-why-this-plugin) | 🚀 [Quick Start](#-quick-start) | ✨ [Features](#-features) | 🌐 [Ecosystem](#-ecosystem) | 🔍 [How Retrieval Works](#-how-retrieval-works) | 🤖 [Models](#-models) | ❓ [FAQ](#-faq)
+🤔 [Why this plugin?](#-why-this-plugin) | 🚀 [Quick Start](#-quick-start) | ✨ [Features](#-features) | 🌐 [Ecosystem](#-ecosystem) | 🛠️ [Headless CLI](#-headless-cli) | 🔍 [How Retrieval Works](#-how-retrieval-works) | 🤖 [Models](#-models) | ❓ [FAQ](#-faq)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/H7V1228WMD) ← If this plugin has helped you, feel free to buy me a coffee♥️ or drop a star🌟↗
 
@@ -28,7 +53,7 @@
 - [Quick Start](#-quick-start)
 - [Features](#-features)
 - [Ecosystem](#-ecosystem)
-- [Tools](#-tools)
+- [Headless CLI](#-headless-cli)
 - [How retrieval works](#-how-retrieval-works)
 - [Models](#-models)
 - [FAQ](#-faq)
@@ -203,15 +228,99 @@ The plugin composes with the rest of your Obsidian stack — each tool below plu
 
 ---
 
-## 🛠️ Tools
+## 🛠️ Headless CLI
 
-The plugin ships a headless CLI in this repo so you can run the same ingest pipeline against a vault on disk — no Obsidian, no Electron, no display. The engine, the analyzer, the page factory, the schema manager and the LLM clients are imported straight from `src/`; only the host (`obsidian`, the live vault, the metadataCache) is replaced by a shim. Useful for CI, scripted runs, comparing sampling parameters across arms, and profiling the extract loop on a single source.
+Same ingest pipeline as the plugin, but running under plain Node. Use it when Obsidian isn't around — CI, batch jobs, scripted runs.
+
+### Run it
+
+The CLI ships in this repo at `tools/llm-wiki-cli/`. After `pnpm install`, it shows up as the `llm-wiki` bin:
 
 ```bash
-pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+WIKI_API_KEY=... pnpm llm-wiki ingest \
+  --vault /path/to/your/vault \
+  --source "notes/foo.md" \
+  --dry-run
 ```
 
-See the full flag reference, environment requirements, and shim caveats in [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md).
+That's it. `--dry-run` keeps every page in memory so nothing is written; drop it to do the real write.
+
+### Configuration: where do my settings come from?
+
+The CLI doesn't have its own settings — it reads the same `<vault>/.obsidian/plugins/karpathywiki/data.json` that Obsidian writes. Before using the CLI:
+
+1. **Configure the provider in Obsidian once.** Settings → LLM Wiki → pick a provider, paste the API key, click **Test Connection**, save. The CLI will read whatever you saved there.
+2. **Pass the API key via `WIKI_API_KEY`.** v1.25.3 moved keys into Obsidian's SecretStorage (the OS keychain), which Node can't read. So the CLI takes the key from the environment, and a missing key is a hard error — it'll print the right command for your OS:
+
+   ```bash
+   # macOS — pull from the keychain
+   WIKI_API_KEY=$(security find-generic-password -s "obsidian-lw-plugin-karpathywiki" -w) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Linux (libsecret)
+   WIKI_API_KEY=$(secret-tool lookup service obsidian-lw-plugin-karpathywiki) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Windows
+   # Credential Manager → Windows Credentials → "obsidian-lw-plugin-karpathywiki" → Show
+   $env:WIKI_API_KEY = "sk-..."
+   pnpm llm-wiki ingest --vault C:\path\to\vault --source "notes\foo.md"
+   ```
+
+   For keyless local endpoints (Ollama, LM Studio) any placeholder works (`WIKI_API_KEY=unused`). The key is never logged, never written to a file.
+3. **Node 24+ required.** Matches the plugin's `.nvmrc`; `crypto.subtle` and `fetch` are native. `obsidian-llm-wiki/node_modules` must be installed.
+
+### Flags
+
+The flag set is small. The big ones:
+
+| Flag | What it does |
+|---|---|
+| `--vault` | Vault root. Required. |
+| `--source` | Source file relative to the vault. Required. One source per run — for batches, loop over it. |
+| `--dry-run` | Run the full pipeline, keep every write in memory. Drop it to write for real. |
+| `--force` | Re-ingest even if the duplicate-content gate says it's a duplicate. |
+| `--extract-only` | Stop after extraction. Implies `--dry-run` — you can't accidentally write from this flag. |
+| `--model` | Override the model from `data.json`. Useful for A/B comparisons. |
+| `--temperature` / `--top-p` | Sampling overrides. Pass them together: a preset is the pair. |
+| `--seed` | Best-effort seed. Honoured by Chat Completions; some local servers accept it and ignore it (LM Studio does this — `--temperature 0` is the only true reproducibility knob there). |
+| `--thinking-mode` | `data-json` / `plugin-off` / `server-default`. |
+| `--granularity` | `fine` / `standard` / `coarse` / `minimal` / `custom`. Drives batch size + item limit + round ceiling together. |
+| `--batch-size` / `--round-base` | Lower-level knobs. Under `--granularity custom` the per-type caps may overwrite them. |
+| `--max-tokens-per-call` | Cap `max_tokens` per call. `0` removes the cap (extraction's minimum is still 16000). |
+| `--max-rounds` | Deprecated; throws. Use `--round-base`. |
+
+Full flag table + shim caveats + what isn't reproduced (SecretStorage, streaming, vault events, `metadataCache.links`/`.headings`): see [`tools/llm-wiki-cli/README.md`](tools/llm-wiki-cli/README.md).
+
+### Output
+
+Engine `console.debug` goes to stdout. `console.warn`/`console.error` go to stderr. Toasts render as `[Notice] …`, progress as `[progress] …`, completed writes as `[write] …`. The run ends with a summary: extraction rounds, total LLM calls, entities, concepts, pages created and updated, input + output tokens, elapsed time.
+
+### What's in the bundle
+
+The CLI imports the production `WikiEngine`, `SourceAnalyzer`, `PageFactory`, `SchemaManager`, and LLM clients straight from `../../src/`. The only thing replaced is the host (`obsidian`, the live vault, the metadataCache) — esbuild bundles `tools/llm-wiki-cli/src/main.ts` for Node and rewrites every `from 'obsidian'` to `tools/llm-wiki-cli/src/obsidian.ts`. One shared module means one shared `TFile` class, which is what makes the engine's `instanceof TFile` checks work.
+
+### Future: standalone repo
+
+The CLI is **moving out of this repo** into a standalone sibling at [`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli). Why: the Obsidian marketplace review bot lints the whole repo `.ts` tree, not just `src/`, and flags ~60 structural Warnings on any Node CLI living alongside an Obsidian plugin (static `node:` imports, `console.log` output, `globalThis` shim — all unfixable without breaking what the CLI is).
+
+The migration has four phases — **Boot → Coexist → Deprecate → Demote** — outlined in [`obsidian-llm-wiki-cli/SPEC.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md). The short version:
+
+- **Today (v1.26.x PATCH window):** sibling repo boots; `pnpm llm-wiki` here is still the only user-facing CLI.
+- **v1.27.0:** npm package `karpathywiki-cli` publishes; both CLIs work, but the npm one is the recommended path.
+- **v1.28.0:** in-tree CLI announces EOL.
+- **After Demote:** `tools/llm-wiki-cli/` becomes a dev-only test harness referencing `../../src/`, not a user install target.
+
+The sibling repo is at **v0.1.0-dev, not yet on npm** as of 2026-08-13. Until v1.27.0's Coexist phase, `pnpm llm-wiki` here is the canonical CLI — please use it for now. If you only ever clicked the ribbon icon in Obsidian, none of this matters to you; the plugin still ships and updates through Community Plugins as before.
+
+### Reference
+
+- 📘 [`tools/llm-wiki-cli/README.md`](tools/llm-wiki-cli/README.md) — flag reference, environment, shim caveats
+- 📘 [github.com/green-dalii/obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli) — sibling repo (v0.1.0-dev, not yet on npm)
+- 🏛️ [`obsidian-llm-wiki-cli/SPEC.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md) — why the split, 4-phase rollout
+- 🗺️ [`obsidian-llm-wiki-cli/ROADMAP.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/ROADMAP.md) — phase tracking
+
+> 💡 **Until v1.27.0 ships**, use `pnpm llm-wiki` from this repo. The sibling repo is parallel development, not a published install.
 
 ---
 

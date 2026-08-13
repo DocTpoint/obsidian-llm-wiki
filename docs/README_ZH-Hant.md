@@ -28,7 +28,7 @@
 - [🚀 快速開始](#-快速開始)
 - [✨ 核心特性](#-核心特性)
 - [🌐 生態](#-生態)
-- [🛠️ 工具](#-工具)
+- [🛠️ 無頭 CLI](#-無頭-cli)
 - [🔍 檢索原理](#-檢索原理)
 - [🤖 模型](#-模型)
 - [❓ 常見問題 (FAQ)](#-常見問題-faq)
@@ -271,15 +271,103 @@
 - **🖼️ Canvas** —— Obsidian 原生無限畫布。把 Wiki 卡片拖到 Canvas 上，無需離開 vault 即可拼裝學習指南、心智圖或研究概覽，所有內容均透過 `[[wiki-links]]` 互聯。
 - **🎤 [Obsidian Nous](https://github.com/AndyMDH/obsidian-nous)** —— 本地語音備忘錄與會議錄製（macOS 上使用 whisper.cpp，音訊資料不出本機）的配套外掛。產生帶說話者標記的轉錄檔案與自有 wiki 中心頁面。與本外掛相互獨立——可在同一 vault 共存而無需耦合。
 
-## 🛠️ 工具
+## 🛠️ 無頭 CLI
 
-此外掛在本倉庫隨附一個無頭 CLI，可在磁碟上的 vault 上執行同一攝入管線——無需 Obsidian、無需 Electron、無需介面。引擎、分析器、頁面工廠、Schema 管理器與 LLM 客戶端均直接從 `src/` 匯入；僅宿主（`obsidian`、即時 vault、metadataCache）被替換為 shim。適用於 CI、腳本化執行、跨臂比較採樣參數，以及在單一來源上分析萃取迴圈。
+在磁碟上的 vault 上執行同一攝入管線——**無需 Obsidian、無需 Electron、無需介面**。適用於 CI、腳本化執行、批次評估、無頭迴歸基準測試，以及任何沒有 Obsidian 本身的環境。
+
+### 🚀 執行（倉庫內，目前權威源碼）
+
+CLI 位於本倉庫 [`tools/llm-wiki-cli/`](https://github.com/green-dalii/obsidian-llm-wiki/tree/main/tools/llm-wiki-cli)，透過 `pnpm llm-wiki` 執行（bin 入口已在 `package.json` 的 `"bin": { "llm-wiki": "./tools/llm-wiki-cli/run-llm-wiki.mjs" }` 中宣告）。使用 bin 或直接呼叫皆可：
 
 ```bash
-pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md" --dry-run
+# 透過 bin（在本外掛倉庫執行 `pnpm install` 後）
+WIKI_API_KEY=... pnpm llm-wiki ingest \
+  --vault /path/to/your/vault \
+  --source "notes/foo.md" \
+  --dry-run
+
+# 直接呼叫（效果相同）
+WIKI_API_KEY=... node tools/llm-wiki-cli/run-llm-wiki.mjs ingest \
+  --vault /path/to/your/vault \
+  --source "notes/foo.md" \
+  --dry-run
 ```
 
-完整 flag 參考、環境需求與 shim 注意事項見 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md)。
+**引擎、分析器、頁面工廠、Schema 管理器、LLM 客戶端**——全部直接從 `../../src/` 匯入。唯一被替換的是宿主（`obsidian`、即時 vault、metadataCache）；由 esbuild 驅動的 shim（`tools/llm-wiki-cli/src/obsidian.ts` 提供 `obsidian` 模組符號，`tools/llm-wiki-cli/src/vault.ts` 提供檔案系統適配器）讓生產引擎代碼能夠在普通 Node 下執行。
+
+### ⚙️ 設定如何運作
+
+CLI 複用你的外掛設定——沒有獨立的 CLI 設定介面。設定從 `<vault>/.obsidian/plugins/karpathywiki/data.json`（Obsidian 寫入的同一檔案）讀取，並在執行外掛的 `applySettingsMigrations` 之後生效。要使用 CLI：
+
+1. **先在 Obsidian 中設定 provider**——開啟 **設定 → LLM Wiki**，選擇 provider，輸入 API 金鑰，點擊 **Test Connection**，儲存。CLI 會讀取你儲存的所有內容。
+2. **透過 `WIKI_API_KEY` 提供 API 金鑰**——Obsidian 在 v1.25.3 將 API 金鑰遷移到了 SecretStorage（作業系統鑰匙圈），而 Node 無法讀取 SecretStorage。CLI 從環境變數讀取金鑰；金鑰缺失是硬錯誤，會打印各作業系統對應的提取指令：
+
+   ```bash
+   # macOS — 從鑰匙圈提取
+   WIKI_API_KEY=$(security find-generic-password -s "obsidian-lw-plugin-karpathywiki" -w) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Linux（libsecret）
+   WIKI_API_KEY=$(secret-tool lookup service obsidian-lw-plugin-karpathywiki) \
+     pnpm llm-wiki ingest --vault /path/to/vault --source "notes/foo.md"
+
+   # Windows
+   # 認證管理員 → Windows 認證 → "obsidian-lw-plugin-karpathywiki" → 顯示
+   $env:WIKI_API_KEY = "sk-..."
+   pnpm llm-wiki ingest --vault C:\path\to\vault --source "notes\foo.md"
+   ```
+
+   對於無需金鑰的本地端點（Ollama、LM Studio），任意非空佔位符皆可（如 `WIKI_API_KEY=unused`）。金鑰永遠不會被記錄，也不會寫入任何檔案。
+3. **需要 Node 24+**（與此外掛的 `.nvmrc` 對齊；`crypto.subtle` 和 `fetch` 都是原生支援）。必須安裝 `obsidian-llm-wiki/node_modules`——打包器和所有 AI-SDK 依賴都從那裡解析。
+
+### 🏳️ 旗標參考
+
+| 旗標 | 含義 |
+|---|---|
+| `--vault` | Vault 根目錄。必填。 |
+| `--source` | 來源檔案路徑**相對於 vault**。必填。每次執行一個來源。 |
+| `--dry-run` | 執行所有流程，但將所有寫入保留在記憶體中。不會寫入頁面、`index.md`、`log.md` 和 schema。 |
+| `--force` | 忽略重複內容門檻，強制重新攝入。 |
+| `--extract-only` | 在提取之後停止。隱含 `--dry-run`（這樣不能寫入的執行也不會因忘記第二個旗標而碰觸 vault）。 |
+| `--model` | 覆寫 `data.json` 中的模型——用於兩臂對比。 |
+| `--temperature` | 採樣溫度；覆寫所有沒有自行設定的 `createMessage`。與 `--top-p` 一起使用。 |
+| `--top-p` | 核心採樣。僅覆寫 temperature / top-p 其一時，你只對比了一半預設。 |
+| `--seed` | 盡力而為的種子。被 Chat Completions 遵守；某些本地伺服器接受但忽略。在 LM Studio 上要獲得真正可重現性，請使用 `--temperature 0`。 |
+| `--thinking-mode` | `data-json` \| `plugin-off` \| `server-default`。 |
+| `--granularity` | `fine` \| `standard` \| `coarse` \| `minimal` \| `custom`。決定批次大小 + 項目上限 + 輪次上限。 |
+| `--batch-size` | 每輪項目數。在 `--granularity custom` 下，按類型上限可能覆寫它。 |
+| `--round-base` | 粒度的輪次基數；上限為 `min(base × 3, ceil(source_chars / 2000) + 2)`。 |
+| `--max-tokens-per-call` | 限制每次呼叫的 `max_tokens`。`0` 表示取消上限；提取的最小值是 16000，不是「無限制」。 |
+| `--max-rounds` | 已棄用；會拋出錯誤。請使用 `--round-base`。 |
+
+**沒有 `--dry-run` 時，CLI 會寫入真實的 vault**——與 Obsidian 使用的寫入路徑相同，所以頁面、`index.md`、`log.md` 和 schema 檔案都會被真實地建立或更新。
+
+完整的旗標表 + shim 注意 + 未被重現的部分（SecretStorage、串流、vault 事件、`metadataCache.links` / `.headings`）：請參閱 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md)。
+
+### 📋 輸出格式
+
+引擎的 `console.debug` 寫入 stdout（關閉顏色，便於與 Obsidian DevTools 進行位元組級比較）。`console.warn` / `console.error` 寫入 stderr。`Notice` toast 打印為 `[Notice] …`，進度訊息打印為 `[progress] …`，完成的寫入打印為 `[write] …`。執行以摘要結束：提取輪次、LLM 呼叫總數、實體、概念、已建立和更新的頁面、輸入 + 輸出 token、耗時。
+
+### 🔮 未來：獨立的 CLI 倉庫
+
+倉庫內 CLI **計劃遷移**到一個獨立的兄弟倉庫（[`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli)），待 v1.27.0 CLI 拆分完成（見 [ROADMAP §v1.27.0 MINOR 設計軌道](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/ROADMAP.md#v1270-minor-design-track)）。為什麼遷移：
+
+| 問題 | 答案 |
+|---|---|
+| 為什麼要移出本倉庫？ | Obsidian 市集審核機器人會掃描**整個倉庫的 `.ts` 樹**（不僅僅是 `src/`），並對任何與 Obsidian 外掛並置的 Node CLI 報告約 60 條結構性 Warning（靜態 `node:` 匯入、`console.log` 輸出、`globalThis` shim——這些在不摧毀 CLI 本質的前提下都無法修復）。唯一持久的解決方案是把 CLI 放在機器人掃描範圍**之外**，並放在一個完全沒有 `obsidian` 執行時匯入的倉庫裡。 |
+| 遷移計畫是什麼？ | **4 階段交付**（見 [`obsidian-llm-wiki-cli/SPEC.md` §6](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md)）：**Boot** → 新倉庫上線 + 倉庫內 CLI 保持權威（v1.26.x PATCH 窗口）→ **Coexist** → 兩個 CLI 同時可用，npm 套件名稱 `karpathywiki-cli` 公佈（v1.27.0）→ **Deprecate** → 倉庫內 CLI 宣告 EOL（v1.28.0）→ **Demote** → 倉庫內 `tools/llm-wiki-cli/` 變成**僅供開發的測試 harness**，引用 `../../src/`（不再面向使用者安裝）。 |
+| 這會改變外掛的安裝流程嗎？ | ❌ 不會。外掛仍然透過 Obsidian Community Plugins 發佈和更新。只點擊 ribbon 圖示的外掛使用者感受不到任何差別。 |
+| CLI 使用者會有什麼變化？ | 現在：在本外掛倉庫中透過 `pnpm llm-wiki` 執行（或 `node tools/llm-wiki-cli/run-llm-wiki.mjs`）。v1.27.0 發佈 `karpathywiki-cli` npm 套件之後：`npx karpathywiki-cli ingest …` 成為面向使用者的規範入口，倉庫內 bin 被標記為已棄用。v1.28.0 Demote 之後：倉庫內 `tools/llm-wiki-cli/` 僅供開發（不再是面向使用者的安裝目標）。 |
+| 現在的狀態？ | 兄弟倉庫 [`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli) 處於 **v0.1.0-dev 階段，尚未發佈到 npm**。在 v1.27.0 Coexist 階段之前，本倉庫的 `pnpm llm-wiki` 是**唯一**面向使用者的安裝路徑。 |
+
+### 🔍 參考
+
+- 📘 **倉庫內 CLI README：** [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md)——旗標參考、環境要求、shim 注意、未重現的部分（SecretStorage / 串流 / vault 事件 / metadataCache.links）。
+- 📘 **兄弟倉庫：** [github.com/green-dalii/obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli)——開發中（v0.1.0-dev，尚未發佈到 npm）。
+- 🏛️ **架構原理：** [`obsidian-llm-wiki-cli/SPEC.md` §1](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md)——為什麼拆分是機器人盲點問題的唯一持久答案。
+- 🗺️ **階段追蹤：** [`obsidian-llm-wiki-cli/ROADMAP.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/ROADMAP.md)——4 階段遷移時間線。
+
+> 💡 **在 v1.27.0 發佈之前**，倉庫內的 `pnpm llm-wiki` 是規範 CLI。位於 `green-dalii/obsidian-llm-wiki-cli` 的兄弟倉庫是並行開發，並非已發佈的使用者安裝路徑——請暫時使用 `pnpm llm-wiki`。
 
 ---
 
