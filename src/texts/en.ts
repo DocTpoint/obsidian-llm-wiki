@@ -607,7 +607,8 @@ export const EN_TEXTS = {
     chatTemperatureName: 'Query temperature',
     chatTemperatureDesc: 'Same idea as Extraction temperature, but only affects how Query Wiki answers questions. Lower numbers = more literal answers; higher numbers = more conversational. Most users leave this blank.',
     repetitionPenaltyName: 'Repetition penalty',
-    repetitionPenaltyDesc: 'Discourages the model from repeating the same words or phrases. Higher numbers mean less repetition. Only certain local-model providers (Ollama, LM Studio, llama.cpp) accept this; cloud providers will silently ignore it. Most users leave this blank.',
+    repetitionPenaltyDesc: 'Discourages the model from repeating the same words or phrases. Higher numbers mean less repetition. Only certain local-model providers (Ollama, LM Studio, llama.cpp) accept this; cloud providers will silently ignore it. Most users leave this blank. Values above 1.0 may cause LLM output errors during extraction on small local models — if a run fails, reduce or clear this value.',
+    repetitionPenaltyErrorHint: 'Note: a custom Repetition penalty of {value} is set. Values above 1.0 can break grammar-constrained extraction on small local models — reduce or clear this setting and retry.',
     temperaturePlaceholder: 'leave blank = provider default',
     // v1.26.0 (#382 item 2): Lint dedup threshold overrides (bottom
     // "Advanced settings" panel, showAdvancedSettings toggle on). The

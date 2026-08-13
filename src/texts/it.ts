@@ -590,7 +590,8 @@ export const IT_TEXTS = {
     chatTemperatureName: 'Temperatura query',
     chatTemperatureDesc: 'Stesso concetto della temperatura di estrazione, ma influisce solo su come Query Wiki risponde alle domande. Valori bassi = risposte più letterali; valori alti = risposte più colloquiali. La maggior parte degli utenti lascia vuoto.',
     repetitionPenaltyName: 'Penalità di ripetizione',
-    repetitionPenaltyDesc: 'Impedisce al modello di ripetere le stesse parole o frasi. Valori più alti riducono la ripetizione. Solo alcuni provider di modelli locali (Ollama, LM Studio, llama.cpp) accettano questo parametro; i provider cloud lo ignorano silenziosamente. La maggior parte degli utenti lascia vuoto.',
+    repetitionPenaltyDesc: "Impedisce al modello di ripetere le stesse parole o frasi. Valori più alti riducono la ripetizione. Solo alcuni provider di modelli locali (Ollama, LM Studio, llama.cpp) accettano questo parametro; i provider cloud lo ignorano silenziosamente. La maggior parte degli utenti lascia vuoto. Un valore superiore a 1,0 può causare errori nell'output del LLM durante l'estrazione su piccoli modelli locali — se un'esecuzione fallisce, riduci o cancella questo valore.",
+    repetitionPenaltyErrorHint: "Nota: è impostata una penalità di ripetizione personalizzata di {value}. Valori superiori a 1,0 possono rompere l'estrazione con vincoli grammaticali sui piccoli modelli locali — riduci o cancella questa impostazione e riprova.",
     temperaturePlaceholder: 'lasciare vuoto = predefinito provider',
     // v1.26.0 (#382 item 2): Soglie di rilevamento duplicati
     // (solo modalità avanzata personalizzata).
