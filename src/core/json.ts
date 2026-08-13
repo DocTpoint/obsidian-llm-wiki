@@ -155,15 +155,30 @@ export type JsonParseResult =
  * to be a placeholder (≤1 field). Legitimate empty objects (`{}` from a
  * real "no entities" answer) are allowed through — they are `[]`-shaped
  * intent, not grammar-constrained artifacts.
+ *
+ * v1.26.3 PATCH follow-up (user E2E 2026-08-13, qwen3.5-9b on LM Studio):
+ * the grammar-constrained placeholder's value shape varies by run — the
+ * model bails with `{"": ""}` (empty string) OR `{"": {}}` (empty object)
+ * / `{"": []}` (empty array). The empty-value predicate must treat ALL of
+ * those as empty; a string-only check lets `{"": {}}` slip through to
+ * downstream as a real parse result.
  */
 function isPlaceholderObject(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const obj = value as Record<string, unknown>;
   const keys = Object.keys(obj);
   if (keys.length === 0) return false; // `{}` = legitimate empty intent
-  // All keys empty string AND all values empty → the `{"": ""}` shape.
+  // Empty-value predicate: `''`, `null`, `undefined`, or an empty
+  // container (`{}` / `[]` — the E2E 2026-08-13 variant). Values come from
+  // JSON.parse, so a non-null `typeof v === 'object'` is a plain object or
+  // array; `Object.keys(v).length === 0` is true for both `{}` and `[]`.
+  const isEmptyValue = (v: unknown) =>
+    v === '' || v === null || v === undefined ||
+    (typeof v === 'object' && Object.keys(v).length === 0);
+  // All keys empty string AND all values empty → the `{"": ""}` shape
+  // and its empty-container variants.
   if (keys.every((k) => k === '')) {
-    return Object.values(obj).every((v) => v === '' || v === null || v === undefined);
+    return Object.values(obj).every(isEmptyValue);
   }
   return false;
 }
