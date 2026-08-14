@@ -645,9 +645,32 @@ export function enforceFrontmatterConstraints(
   // Non-canonical fields (unknown keys) are passed through verbatim, preserving
   // prior enforce behavior. newLines already excludes type/tags/aliases/created/
   // updated and list items by construction; the filter is defensive.
+  //
+  // `sources:` is canonical but block-style is multi-line — its header line
+  // lands in newLines while its `- ` entries are dropped by the skip above,
+  // leaving a header with no entries. Exclude it here and re-emit the parsed
+  // array via serializeFrontmatter (mirrors extractPassthroughLines, which
+  // also treats sources as known). See #438 B.
   const passthroughLines = newLines.filter(line =>
     !line.startsWith('type:') && !line.startsWith('tags:') && !line.startsWith('aliases:') &&
-    !line.startsWith('created:') && !line.startsWith('updated:'));
+    !line.startsWith('created:') && !line.startsWith('updated:') && !line.startsWith('sources:'));
+
+  // Preserve existing provenance (block OR flow form) across the rewrite.
+  // parseFrontmatter handles both and strips quoting, matching the shape
+  // yamlStringify expects on the serialize side.
+  //
+  // Filter empty / whitespace-only entries to avoid re-emitting a
+  // `sources:` key whose only entry is `\"\"` — that is the shape the
+  // previous broken constraints pass leaves on disk for the recovery
+  // population (this PR's fix audience). The `aliases` branch has the
+  // same guard at `:452`; mirroring it here is intentional. When
+  // `preservedSources` ends up empty, `serializeFrontmatter` is called
+  // with `sources: undefined` so the key is omitted entirely rather
+  // than emitted as `sources:\\n  - \"\"`.
+  const rawSources = parseFrontmatter(content)?.sources;
+  const preservedSources = Array.isArray(rawSources)
+    ? rawSources.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    : undefined;
 
   const hasTags = foundTags || collectedTags.length > 0;
   const dedupedTags: string[] = [];
@@ -679,6 +702,7 @@ export function enforceFrontmatterConstraints(
       type: foundType ? pageType : undefined,
       created: resolveCreated(options, today),
       updated: today,
+      sources: Array.isArray(preservedSources) && preservedSources.length > 0 ? preservedSources : undefined,
       tags: dedupedTags,
       aliases: (foundAliases || collectedAliases.length > 0) ? collectedAliases : undefined,
     },

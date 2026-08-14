@@ -341,7 +341,7 @@ export function appendSourceSlugToFrontmatter(content: string, sourceSlug: strin
   if (!content.startsWith('---')) return content;
   const fmEnd = content.indexOf('\n---\n', 3);
   if (fmEnd === -1) return content;
-  const fmText = content.substring(3, fmEnd);
+  const fmText = content.substring(3, fmEnd).replace(/^\n/, '');
   const body = content.substring(fmEnd + 5);
   const sourceEntry = `[[sources/${sourceSlug}]]`;
 

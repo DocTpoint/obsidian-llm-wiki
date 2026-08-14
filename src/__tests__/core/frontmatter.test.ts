@@ -347,6 +347,89 @@ describe('enforceFrontmatterConstraints', () => {
     const withoutValue = enforceFrontmatterConstraints(input, 'entity');
     expect(withoutValue).toContain(`created: ${today}`);
   });
+
+  it('#438 B: preserves block-style sources through a constraints pass', () => {
+    const input = [
+      '---',
+      'type: concept',
+      'created: 2026-08-08',
+      'sources:',
+      '  - "[[sources/a_aaa]]"',
+      '  - "[[sources/b_bbb]]"',
+      'tags: [term]',
+      '---',
+      '# X',
+      '',
+      'body',
+    ].join('\n');
+    const result = enforceFrontmatterConstraints(input, 'concept');
+    const parsed = parseFrontmatter(result);
+    // Both source links survive — prior behaviour kept the `sources:` header
+    // but discarded every `- ` entry, then never re-emitted the field (#438 B).
+    expect(parsed?.sources).toEqual(['[[sources/a_aaa]]', '[[sources/b_bbb]]']);
+    expect(parsed?.tags).toEqual(['term']);
+  });
+
+  it('#438 B: preserves flow-style sources through a constraints pass', () => {
+    const input = [
+      '---',
+      'type: concept',
+      'sources: ["[[sources/a_aaa]]", "[[sources/b_bbb]]"]',
+      'tags: [term]',
+      '---',
+      '# X',
+      '',
+      'body',
+    ].join('\n');
+    const result = enforceFrontmatterConstraints(input, 'concept');
+    const parsed = parseFrontmatter(result);
+    expect(parsed?.sources).toEqual(['[[sources/a_aaa]]', '[[sources/b_bbb]]']);
+  });
+
+  // DocTpoint #450 review Finding 1: when a page's `sources:` header has
+  // already been emptied by the pre-fix constraints pass (the recovery
+  // population this PR is for), `preservedSources` reads as `['']` and
+  // the length check passes, so the next constraints pass would write
+  // `sources:\n  - ""` instead of omitting the key. The `aliases` branch
+  // filters empty entries at `:452`; mirror it here so the recovery
+  // population gets a clean read instead of a corrupted re-emit.
+  it('#450 Finding 1: omits the sources key entirely when every preserved entry is empty', () => {
+    const input = [
+      '---',
+      'type: concept',
+      'created: 2026-08-08',
+      'sources:',
+      'tags: [term]',
+      '---',
+      '# X',
+      '',
+      'body',
+    ].join('\n');
+    const result = enforceFrontmatterConstraints(input, 'concept');
+    // No `sources:` key in the output — the recovery population is not
+    // re-corrupted by the fix that protects it.
+    expect(result).not.toMatch(/^sources:/m);
+    // Tags still propagate normally.
+    const parsed = parseFrontmatter(result);
+    expect(parsed?.tags).toEqual(['term']);
+    expect(parsed?.sources).toBeUndefined();
+  });
+
+  it('#450 Finding 1: filters whitespace-only entries alongside truly empty ones', () => {
+    const input = [
+      '---',
+      'type: concept',
+      'sources: ["  ", "[[sources/valid]]"]',
+      'tags: [term]',
+      '---',
+      '# X',
+      '',
+      'body',
+    ].join('\n');
+    const result = enforceFrontmatterConstraints(input, 'concept');
+    const parsed = parseFrontmatter(result);
+    expect(parsed?.sources).toEqual(['[[sources/valid]]']);
+  });
 });
 
 describe('serializeFrontmatter', () => {

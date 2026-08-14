@@ -283,5 +283,28 @@ describe('appendSourceSlugToFrontmatter (#399)', () => {
       const out = appendSourceSlugToFrontmatter(before, 'Beta');
       expect(out).toBe(before);
     });
+
+    it('#438 A: does not introduce a blank line after the opening `---` when appending a source', () => {
+      const before = [
+        '---',
+        'type: concept',
+        'created: 2026-08-08',
+        'sources:',
+        '  - "[[sources/a_aaa]]"',
+        'tags: [term]',
+        '---',
+        '# X',
+        '',
+        'body',
+      ].join('\n');
+      const out = appendSourceSlugToFrontmatter(before, 'b_bbb');
+      const lines = out.split('\n');
+      // line index 1 is the first frontmatter line — must not be blank (#438 A)
+      expect(lines[0]).toBe('---');
+      expect(lines[1]).toBe('type: concept');
+      // Sources preserved + new one appended
+      expect(out).toContain('  - "[[sources/a_aaa]]"');
+      expect(out).toContain('  - "[[sources/b_bbb]]"');
+    });
   });
 });
