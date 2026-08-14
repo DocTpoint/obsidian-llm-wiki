@@ -1,12 +1,12 @@
 # LLM Wiki Plugin Project Development Standards
 
-**Last Updated:** 2026-08-13 (v1.26.3 PATCH composition merged: PRs #447/#448/#453 + #450 + #454 awaiting DocTpoint re-review, tag pending. **Prior 2026-08-09**: v1.26.2 PATCH RELEASED — closed the Obsidian Bot scan-scope blind spot on `tools/llm-wiki-cli/`. **Prior 2026-08-08**: v1.26.2 hotfix PR #442 introduced release-skill HARD STOP ②' (Step 6b.5) so future releases Bot-pre-review before publish.)
+**Last Updated:** 2026-08-14 (v1.26.3 PATCH composition: 5/5 PRs merged on `main` — #447/#448/#453/#450/#454 — release tag `1.26.3` pending release-workflow. **Prior 2026-08-09**: v1.26.2 PATCH RELEASED — closed the Obsidian Bot scan-scope blind spot on `tools/llm-wiki-cli/`. **Prior 2026-08-08**: v1.26.2 hotfix PR #442 introduced release-skill HARD STOP ②' (Step 6b.5) so future releases Bot-pre-review before publish.)
 
 ---
 
-## Current Phase: v1.26.3 PATCH composition merged (tag pending); v1.27.0 MINOR in design
+## Current Phase: v1.26.3 PATCH ready-to-tag (release workflow pending); v1.27.0 MINOR in design
 
-**Current state** (5 PRs merged; #450 + #454 awaiting DocTpoint re-review; release tag `1.26.3` follows DocTpoint approval + maintainer merge) lives in [ROADMAP.md §Current Status](./ROADMAP.md#current-status) — the planning view of the release. **Canonical historical record** of what shipped is [CHANGELOG.md §1.26.3](./CHANGELOG.md#1263---2026-08-12). CLAUDE.md carries **process standards + pointers to the canonical sources** — not per-PR composition (single-source-of-truth rule per Documentation Architecture).
+**Current state** (5/5 PRs merged; release tag `1.26.3` follows release skill Step 1-6 with HARD STOP ②' Obsidian Bot pre-review) lives in [ROADMAP.md §Current Status](./ROADMAP.md#current-status) — the planning view of the release. **Canonical historical record** of what shipped is [CHANGELOG.md §1.26.3](./CHANGELOG.md#1263---2026-08-12). CLAUDE.md carries **process standards + pointers to the canonical sources** — not per-PR composition (single-source-of-truth rule per Documentation Architecture).
 
 v1.26.2 PATCH SHIPPED 2026-08-09 (PR #442): closed the Obsidian Bot scan-scope blind spot — fixed the blocking `unsafe-call` Error + 8 type-safety warnings in `tools/llm-wiki-cli/src/`, added `Platform.isDesktop` AST guards on the runtime-loaded `node:*` imports, and shipped `pnpm lint:tools-bot` so the local blind spot stays closed. **The end-state for the CLI Bot-blind-spot problem is the v1.27.0 [CLI repo split](./ROADMAP.md#v1270-minor-design-track)** — `tools/llm-wiki-cli/` is a temporary in-tree location, scheduled to move to the standalone sibling repo [`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli) where the Bot never scans it. Release-skill v1.7.0 mandates an Obsidian Bot pre-review (Step 6b.5, HARD STOP ②) so future releases can't ship Bot-blocking findings again. See [[feedback_obsidianmd_no_nodejs_guard_detection]] for the rule-detection mechanism.
 
