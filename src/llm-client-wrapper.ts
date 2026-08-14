@@ -119,5 +119,45 @@ export function wrapWithAdvancedSettings(
       }
     };
   }
+
+  // Issue #451: createMessageStream previously inherited verbatim via
+  // Object.create, silently dropping advanced settings on the stream
+  // path. Query Wiki's only production caller (QueryView-class.ts:539)
+  // already manually forwarded `chatTemperature` + `enableThinking` +
+  // a hard cap, so those weren't lost — but `extractionTopP`,
+  // `samplingSeed`, `repetitionPenalty`, `extractionTemperature` were.
+  //
+  // Fix: explicit override gated by `if (client.createMessageStream)`,
+  // mirroring the createMessageWithOutput pattern above. The "only
+  // fill if caller omitted" rule preserves QueryView's manual forwards
+  // (caller-wins semantics) — verified by the regression-guard test
+  // `caller-provided temperature wins over wrapper extractionTemperature`.
+  if (client.createMessageStream) {
+    wrapper.createMessageStream = async (params) => {
+      const startedAt = Date.now();
+      // Issue #451: createMessageStream's interface signature (types.ts:770-783)
+      // intentionally has no `task` field today — it was defined before per-step
+      // LLM accounting (Issue #99 + v1.25.4 plumbing) added the `task` label to
+      // createMessage. Query Wiki is the sole caller (QueryView-class.ts:539)
+      // and currently does not pass `task`, so we cannot reconstruct one here.
+      // Recording as 'untagged' is consistent with how createMessage handles
+      // missing labels — the per-step table will show one 'untagged' row whose
+      // source is "stream path" until a future PR extends the interface to
+      // carry `task` end-to-end.
+      console.debug(`[llm] task=untagged (stream) model=${params.model} max_tokens=${params.max_tokens}`);
+      try {
+        return await client.createMessageStream!({
+          ...params,
+          ...(capTokens ? { max_tokens: capMaxTokens(params.max_tokens, { maxTokensPerCall: settings.maxTokensPerCall }), maxTokensPerCall: settings.maxTokensPerCall } : {}),
+          ...(params.temperature === undefined && settings.extractionTemperature !== undefined ? { temperature: settings.extractionTemperature } : {}),
+          ...(params.top_p === undefined && settings.extractionTopP !== undefined ? { top_p: settings.extractionTopP } : {}),
+          ...(params.repetition_penalty === undefined && settings.repetitionPenalty !== undefined ? { repetition_penalty: settings.repetitionPenalty } : {}),
+          ...(params.seed === undefined && settings.samplingSeed !== undefined ? { seed: settings.samplingSeed } : {}),
+        });
+      } finally {
+        recordTaskUsage(undefined, Date.now() - startedAt);
+      }
+    };
+  }
   return wrapper;
 }

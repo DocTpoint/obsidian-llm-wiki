@@ -165,4 +165,133 @@ describe('wrapWithAdvancedSettings — behavior parity (refactor C)', () => {
       expect(typeof (raw as unknown as Record<string, unknown>).createMessageStream).toBe('function');
     });
   });
+
+  // Issue #451: createMessageStream previously inherited via Object.create,
+  // so wrapper-level settings (temperature / top_p / seed / repetition_penalty
+  // / enableThinking / maxTokensPerCall cap) were silently dropped on the
+  // stream path. Query Wiki's only production caller (QueryView-class.ts:539)
+  // manually forwarded `chatTemperature` + `enableThinking` + a hard cap, so
+  // those weren't lost — but `extractionTopP`, `samplingSeed`, `repetitionPenalty`,
+  // `extractionTemperature` were.
+  //
+  // The fix mirrors createMessageWithOutput's pattern: an explicit override
+  // block gated by `if (client.createMessageStream)`. Use the same
+  // "only fill if caller omitted" rule so QueryView's existing manual
+  // forwards are not double-injected (caller-wins).
+  describe('Issue #451: createMessageStream settings injection', () => {
+    type CreateMessageStreamParams = Parameters<NonNullable<LLMClient['createMessageStream']>>[0];
+
+    function makeStreamRecordingClient(opts: {
+      createMessageStreamImpl?: (params: CreateMessageStreamParams) => Promise<string>;
+    }): LLMClient {
+      return {
+        createMessage: vi.fn(async (_p: CreateMessageParams) => 'unused'),
+        createMessageStream: vi.fn(opts.createMessageStreamImpl ?? (async (_p: CreateMessageStreamParams) => 'stream-echo')) as unknown as LLMClient['createMessageStream'],
+      };
+    }
+
+    it('injects extractionTemperature on stream path when caller omits temperature', async () => {
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 0,
+        extractionTemperature: 0.42,
+      });
+      // LLMClient.createMessageStream is optional (?); assert non-null because
+      // we know the wrapper must provide it after the fix.
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)({
+        model: 'test-model',
+        max_tokens: 100,
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        onChunk: () => undefined,
+      });
+      const callArgs = (client.createMessageStream as ReturnType<typeof vi.fn>).mock.calls[0][0] as CreateMessageStreamParams;
+      expect(callArgs.temperature).toBe(0.42);
+    });
+
+    it('injects extractionTopP on stream path when caller omits top_p', async () => {
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 0,
+        extractionTopP: 0.88,
+      });
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)({
+        model: 'test-model',
+        max_tokens: 100,
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        onChunk: () => undefined,
+      });
+      const callArgs = (client.createMessageStream as ReturnType<typeof vi.fn>).mock.calls[0][0] as CreateMessageStreamParams;
+      expect(callArgs.top_p).toBe(0.88);
+    });
+
+    it('injects samplingSeed on stream path when caller omits seed', async () => {
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 0,
+        samplingSeed: 42,
+      });
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)({
+        model: 'test-model',
+        max_tokens: 100,
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        onChunk: () => undefined,
+      });
+      const callArgs = (client.createMessageStream as ReturnType<typeof vi.fn>).mock.calls[0][0] as CreateMessageStreamParams;
+      expect(callArgs.seed).toBe(42);
+    });
+
+    it('injects repetition_penalty on stream path when caller omits repetition_penalty', async () => {
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 0,
+        repetitionPenalty: 1.15,
+      });
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)({
+        model: 'test-model',
+        max_tokens: 100,
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        onChunk: () => undefined,
+      });
+      const callArgs = (client.createMessageStream as ReturnType<typeof vi.fn>).mock.calls[0][0] as CreateMessageStreamParams;
+      expect((callArgs as CreateMessageStreamParams & { repetition_penalty?: number }).repetition_penalty).toBe(1.15);
+    });
+
+    it('caps max_tokens via maxTokensPerCall on stream path when caller does not pre-cap', async () => {
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 100,
+      });
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)({
+        model: 'test-model',
+        max_tokens: 500,
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        onChunk: () => undefined,
+      });
+      const callArgs = (client.createMessageStream as ReturnType<typeof vi.fn>).mock.calls[0][0] as CreateMessageStreamParams;
+      // capMaxTokens may downscale; the key assertion is that max_tokens is
+      // ≤ maxTokensPerCall (= 100), not the raw 500 caller passed.
+      expect(callArgs.max_tokens).toBeLessThanOrEqual(100);
+    });
+
+    // REGRESSION GUARD: QueryView-class.ts:563-564 already manually forwards
+    // `chatTemperature` and `enableThinking`. A naive wrapper that always
+    // overwrites would double-inject. Caller-wins semantics must hold on
+    // the stream path too.
+    it('caller-provided temperature wins over wrapper extractionTemperature (no double-inject)', async () => {
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 0,
+        extractionTemperature: 0.42,
+      });
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)({
+        model: 'test-model',
+        max_tokens: 100,
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        onChunk: () => undefined,
+        temperature: 0.99,
+      });
+      const callArgs = (client.createMessageStream as ReturnType<typeof vi.fn>).mock.calls[0][0] as CreateMessageStreamParams;
+      expect(callArgs.temperature).toBe(0.99);
+    });
+  });
 });
