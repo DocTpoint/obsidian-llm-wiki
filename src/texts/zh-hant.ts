@@ -551,7 +551,8 @@ export const ZH_HANT_TEXTS = {
     chatTemperatureName: '查詢溫度',
     chatTemperatureDesc: '和「提取溫度」思路相同，但只影響 Query Wiki 回答問題的方式。數值越低回答越字面化；數值越高越像在聊天。大多數使用者留空即可。',
     repetitionPenaltyName: '重複懲罰',
-    repetitionPenaltyDesc: '阻止模型反覆說相同的字詞。數值越高越能減少重複。只有部分本地模型提供商（Ollama、LM Studio、llama.cpp）接受這個參數；雲端提供商會靜默忽略。大多數使用者留空即可。',
+    repetitionPenaltyDesc: '阻止模型反覆說相同的字詞。數值越高越能減少重複。只有部分本地模型提供商（Ollama、LM Studio、llama.cpp）接受這個參數；雲端提供商會靜默忽略。大多數使用者留空即可。數值高於 1.0 可能導致提取時 LLM 輸出錯誤（小模型在語法約束下易失敗）——若運行失敗，請減小或清空此值。',
+    repetitionPenaltyErrorHint: '注意：已設定自訂重複懲罰值 {value}。高於 1.0 的值可能破壞小型本地模型的語法約束提取——請減小或清空此設定後重試。',
     temperaturePlaceholder: '留空 = 使用提供商預設',
     // v1.26.0 (#382 item 2): 重複偵測閾值（僅自訂進階模式）。
     lintDedupJaccardLinkThresholdName: '連結重複相似度',

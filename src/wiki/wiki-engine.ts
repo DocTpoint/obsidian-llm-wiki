@@ -17,6 +17,7 @@ import {
 } from '../types';
 import { PROMPTS } from '../prompts';
 import { getText } from '../core/i18n';
+import { buildRepetitionPenaltyHint } from '../core/repetition-penalty-hint';
 import { formatTaskUsage, snapshotTaskUsage, taskUsageSince } from '../core/llm-task-usage';
 import { TEXTS } from '../texts';
 import { renderTemplate } from '../core/template-renderer';
@@ -894,7 +895,17 @@ export class WikiEngine {
         ...(opts?.contentOverride !== undefined ? { contentOverride: opts.contentOverride } : {}),
       });
       if (!analysis) {
-        throw new Error(`Source analysis failed for "${file.basename}". Check the developer console (Ctrl+Shift+I) for network or API errors. If you see SSL/network errors, verify your provider URL and network connection.`);
+        // When the user opted into a custom repetitionPenalty, append the
+        // localized hint so the failure names the likely cause (see
+        // repetition-penalty-hint.ts for the E2E rationale).
+        throw new Error(
+          `Source analysis failed for "${file.basename}". Check the developer console (Ctrl+Shift+I) for network or API errors. If you see SSL/network errors, verify your provider URL and network connection.` +
+          buildRepetitionPenaltyHint(
+            this.settings.language,
+            this.settings.repetitionPenalty,
+            this.settings.provider,
+          ),
+        );
       }
       const analysisTime = Date.now() - analysisStart;
       console.debug(`[Time] Source analysis phase: ${analysisTime}ms`);

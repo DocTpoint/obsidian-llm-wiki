@@ -580,7 +580,8 @@ export const ES_TEXTS = {
     chatTemperatureName: 'Temperatura de consulta',
     chatTemperatureDesc: 'Mismo concepto que la temperatura de extracción, pero solo afecta cómo Query Wiki responde preguntas. Valores bajos = respuestas más literales; valores altos = respuestas más conversacionales. La mayoría de los usuarios lo dejan vacío.',
     repetitionPenaltyName: 'Penalización por repetición',
-    repetitionPenaltyDesc: 'Evita que el modelo repita las mismas palabras o frases. Valores más altos reducen la repetición. Solo algunos proveedores de modelos locales (Ollama, LM Studio, llama.cpp) aceptan este parámetro; los proveedores en la nube lo ignoran silenciosamente. La mayoría de los usuarios lo dejan vacío.',
+    repetitionPenaltyDesc: 'Evita que el modelo repita las mismas palabras o frases. Valores más altos reducen la repetición. Solo algunos proveedores de modelos locales (Ollama, LM Studio, llama.cpp) aceptan este parámetro; los proveedores en la nube lo ignoran silenciosamente. La mayoría de los usuarios lo dejan vacío. Un valor superior a 1,0 puede provocar errores en la salida del LLM durante la extracción en modelos locales pequeños: si falla una ejecución, reduzca o borre este valor.',
+    repetitionPenaltyErrorHint: 'Nota: se ha establecido una penalización de repetición personalizada de {value}. Valores superiores a 1,0 pueden romper la extracción con restricciones gramaticales en modelos locales pequeños: reduzca o borre esta configuración e inténtelo de nuevo.',
     temperaturePlaceholder: 'dejar vacío = valor por defecto del proveedor',
     // v1.26.0 (#382 item 2): Umbrales de detección de duplicados
     // (solo modo avanzado personalizado).

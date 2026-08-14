@@ -150,22 +150,36 @@ export type JsonParseResult =
  * dropping the batch.
  *
  * This gate runs on EVERY successful parse result. It rejects an object
- * whose keys are all empty strings (the 5-token placeholder shape) OR
- * whose non-empty content count is zero while the object is small enough
- * to be a placeholder (≤1 field). Legitimate empty objects (`{}` from a
- * real "no entities" answer) are allowed through — they are `[]`-shaped
- * intent, not grammar-constrained artifacts.
+ * whose keys are all empty strings (the 5-token placeholder shape).
+ * Legitimate empty objects (`{}` from a real "no entities" answer) are
+ * allowed through — they are `[]`-shaped intent, not grammar-constrained
+ * artifacts.
+ *
+ * v1.26.3 PATCH follow-up (user E2E 2026-08-13, qwen3.5-9b on LM Studio):
+ * the grammar-constrained placeholder's value shape varies by run — the
+ * model bails with `{"": ""}` (empty string) OR `{"": {}}` (empty object)
+ * / `{"": []}` (empty array). The empty-value predicate must treat ALL of
+ * those as empty; a string-only check lets `{"": {}}` slip through to
+ * downstream as a real parse result.
  */
+/**
+ * Empty JSON-value predicate for the placeholder gate. `''`, `null`,
+ * `undefined`, or an empty container (`{}` / `[]` — the E2E 2026-08-13
+ * variant). Values come from JSON.parse, so a non-null
+ * `typeof v === 'object'` is a plain object or array;
+ * `Object.keys(v).length === 0` is true for both `{}` and `[]`.
+ */
+function isEmptyJsonValue(v: unknown): boolean {
+  return v === '' || v === null || v === undefined ||
+    (typeof v === 'object' && Object.keys(v).length === 0);
+}
+
 function isPlaceholderObject(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj);
-  if (keys.length === 0) return false; // `{}` = legitimate empty intent
-  // All keys empty string AND all values empty → the `{"": ""}` shape.
-  if (keys.every((k) => k === '')) {
-    return Object.values(obj).every((v) => v === '' || v === null || v === undefined);
-  }
-  return false;
+  const entries = Object.entries(value as Record<string, unknown>);
+  // `{}` (zero entries) = legitimate empty intent, not a placeholder.
+  return entries.length > 0 &&
+    entries.every(([k, v]) => k === '' && isEmptyJsonValue(v));
 }
 
 /**

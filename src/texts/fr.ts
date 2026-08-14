@@ -555,7 +555,8 @@ export const FR_TEXTS = {
     chatTemperatureName: 'Température de requête',
     chatTemperatureDesc: 'Même concept que la température d\'extraction, mais n\'affecte que la façon dont Query Wiki répond aux questions. Valeurs basses = réponses plus littérales ; valeurs hautes = réponses plus conversationnelles. La plupart des utilisateurs laissent ce champ vide.',
     repetitionPenaltyName: 'Pénalité de répétition',
-    repetitionPenaltyDesc: 'Empêche le modèle de répéter les mêmes mots ou phrases. Des valeurs plus élevées réduisent la répétition. Seuls certains fournisseurs de modèles locaux (Ollama, LM Studio, llama.cpp) acceptent ce paramètre ; les fournisseurs cloud l\'ignorent silencieusement. La plupart des utilisateurs laissent ce champ vide.',
+    repetitionPenaltyDesc: 'Empêche le modèle de répéter les mêmes mots ou phrases. Des valeurs plus élevées réduisent la répétition. Seuls certains fournisseurs de modèles locaux (Ollama, LM Studio, llama.cpp) acceptent ce paramètre ; les fournisseurs cloud l\'ignorent silencieusement. La plupart des utilisateurs laissent ce champ vide. Une valeur supérieure à 1,0 peut provoquer des erreurs de sortie du LLM lors de l\'extraction sur les petits modèles locaux — si une exécution échoue, réduisez ou effacez cette valeur.',
+    repetitionPenaltyErrorHint: 'Remarque : une pénalité de répétition personnalisée de {value} est définie. Des valeurs supérieures à 1,0 peuvent casser l\'extraction sous contrainte de grammaire sur les petits modèles locaux — réduisez ou effacez ce réglage, puis réessayez.',
     temperaturePlaceholder: 'laisser vide = valeur par défaut du fournisseur',
     // v1.26.0 (#382 item 2): Seuils de détection des doublons
     // (mode avancé personnalisé uniquement).

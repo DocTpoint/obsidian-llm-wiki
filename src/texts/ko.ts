@@ -584,7 +584,8 @@ export const KO_TEXTS = {
     chatTemperatureName: '쿼리 온도',
     chatTemperatureDesc: '「추출 온도」와 같은 개념이지만 Query Wiki 질문 응답에만 영향을 줍니다. 값이 낮을수록 글자 그대로 답하고, 값이 높을수록 대화체로 답합니다. 대부분의 사용자는 비워 둡니다.',
     repetitionPenaltyName: '반복 패널티',
-    repetitionPenaltyDesc: '모델이 같은 단어나 문구를 반복하는 것을 억제합니다. 값이 높을수록 반복이 줄어듭니다. 이 파라미터를 받는 것은 일부 로컬 모델 공급자(Ollama, LM Studio, llama.cpp)뿐이며, 클라우드 공급자는 조용히 무시합니다. 대부분의 사용자는 비워 둡니다.',
+    repetitionPenaltyDesc: '모델이 같은 단어나 문구를 반복하는 것을 억제합니다. 값이 높을수록 반복이 줄어듭니다. 이 파라미터를 받는 것은 일부 로컬 모델 공급자(Ollama, LM Studio, llama.cpp)뿐이며, 클라우드 공급자는 조용히 무시합니다. 대부분의 사용자는 비워 둡니다. 1.0을 초과하는 값은 소규모 로컬 모델의 추출 중 LLM 출력 오류를 일으킬 수 있습니다. 실행이 실패하면 이 값을 줄이거나 비우세요.',
+    repetitionPenaltyErrorHint: '참고: 사용자 지정 반복 페널티 {value}가 설정되어 있습니다. 1.0을 초과하는 값은 소규모 로컬 모델의 문법 제약 추출을 깨뜨릴 수 있습니다. 이 설정을 줄이거나 비우고 다시 시도하세요.',
     temperaturePlaceholder: '비워 두면 = 제공자 기본값',
     // v1.26.0 (#382 item 2): 중복 감지 임계값 (고급 사용자 지정 모드 전용).
     lintDedupJaccardLinkThresholdName: '링크 중복 유사도',

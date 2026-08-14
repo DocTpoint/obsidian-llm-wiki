@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { parseJsonResponse, parseJsonResult } from '../../core/json';
+import { parseJsonResponse, parseJsonResult, isPlaceholderJsonText } from '../../core/json';
 describe('parseJsonResponse', () => {
   it('parses valid JSON directly', async () => {
     const result = await parseJsonResponse('{"key": "value"}');
@@ -118,6 +118,30 @@ The answer should be...
   it('parses empty object', async () => {
     const result = await parseJsonResponse('{}');
     expect(result).toEqual({});
+  });
+});
+
+// isPlaceholderJsonText — the SDK-layer predicate (#443 follow-up). The
+// openai-compat client's `createMessageWithOutput` NoObjectGeneratedError
+// catch calls this to decide placeholder → text_prompt demotion WITHOUT
+// re-running the full parse pipeline. User E2E 2026-08-13 (qwen3.5-9b on
+// LM Studio) showed the grammar-constrained placeholder shape varies:
+// `{"": ""}` (2026-08-11) and `{"": {}}` / `{"": []}` (2026-08-13). The
+// predicate must flag every empty-key / empty-value variant so the SDK
+// demote fires, not just the string-shaped one.
+describe('isPlaceholderJsonText — empty-value variants (#443 follow-up)', () => {
+  it.each([
+    ['{"": ""}', 'string value, original shape'],
+    ['{"": {}}', 'empty-object value, user E2E 2026-08-13'],
+    ['{"": []}', 'empty-array value'],
+    ['{"": null}', 'null value'],
+  ])('flags %s (%s)', (json) => {
+    expect(isPlaceholderJsonText(json)).toBe(true);
+  });
+
+  it('does NOT flag a real object with non-empty keys', () => {
+    expect(isPlaceholderJsonText('{"name": "community-plugins", "type": "concept"}')).toBe(false);
+    expect(isPlaceholderJsonText('{"summary": "real content"}')).toBe(false);
   });
 });
 

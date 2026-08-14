@@ -558,7 +558,8 @@ export const ZH_TEXTS = {
     chatTemperatureName: '查询温度',
     chatTemperatureDesc: '和"提取温度"思路相同，但只影响 Query Wiki 回答问题的方式。数值越低回答越字面化；数值越高越像在聊天。大多数用户留空即可。',
     repetitionPenaltyName: '重复惩罚',
-    repetitionPenaltyDesc: '阻止模型反复说相同的字词。数值越高越能减少重复。只有部分本地模型提供商（Ollama、LM Studio、llama.cpp）接受这个参数；云端提供商会静默忽略。大多数用户留空即可。',
+    repetitionPenaltyDesc: '阻止模型反复说相同的字词。数值越高越能减少重复。只有部分本地模型提供商（Ollama、LM Studio、llama.cpp）接受这个参数；云端提供商会静默忽略。大多数用户留空即可。数值高于 1.0 可能导致提取时 LLM 输出错误（小模型在语法约束下易失败）——若运行失败，请减小或清空此值。',
+    repetitionPenaltyErrorHint: '注意：已设置自定义重复惩罚值 {value}。高于 1.0 的值可能破坏小型本地模型的语法约束提取——请减小或清空此设置后重试。',
     temperaturePlaceholder: '留空 = 使用提供商默认',
     // v1.26.0 (#382 item 2): 重复检测阈值（仅自定义高级模式）。
     // 与上方温度输入共用占位文案，保持同一提示风格。

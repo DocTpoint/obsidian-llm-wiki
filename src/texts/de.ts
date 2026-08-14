@@ -582,7 +582,8 @@ export const DE_TEXTS = {
     chatTemperatureName: 'Abfragetemperatur',
     chatTemperatureDesc: 'Gleiches Konzept wie Extraktionstemperatur, betrifft aber nur, wie Query Wiki Fragen beantwortet. Niedrigere Werte = wörtlichere Antworten; höhere Werte = gesprächigere Antworten. Die meisten Benutzer lassen dies leer.',
     repetitionPenaltyName: 'Wiederholungsstrafe',
-    repetitionPenaltyDesc: 'Verhindert, dass das Modell dieselben Wörter oder Phrasen wiederholt. Höhere Werte bedeuten weniger Wiederholungen. Nur bestimmte lokale Modellanbieter (Ollama, LM Studio, llama.cpp) akzeptieren diesen Parameter; Cloud-Anbieter ignorieren ihn stillschweigend. Die meisten Benutzer lassen dies leer.',
+    repetitionPenaltyDesc: 'Verhindert, dass das Modell dieselben Wörter oder Phrasen wiederholt. Höhere Werte bedeuten weniger Wiederholungen. Nur bestimmte lokale Modellanbieter (Ollama, LM Studio, llama.cpp) akzeptieren diesen Parameter; Cloud-Anbieter ignorieren ihn stillschweigend. Die meisten Benutzer lassen dies leer. Werte über 1,0 können bei kleinen lokalen Modellen während der Extraktion zu LLM-Ausgabefehlern führen — falls ein Lauf fehlschlägt, reduzieren oder leeren Sie diesen Wert.',
+    repetitionPenaltyErrorHint: 'Hinweis: Eine benutzerdefinierte Wiederholungsstrafe von {value} ist eingestellt. Werte über 1,0 können die grammatikgebundene Extraktion bei kleinen lokalen Modellen stören — reduzieren oder leeren Sie diese Einstellung und versuchen Sie es erneut.',
     temperaturePlaceholder: 'leer lassen = Anbieter-Standard',
     // v1.26.0 (#382 item 2): Schwellenwerte für die Duplikaterkennung
     // (nur benutzerdefinierter erweiterter Modus).

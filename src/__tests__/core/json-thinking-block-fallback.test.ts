@@ -194,6 +194,17 @@ describe('parseJsonResult — placeholder gate ({"": ""} must not reach downstre
     }
   });
 
+  it.each([
+    ['{"": {}}', 'empty-OBJECT value variant (user E2E 2026-08-13)'],
+    ['{"": []}', 'empty-array value variant'],
+  ])('rejects %s — %s', async (json, variant) => {
+    // Grammar-constrained placeholders vary by run: `{"": ""}` (2026-08-11),
+    // then `{"": {}}` / `{"": []}` (2026-08-13 on qwen3.5-9b). All are
+    // minimum-valid-object bails the widened empty-value predicate must catch.
+    const result = await parseJsonResult(json);
+    expect(result).toMatchObject({ ok: false, reason: 'thinking-block-only' });
+  });
+
   it('allows legitimate empty object {} through (real "no entities" intent)', async () => {
     // `{}` is a valid answer meaning "nothing extracted". It is NOT the
     // grammar-constrained placeholder shape (which always carries a

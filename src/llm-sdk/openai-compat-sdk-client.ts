@@ -57,33 +57,12 @@ export interface OpenAICompatSdkClientOptions {
   streamFetch?: typeof streamWithFallback;
 }
 
-/**
- * Issue #414: per-provider wire-field spelling for the
- * `repetitionPenalty` user setting. `lmstudio` / `ollama` accept the
- * llama.cpp spelling (`repeat_penalty`, no `-ion` — verified by
- * DocTpoint #414 type-error test on LM Studio / gemma-4-12b).
- * `kimi` / `openrouter` / `custom` accept the OpenAI-spec spelling
- * (`repetition_penalty`, snake_case). Other backends (`deepseek` /
- * `gemini` / `minimax` / `glm`) do not document the field, so the
- * caller drops it silently rather than emitting a key the backend
- * will ignore.
- *
- * Module-level lookup table (rather than chained if/return) so
- * adding a new provider is one line and the table is itself the
- * documentation. Exported for direct unit-test coverage without
- * spinning up a full `OpenAICompatSdkClient`.
- */
-const REPETITION_PENALTY_WIRE_FIELD: Readonly<Record<string, 'repeat_penalty' | 'repetition_penalty'>> = {
-  lmstudio: 'repeat_penalty',
-  ollama: 'repeat_penalty',
-  kimi: 'repetition_penalty',
-  openrouter: 'repetition_penalty',
-  custom: 'repetition_penalty',
-};
-
-export function repetitionPenaltyWireField(provider: string): 'repeat_penalty' | 'repetition_penalty' | null {
-  return REPETITION_PENALTY_WIRE_FIELD[provider] ?? null;
-}
+// Issue #414 wire-field dialect lives in core (shared with the error-hint
+// helper, which must not name a setting that never reaches the wire). Re-export
+// here to keep the existing test import (`from openai-compat-sdk-client`)
+// unchanged.
+import { repetitionPenaltyWireField } from '../core/repetition-penalty-dialect';
+export { repetitionPenaltyWireField };
 
 export class OpenAICompatSdkClient implements LLMClient {
   private readonly apiKey: string;
