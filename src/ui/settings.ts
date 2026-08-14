@@ -72,10 +72,15 @@ export class LLMWikiSettingTab extends PluginSettingTab {
     // success. Belt-and-suspenders so a future caller bypassing
     // flushApiKey can't reintroduce the v1.25.3 #182 plaintext leak.
     this.tempSettings.apiKey = '';
-    // Cascade guard — see cascadeUnifiedModelChange for rationale.
-    if (this.tempSettings.model.trim()) {
-      this.cascadeUnifiedModelChange();
-    }
+    // v1.26.4 PATCH #456: removed the v1.24.1 PATCH Phase 5.5.0
+    // belt-and-suspenders cascade call here. It caused per-task
+    // model fields to be wiped on every commit (settings.ts:76-78
+    // pre-fix), making `Model Scope = per-task` silently regress
+    // to `unified` after the first save. The live-edit cascade at
+    // `setFieldValue('model', ...)` (line ~354) is the correct UX
+    // path; Fetch Models and provider-change resets already flow
+    // through setFieldValue per v1.24.1 fix-2. Commit should be a
+    // pure write-through.
     this.plugin.settings = {
       ...this.tempSettings,
       watchedFolders: [...(this.tempSettings.watchedFolders || [])],
