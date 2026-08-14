@@ -2,19 +2,11 @@
 
 > Feature planning and improvement proposals
 
-**Version:** v1.26.3 PATCH ready-to-tag (5/5 PRs merged: #447/#448/#453/#450/#454 on `main`; release workflow pending — Step 1 Gate 1 + Step 3 version bump + Step 6b.5 Obsidian Bot pre-review + Step 6c publish). v1.27.0 MINOR in design. v1.26.2 PATCH RELEASED 2026-08-09 (tag `1.26.2`). v1.26.1 PATCH RELEASED 2026-08-08. | **Updated:** 2026-08-14
+**Version:** v1.26.3 PATCH SHIPPED 2026-08-14 (tag `1.26.3`, 5 PRs / 3290 tests / 97 files / +9799/-785). **v1.26.4 PATCH in design** (3 bugs: #456 split-model persistence + #451 stream-path + #449 cacheBreakpoint). v1.27.0 MINOR in design. v1.26.2 PATCH SHIPPED 2026-08-09. v1.26.1 PATCH SHIPPED 2026-08-08. | **Updated:** 2026-08-14
 
 ## Current Status
 
-**v1.26.3 PATCH ready-to-tag 2026-08-14 (release workflow pending):**
-
-1. **PR #447** — Issue #443 fix: 3-tier output-mode state machine + Path 2 fix (`NoObjectGeneratedError` catch) + Phase B (11 caller migrations to typed output) + per-model placeholder demotion.
-2. **PR #448 (`fix/ux-b1-b2-b3-provider-statusbar-dedup`)** — 5 UX fixes from the maintainer's 2026-08-12 vault E2E: B1 (Fetch Models misclassified auth failures as Network), B2 (status-bar cancel label), B3 (lint dedup cross-type filter), B2.5 (full status-bar i18n), Toast i18n.
-3. **PR #453** — Issue #414 `repetitionPenalty` per-backend dialect dispatch (`lmstudio`/`ollama` → `repeat_penalty`; `kimi`/`openrouter`/`custom` → `repetition_penalty`; `anthropic`/`deepseek`/`gemini`/`minimax`/`glm` → dropped).
-4. **PR #450** — Issue #438 frontmatter writer data-loss (`sources:` emptied by `enforceFrontmatterConstraints`); Finding 1 fixed in `2560ab4` (filter empty `preservedSources` entries), Finding 2 (`extractPassthroughLines` whole-class passthrough) tracked as new follow-up issue for v1.27.0 window.
-5. **PR #454** — Issue #443 follow-up: A1 placeholder detector widened to `{"": {}}`/`{"": []}` empty-object/array variants (user E2E 2026-08-13 on qwen3.5-9b) + repetitionPenalty UX hint (localized, gated to wire-supporting providers via `core/repetition-penalty-dialect.ts`).
-
-**All 5 PRs merged** on `main` (HEAD `b14929ef`). DocTpoint re-review APPROVED on #450 @2560ab4 (2026-08-13 16:16 UTC) + #454 @8512001 (2026-08-13 16:37 UTC). Release workflow: obsidian-plugin-release skill Step 1 Gate 1 → Step 3 version bump + docs → Step 4 pre-release-gate + doc-review → 🛑 HARD STOP ① → Step 5 commit/push/PR/merge → Step 6a wait for CI draft → Step 6b.5 **HARD STOP ②' Obsidian Bot pre-review** (mandated by release-skill v1.7.0 after PR #442 lesson) → Step 6b release notes → 🛑 HARD STOP ② → Step 6c publish.
+**v1.26.3 PATCH SHIPPED 2026-08-14.** Tag `1.26.3` published via [Release workflow](https://github.com/green-dalii/obsidian-llm-wiki/releases/tag/1.26.3). 5 PRs merged on `main` (HEAD `b14929ef` → `3fe34f6`): #447 (Issue #443 JSON output architecture, 3-tier state machine + Path 2 NoObjectGeneratedError catch + Phase B 11 caller migrations) + #448 (B1-B3 UX + B2.5 i18n + Toast i18n) + #453 (Issue #414 `repetitionPenalty` per-backend dialect) + #450 (Issue #438 `sources:` frontmatter data-loss, Finding 1 fixed in `2560ab4`) + #454 (A1 placeholder detector widening + repetitionPenalty UX hint). Test count 2992 → 3290 (+298). Obsidian Bot pre-review accepted (7 pre-existing tools/ warnings acknowledged per [[feedback_obsidian_bot_tools_cli_warnings]]).
 
 **v1.26.2 PATCH SHIPPED 2026-08-09** Surgical fix for v1.26.1's pre-submission blind spot: the Obsidian review bot scans the whole repo `.ts` tree but local `pnpm lint` was `src/`-only, so v1.26.1 shipped a blocking `unsafe-call` Error in `tools/llm-wiki-cli/src/obsidian.ts` that local lint never saw. PR #442 fixes the Error + 8 type-safety warnings, adds `Platform.isDesktop` AST guards on the runtime-loaded `node:*` imports, and ships `pnpm lint:tools-bot` so the local blind spot stays closed. The **end-state** for the CLI Bot-blind-spot problem is the v1.27.0 [CLI repo split](#v1270-minor-design-track) — `tools/llm-wiki-cli/` is a temporary in-tree location, scheduled to move to a standalone sibling repo ([`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli), see [SPEC.md](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md)) where the Bot never scans it. Release skill v1.7.0 now mandates an Obsidian Bot pre-review (Step 6b.5, HARD STOP ②) — see [CHANGELOG.md v1.26.2 entry](./CHANGELOG.md#1262---2026-08-09).
 
@@ -63,17 +55,27 @@ See [CLAUDE.md §"🛡️ Six-Gate Quality Closure"](./CLAUDE.md) for Gate defin
 
 See [CLAUDE.md §"📦 Development Workflow"](./CLAUDE.md) + [`.claude/skills/obsidian-plugin-release/SKILL.md`](/Users/greener/.claude/skills/obsidian-plugin-release/SKILL.md) for the full 8-step release flow. The pre-release-gate + doc-review parallel run is in [`.claude/skills/pre-release-gate/SKILL.md`](/Users/greener/.claude/skills/pre-release-gate/SKILL.md) + [`.claude/skills/doc-review/SKILL.md`](/Users/greener/.claude/skills/doc-review/SKILL.md). ROADMAP does not duplicate the per-step checklist — only the items that are **planning decisions** (which version, which milestone, which item lands where) live here.
 
-## v1.26.x PATCH follow-up track (CLOSED — v1.26.1 shipped 2026-08-08)
+## v1.26.x PATCH follow-up track
 
-**v1.26.1 shipped with 21 PRs.** All v1.26.x PATCH items (1-14) landed: #403 caps, CR-1 halving, #419/#435 H1, #424 yaml devDep, #398 silent-save, #407 Stage 0, #423 seed, items 13/14, #439 deps, #409 timing. Full composition in [CHANGELOG.md v1.26.1 entry](./CHANGELOG.md#1261---2026-08-08).
+**v1.26.3 PATCH SHIPPED 2026-08-14** (canonical record in [CHANGELOG.md §1.26.3](./CHANGELOG.md#1263---2026-08-12)): 5 PRs — #447 (Issue #443, JSON-schema wire + 11 caller migrations) + #448 (B1-B3 UX + B2.5 i18n + Toast i18n) + #453 (Issue #414 `repetitionPenalty` dialect dispatch) + #450 (Issue #438 `sources:` frontmatter data-loss, Finding 1 fixed in `2560ab4`) + #454 (A1 placeholder detector widening + repetitionPenalty UX hint, gated via `core/repetition-penalty-dialect.ts`). Test count 2992 → 3290 (+298).
 
-**Shipped in v1.26.3 PATCH (canonical record in [CHANGELOG.md §1.26.3](./CHANGELOG.md#1263---2026-08-12)):** 5 PRs — #447 (Issue #443, JSON-schema wire + 11 caller migrations) + #448 (B1-B3 UX + B2.5 i18n + Toast i18n) + #453 (Issue #414 `repetitionPenalty` dialect dispatch) + #450 (Issue #438 `sources:` frontmatter data-loss, Finding 1 fixed in `2560ab4`, Finding 2 tracked as follow-up issue for v1.27.0 window) + #454 (A1 placeholder detector widening + repetitionPenalty UX hint, gated via `core/repetition-penalty-dialect.ts`). All 5 PRs merged on `main` (HEAD `b14929ef`, 2026-08-14). Test count growth: 2992 → 3305 (+313).
+**v1.26.4 PATCH in design (4 bugs, user direction 2026-08-14):** each is a single-PR PATCH-scope fix; combine into one release. Scope estimate: ~180-250 LOC production + ~190 LOC tests.
+
+| # | Title | File | LOC est. | TDD scope |
+|---|---|---|---|---|
+| **#456** | Split model config does not persist (per-task mode wiped on save) | `src/ui/settings.ts:67-85` (delete lines 76-78) | ~5 prod + 30 test | (1) `commitTempSettings` preserves per-task; (2) `setFieldValue('model', …)` still cascades (UX preserved) |
+| **#449** | `cacheBreakpoint` declared + set, but 0 SDK clients read it → Anthropic `cache_control: { type: 'ephemeral' }` wire-up (Direction 1, per-note caching only) | `src/llm-sdk/anthropic-sdk-client.ts` (~15 LOC); `src/llm-sdk/openai-compat-sdk-client.ts` (passthrough no-op since `@ai-sdk/openai-compatible` doesn't honor cache hint yet) | ~15 prod + 30 test | Wire-body assertion that `cache_control` is present when `cacheBreakpoint` is set; absent when not set |
+| **#451** | `createMessageStream` drops all settings (temperature / top_p / seed / repetitionPenalty / enableThinking) | `src/llm-client-wrapper.ts` (Path 1 = mirror `createMessageWithOutput`) | ~30-60 prod + 50-100 test | Wire-body / stream-text test asserts injection reaches the LLM call |
+| **#459 / #460** | `fillEmptyPage` lint prompt hardcodes default tag taxonomy contradicting runtime injection (silent for default vocab, breaks disjoint custom vocabularies like biochemistry domain) | `src/wiki/prompts/fixes.ts:47` (1 line: defer to system-layer Active Tag Vocabulary) | ~1 prod + 68 test (test already in PR #460) | (1) `buildSystemPrompt` carries active vocabulary on `lint` task; (2) no `FIX_PROMPTS` line enumerates ≥3 default-taxonomy values |
+
+**v1.26.4 release plan:** 4 branches (or 4 commits in one branch), simplify + code-review on combined diff, release-skill v1.7.1 Step 5b.5 Bot pre-review BEFORE tag. PR #460 already APPROVED at review event (green-dalii 2026-08-14 05:45 UTC). Target ship date 2026-08-21 (7 days).
+
+**Test count delta:** +22 (from #460 test) + ~110-160 (from #456 + #449 + #451) = 3290 → 3470-3520.
 
 **Remaining follow-ups (moved to v1.27.0 window):**
 - **#407 Stages 1+2** — port the 8 silent-failure call sites (`path-resolution.ts:220` + `conversation-ingest.ts:337` first), one PR per blast radius.
-- **#451** — `wrapWithAdvancedSettings` `createMessageStream` settings-injection bug. `Object.create(client)` prototype inheritance bypasses settings injection on the stream path (Query Wiki, streaming UI). Affects temperature / top_p / seed / repetitionPenalty / enableThinking.
 - **#450 Finding 2** — `extractPassthroughLines` whole-class passthrough (separate commit on `fix/438-frontmatter-...`, filed as new issue to track).
-- **#449 (Direction 1)** — `cacheBreakpoint` → Anthropic `cache_control: { type: 'ephemeral' }` wire-up (~15 LOC). Per-note caching only. Awaiting DocTpoint PR (Direction 2 = cross-note, gated on #452 catalog-sort stability).
+- **#452** — slug-list catalog sorting (companion to #449 Direction 2 cross-note caching; gated on #449 Direction 1 shipping first).
 
 **Bedrock Stage 2 — SSO/Profile auth (decision 2026-08-07; cancels the prior "≥3 user requests" gate).** Now scoped to **v1.27.0** via a **zero-AWS-SDK** path: hand-rolled IAM Identity Center OIDC (reusing the Codex OAuth skeleton at `src/llm-sdk/openai-codex/`) → `GetRoleCredentials` → temp IAM creds → **hand-written SigV4** → existing `bedrock-mantle` endpoint. ~+10 KB, zero new npm deps (vs the rejected PR #263's +1.2 MB). Rationale: the `bedrock-mantle` endpoint accepts AWS credentials (SigV4) per AWS docs and speaks standard OpenAI/Anthropic protocols over plain SSE — no native ConverseStream event-stream signing needed. Design plan + implementation checklist: [[project_bedrock_stage2_codex_style_sigv4]].
 
@@ -84,6 +86,8 @@ Items NOT in v1.26.0 P0+P1 scope but in #358 design orbit (target v1.27.0 MINOR)
 | Item | Issue | Note |
 |---|---|---|
 | **CLI repo split** — `tools/llm-wiki-cli/` → standalone sibling repo `green-dalii/obsidian-llm-wiki-cli` | (see SPEC v2.0) | 4-phase migration (Boot → Coexist → Deprecate → Demote). **Current state (2026-08-13):** sibling repo is at **v0.1.0-dev, NOT yet published to npm**; the in-tree `pnpm llm-wiki` is the **only** user-facing CLI install path until v1.27.0 ships the Coexist phase. Phase 1 (Boot) lands in v1.26.x PATCH window per [[project_v1_27_0_cli_split_planning]]; Phase 4 (Demote) at v1.28.0 keeps in-tree `tools/` as a **dev-only test harness** referencing `../../src/` — not a user-facing CLI after Demote. |
+| **MinerU PDF backend** — PR #404 (`codex/mineru-online-api`, @XEurekaX) | #376 | Online PDF conversion API to bypass LLM token cost on PDF ingest. Default = existing provider path; opt-in via `pdfConversionBackend: 'mineru'` setting. New dep `fflate@0.8.3` (ZIP extractor, 0 transitive deps). Cache key = sha256(pdf) + `mineru:vlm:v1`. Safety boundaries: HTTPS only, 200MB PDF cap, 256MB archive cap, 10K entries, single `full.md` ≤10MB. **Status:** awaiting formal review (1-2 weeks per 2026-08-14 triage). Design + review checklist in [Issue #404](https://github.com/green-dalii/obsidian-llm-wiki/pull/404). |
+| **Bedrock Stage 2 — SSO/Profile auth** — hand-rolled IAM Identity Center OIDC + SigV4 → `bedrock-mantle` | #425 | ~500-800 LOC + ~10KB bundle, **zero AWS SDK** (vs rejected PR #263's +1.2MB). Reuses Codex OAuth skeleton. Decision locked 2026-08-07. Design plan: [[project_bedrock_stage2_codex_style_sigv4]]. |
 | Per-type registration via Settings（#328 Phase 2） | #358 item 1 | 强耦合 cross-type dedup；v1.26.0 完成 D 后即可 kickoff |
 | User-extensible typed edges（frontmatter `relations:`） | #358 item 2 / #285 | 社区等待 |
 | Bidirectional frontmatter（`derived_from` + `wiki_pages`） | #358 item 3 / #220 | source-revision awareness 是基础 |
