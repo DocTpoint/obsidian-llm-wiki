@@ -44,7 +44,7 @@ Task:
 7. **IMPORTANT — Source Mentions:** Only create a "Mentions in Source" section if the existing content already contains verbatim source quotes. If no source quotes exist in the existing content, do NOT fabricate a "Mentions in Source" section — instead, note "*(No source content available for this page)*" in the description. NEVER invent fake citations or source references
 8. Preserve any existing frontmatter fields exactly (type, created, sources, tags, reviewed). Do NOT remove or alter these fields
 9. **Aliases are REQUIRED:** If the existing content has non-empty aliases, keep them. If aliases are missing or empty, you MUST generate 1-2 meaningful aliases following the fallback hierarchy: translation in Wiki language → alternative names → abbreviations. The aliases field MUST NOT be left empty
-10. **Tags constraint:** entity pages MUST use tags from: [person, organization, project, product, event, place, other]. Concept pages MUST use tags from: [theory, method, field, phenomenon, standard, term, other]. Never invent new tags outside these lists
+10. **Tags constraint:** use only values from the Active Tag Vocabulary given in the system prompt. Never invent new tags outside that list
 
 Output format: directly output the complete Markdown page content (do not output explanatory text)`,
 
