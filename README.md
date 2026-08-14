@@ -291,7 +291,7 @@ The flag set is small. The big ones:
 | `--max-tokens-per-call` | Cap `max_tokens` per call. `0` removes the cap (extraction's minimum is still 16000). |
 | `--max-rounds` | Deprecated; throws. Use `--round-base`. |
 
-Full flag table + shim caveats + what isn't reproduced (SecretStorage, streaming, vault events, `metadataCache.links`/`.headings`): see [`tools/llm-wiki-cli/README.md`](tools/llm-wiki-cli/README.md).
+Full flag table + shim caveats + what isn't reproduced (SecretStorage, streaming, vault events, `metadataCache.links`/`.headings`): see [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md).
 
 ### Output
 
@@ -316,7 +316,7 @@ The sibling repo is at **v0.1.0-dev, not yet on npm** as of 2026-08-13. Until v1
 
 ### Reference
 
-- 📘 [`tools/llm-wiki-cli/README.md`](tools/llm-wiki-cli/README.md) — flag reference, environment, shim caveats
+- 📘 [`tools/llm-wiki-cli/README.md`](https://github.com/green-dalii/obsidian-llm-wiki/blob/main/tools/llm-wiki-cli/README.md) — flag reference, environment, shim caveats
 - 📘 [github.com/green-dalii/obsidian-llm-wiki-cli](https://github.com/green-dalii/obsidian-llm-wiki-cli) — sibling repo (v0.1.0-dev, not yet on npm)
 - 🏛️ [`obsidian-llm-wiki-cli/SPEC.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md) — why the split, 4-phase rollout
 - 🗺️ [`obsidian-llm-wiki-cli/ROADMAP.md`](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/ROADMAP.md) — phase tracking

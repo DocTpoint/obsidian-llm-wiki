@@ -139,12 +139,29 @@ describe('v1.25.11 PATCH #375 — README links are absolute https:// or known-sa
   it('every locale README references all 10 sibling locale READMEs (language switcher)', () => {
     for (const { label, path } of README_FILES) {
       const body = readFileSync(path, 'utf8');
-      // The switcher block contains 11 entries: 1 plain-text bold marker
-      // for the current locale (e.g. `**English**`) plus 10 absolute
-      // `https://github.com/.../blob/main/...` anchors pointing at the
-      // other locales. We count the absolute anchors here — every locale
-      // must carry exactly 10. (v1.26.0: Russian (ru) added as the 11th locale.)
-      const totalLinkCount = (body.match(/blob\/main\/(README\.md|docs\/README_)/g) ?? []).length;
+      // Find the language-switcher line: the single line that begins with
+      // `**English** |` for the EN README, or the equivalent bold-marker
+      // line for any other locale (e.g. `**简体中文** |`). Every locale
+      // README has exactly one such line, and it carries 10 absolute
+      // `https://github.com/.../blob/main/...` anchors — one per sibling
+      // locale — so a future drift is caught here.
+      //
+      // We previously matched the whole body for `blob/main/(README\.md|docs/README_)`,
+      // but the SEO HTML-comment metadata block at the top of every README
+      // also embeds a `canonical: https://.../blob/main/README.md` line,
+      // inflating the count to 11. The switcher line is the actual unit
+      // under test, so count anchors within that line only.
+      // Strip the SEO HTML-comment block at the top of every README — it
+      // embeds a `canonical: https://.../blob/main/README.md` line that
+      // would otherwise inflate the count by one. The block opens with
+      // `<!--` and closes with `-->`; everything inside is non-rendered.
+      // The switcher block then contains exactly 10 absolute
+      // `https://github.com/.../blob/main/...` anchors — one per sibling
+      // locale. The current locale is the plain-text bold marker (e.g.
+      // `**English**`) and is not counted here. (v1.26.0: Russian (ru)
+      // added as the 10th locale.)
+      const bodyWithoutSeo = body.replace(/<!--[\s\S]*?-->/g, '');
+      const totalLinkCount = (bodyWithoutSeo.match(/blob\/main\/(README\.md|docs\/README_)/g) ?? []).length;
       expect(totalLinkCount, `expected exactly 10 absolute README anchors in ${label} switcher`).toBe(10);
     }
   });
