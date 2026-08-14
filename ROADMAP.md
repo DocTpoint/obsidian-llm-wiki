@@ -2,19 +2,19 @@
 
 > Feature planning and improvement proposals
 
-**Version:** v1.26.3 PATCH composition merged (PRs #447, #448, #453 + #450 + #454 awaiting DocTpoint re-review, tag pending). v1.27.0 MINOR in design. v1.26.2 PATCH RELEASED 2026-08-09 (tag `1.26.2`). v1.26.1 PATCH RELEASED 2026-08-08. | **Updated:** 2026-08-13
+**Version:** v1.26.3 PATCH ready-to-tag (5/5 PRs merged: #447/#448/#453/#450/#454 on `main`; release workflow pending — Step 1 Gate 1 + Step 3 version bump + Step 6b.5 Obsidian Bot pre-review + Step 6c publish). v1.27.0 MINOR in design. v1.26.2 PATCH RELEASED 2026-08-09 (tag `1.26.2`). v1.26.1 PATCH RELEASED 2026-08-08. | **Updated:** 2026-08-14
 
 ## Current Status
 
-**v1.26.3 PATCH composition merged 2026-08-13 (tag pending):**
+**v1.26.3 PATCH ready-to-tag 2026-08-14 (release workflow pending):**
 
 1. **PR #447** — Issue #443 fix: 3-tier output-mode state machine + Path 2 fix (`NoObjectGeneratedError` catch) + Phase B (11 caller migrations to typed output) + per-model placeholder demotion.
 2. **PR #448 (`fix/ux-b1-b2-b3-provider-statusbar-dedup`)** — 5 UX fixes from the maintainer's 2026-08-12 vault E2E: B1 (Fetch Models misclassified auth failures as Network), B2 (status-bar cancel label), B3 (lint dedup cross-type filter), B2.5 (full status-bar i18n), Toast i18n.
 3. **PR #453** — Issue #414 `repetitionPenalty` per-backend dialect dispatch (`lmstudio`/`ollama` → `repeat_penalty`; `kimi`/`openrouter`/`custom` → `repetition_penalty`; `anthropic`/`deepseek`/`gemini`/`minimax`/`glm` → dropped).
-4. **PR #450** — Issue #438 frontmatter writer data-loss (`sources:` emptied by `enforceFrontmatterConstraints`); Finding 1 fixed in `2560ab4` (filter empty `preservedSources` entries), Finding 2 tracked as follow-up.
-5. **PR #454** — Issue #443 follow-up: A1 placeholder detector widened to `{"": {}}`/`{"": []}` empty-object/array variants (user E2E 2026-08-13 on qwen3.5-9b) + repetitionPenalty UX hint (localized, gated to wire-supporting providers).
+4. **PR #450** — Issue #438 frontmatter writer data-loss (`sources:` emptied by `enforceFrontmatterConstraints`); Finding 1 fixed in `2560ab4` (filter empty `preservedSources` entries), Finding 2 (`extractPassthroughLines` whole-class passthrough) tracked as new follow-up issue for v1.27.0 window.
+5. **PR #454** — Issue #443 follow-up: A1 placeholder detector widened to `{"": {}}`/`{"": []}` empty-object/array variants (user E2E 2026-08-13 on qwen3.5-9b) + repetitionPenalty UX hint (localized, gated to wire-supporting providers via `core/repetition-penalty-dialect.ts`).
 
-Awaiting DocTpoint re-review on #450 + #454 (the 2 still-open PATCH PRs). Release tag `1.26.3` follows DocTpoint approval + maintainer merge.
+**All 5 PRs merged** on `main` (HEAD `b14929ef`). DocTpoint re-review APPROVED on #450 @2560ab4 (2026-08-13 16:16 UTC) + #454 @8512001 (2026-08-13 16:37 UTC). Release workflow: obsidian-plugin-release skill Step 1 Gate 1 → Step 3 version bump + docs → Step 4 pre-release-gate + doc-review → 🛑 HARD STOP ① → Step 5 commit/push/PR/merge → Step 6a wait for CI draft → Step 6b.5 **HARD STOP ②' Obsidian Bot pre-review** (mandated by release-skill v1.7.0 after PR #442 lesson) → Step 6b release notes → 🛑 HARD STOP ② → Step 6c publish.
 
 **v1.26.2 PATCH SHIPPED 2026-08-09** Surgical fix for v1.26.1's pre-submission blind spot: the Obsidian review bot scans the whole repo `.ts` tree but local `pnpm lint` was `src/`-only, so v1.26.1 shipped a blocking `unsafe-call` Error in `tools/llm-wiki-cli/src/obsidian.ts` that local lint never saw. PR #442 fixes the Error + 8 type-safety warnings, adds `Platform.isDesktop` AST guards on the runtime-loaded `node:*` imports, and ships `pnpm lint:tools-bot` so the local blind spot stays closed. The **end-state** for the CLI Bot-blind-spot problem is the v1.27.0 [CLI repo split](#v1270-minor-design-track) — `tools/llm-wiki-cli/` is a temporary in-tree location, scheduled to move to a standalone sibling repo ([`green-dalii/obsidian-llm-wiki-cli`](https://github.com/green-dalii/obsidian-llm-wiki-cli), see [SPEC.md](https://github.com/green-dalii/obsidian-llm-wiki-cli/blob/main/SPEC.md)) where the Bot never scans it. Release skill v1.7.0 now mandates an Obsidian Bot pre-review (Step 6b.5, HARD STOP ②) — see [CHANGELOG.md v1.26.2 entry](./CHANGELOG.md#1262---2026-08-09).
 
@@ -67,12 +67,13 @@ See [CLAUDE.md §"📦 Development Workflow"](./CLAUDE.md) + [`.claude/skills/ob
 
 **v1.26.1 shipped with 21 PRs.** All v1.26.x PATCH items (1-14) landed: #403 caps, CR-1 halving, #419/#435 H1, #424 yaml devDep, #398 silent-save, #407 Stage 0, #423 seed, items 13/14, #439 deps, #409 timing. Full composition in [CHANGELOG.md v1.26.1 entry](./CHANGELOG.md#1261---2026-08-08).
 
-**Shipped in v1.26.3 PATCH (canonical record in [CHANGELOG.md §1.26.3](./CHANGELOG.md#1263---2026-08-12)):** 5 PRs — #447 (Issue #443, JSON-schema wire + 11 caller migrations) + #448 (B1-B3 UX + B2.5 i18n + Toast i18n) + #453 (Issue #414 `repetitionPenalty` dialect dispatch) + #450 (Issue #438 `sources:` frontmatter data-loss, Finding 1 fixed in `2560ab4`, Finding 2 tracked as follow-up) + #454 (A1 placeholder detector widening + repetitionPenalty UX hint, gated via `core/repetition-penalty-dialect.ts`). #450 + #454 still awaiting DocTpoint re-review at tag time; release is held until both clear. Test count growth: 2992 → 3305 (+313).
+**Shipped in v1.26.3 PATCH (canonical record in [CHANGELOG.md §1.26.3](./CHANGELOG.md#1263---2026-08-12)):** 5 PRs — #447 (Issue #443, JSON-schema wire + 11 caller migrations) + #448 (B1-B3 UX + B2.5 i18n + Toast i18n) + #453 (Issue #414 `repetitionPenalty` dialect dispatch) + #450 (Issue #438 `sources:` frontmatter data-loss, Finding 1 fixed in `2560ab4`, Finding 2 tracked as follow-up issue for v1.27.0 window) + #454 (A1 placeholder detector widening + repetitionPenalty UX hint, gated via `core/repetition-penalty-dialect.ts`). All 5 PRs merged on `main` (HEAD `b14929ef`, 2026-08-14). Test count growth: 2992 → 3305 (+313).
 
 **Remaining follow-ups (moved to v1.27.0 window):**
 - **#407 Stages 1+2** — port the 8 silent-failure call sites (`path-resolution.ts:220` + `conversation-ingest.ts:337` first), one PR per blast radius.
 - **#451** — `wrapWithAdvancedSettings` `createMessageStream` settings-injection bug. `Object.create(client)` prototype inheritance bypasses settings injection on the stream path (Query Wiki, streaming UI). Affects temperature / top_p / seed / repetitionPenalty / enableThinking.
-- **#450 Finding 2** — `extractPassthroughLines` whole-class passthrough (separate commit on `fix/438-frontmatter-...`).
+- **#450 Finding 2** — `extractPassthroughLines` whole-class passthrough (separate commit on `fix/438-frontmatter-...`, filed as new issue to track).
+- **#449 (Direction 1)** — `cacheBreakpoint` → Anthropic `cache_control: { type: 'ephemeral' }` wire-up (~15 LOC). Per-note caching only. Awaiting DocTpoint PR (Direction 2 = cross-note, gated on #452 catalog-sort stability).
 
 **Bedrock Stage 2 — SSO/Profile auth (decision 2026-08-07; cancels the prior "≥3 user requests" gate).** Now scoped to **v1.27.0** via a **zero-AWS-SDK** path: hand-rolled IAM Identity Center OIDC (reusing the Codex OAuth skeleton at `src/llm-sdk/openai-codex/`) → `GetRoleCredentials` → temp IAM creds → **hand-written SigV4** → existing `bedrock-mantle` endpoint. ~+10 KB, zero new npm deps (vs the rejected PR #263's +1.2 MB). Rationale: the `bedrock-mantle` endpoint accepts AWS credentials (SigV4) per AWS docs and speaks standard OpenAI/Anthropic protocols over plain SSE — no native ConverseStream event-stream signing needed. Design plan + implementation checklist: [[project_bedrock_stage2_codex_style_sigv4]].
 
