@@ -13,6 +13,8 @@ export interface PageRef {
   path: string;
   title: string;
   aliases?: string[];
+  /** Issue #446: domain tags of the page, used to rank ambiguous matches. */
+  tags?: string[];
 }
 
 export type PageType = 'entity' | 'concept';
@@ -21,9 +23,16 @@ export interface ConflictCheck {
   name: string;
   slug: string;
   pageType: PageType;
+  /**
+   * Issue #446: domain tags of the item being placed — in the ingest path the
+   * extracted `type`, which is what the generated page will carry as its own
+   * `tags:`. Ranking signal only, see `rankByTagOverlap`. Optional: a caller
+   * that has none leaves the ranking on its path tie-break.
+   */
+  tags?: string[];
 }
 
-export type ConflictAction = 'create' | 'merge' | 'flag';
+export type ConflictAction = 'create' | 'merge' | 'flag' | 'disambiguate';
 
 export interface ConflictResolution {
   action: ConflictAction;
@@ -33,6 +42,13 @@ export interface ConflictResolution {
   aliasToAdd?: string | null;   // alias to add (null = redundant with title/filename)
   confidence: 'high' | 'medium' | 'low';
   reason: string;
+  /**
+   * Issue #446: every same-type page the designator matched, ranked. Only set
+   * when `action` is 'disambiguate' (more than one match). `targetPath` is the
+   * top-ranked one, so a caller that ignores this field still resolves — and
+   * resolves the same way on every page order.
+   */
+  candidates?: PageRef[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -53,6 +69,32 @@ function slugMatchKeys(page: PageRef): Set<string> {
     keys.add(computeSlug(alias));
   }
   return keys;
+}
+
+/**
+ * Issue #446: order pages that a designator matched equally well.
+ *
+ * Tags rank, they never decide: this function only permutes a list, it never
+ * drops a candidate and never turns a match into a non-match. Tag sets of a
+ * page and of a naming note are disjoint in the ordinary case — a page carries
+ * the aspect it was created under, a note the aspect it was written about — so
+ * a disjoint set is the absence of a signal, not evidence of a different
+ * subject.
+ *
+ * The tie-break is the path, compared by code unit rather than by locale, so
+ * the result is independent both of the input order and of the host's collation.
+ */
+function rankByTagOverlap(matches: PageRef[], checkTags?: string[]): PageRef[] {
+  const wanted = new Set((checkTags ?? []).map(t => t.toLowerCase()));
+  const overlap = (p: PageRef): number =>
+    wanted.size === 0 ? 0 : (p.tags ?? []).filter(t => wanted.has(t.toLowerCase())).length;
+
+  return [...matches].sort((a, b) => {
+    const byOverlap = overlap(b) - overlap(a);
+    if (byOverlap !== 0) return byOverlap;
+    if (a.path === b.path) return 0;
+    return a.path < b.path ? -1 : 1;
+  });
 }
 
 // ── Main resolver ─────────────────────────────────────────────────
@@ -90,13 +132,29 @@ export class ConflictResolver {
         reason: `Same-type exact path match: ${exactPath}`,
       };
     }
-    match = sameTypePages.find(p => slugMatchKeys(p).has(checkKey));
-    if (match) {
+    // Issue #446: a short designator is a title or an alias on more than one
+    // page often enough to matter (23 of them in a 2838-page vault). `find`
+    // returned whichever the page list happened to hold first, so the merge
+    // target was a function of vault iteration order and nothing said the
+    // question had been open.
+    const slugMatches = sameTypePages.filter(p => slugMatchKeys(p).has(checkKey));
+    if (slugMatches.length === 1) {
+      const only = slugMatches[0];
       return {
         action: 'merge',
-        targetPath: match.path,
+        targetPath: only.path,
         confidence: 'high',
-        reason: `Same-type slug/alias match: title=${match.title} slug=${check.slug}`,
+        reason: `Same-type slug/alias match: title=${only.title} slug=${check.slug}`,
+      };
+    }
+    if (slugMatches.length > 1) {
+      const ranked = rankByTagOverlap(slugMatches, check.tags);
+      return {
+        action: 'disambiguate',
+        targetPath: ranked[0].path,
+        candidates: ranked,
+        confidence: 'low',
+        reason: `Ambiguous designator: ${ranked.length} same-type pages match slug=${check.slug} (${ranked.map(p => p.title).join(', ')})`,
       };
     }
 

@@ -127,6 +127,58 @@ describe('resolvePagePath — LLM semantic dedup fallback', () => {
     expect(result.path).toBe('wiki/entities/Novel.md');
   });
 
+  // Issue #446: two pages carry the designator "E433" as an alias. Before the
+  // fix the deterministic gate merged into whichever one getMarkdownFiles
+  // yielded first; now the ambiguity reaches the dedup call, and every exit
+  // that reaches no decision lands on the tag-ranked candidate rather than
+  // creating a third page for a name that is already an alias twice.
+  const ambiguousVault = {
+    files: {
+      'wiki/entities/Polysorbat-80.md': '---\naliases:\n  - E433\ntags:\n  - Lebensmittelzusatzstoff\n---\nbody',
+      'wiki/entities/Polysorbate.md': '---\naliases:\n  - E433\ntags:\n  - Chemie\n---\nbody',
+    },
+    mockVault: {
+      getMarkdownFiles: () => [
+        { path: 'wiki/entities/Polysorbat-80.md', basename: 'Polysorbat-80' },
+        { path: 'wiki/entities/Polysorbate.md', basename: 'Polysorbate' },
+      ],
+    },
+  };
+
+  it('falls back to the tag-ranked candidate when no client can decide', async () => {
+    const ctx = makeCtx({ ...ambiguousVault, client: null });
+    const result = await resolvePagePath(ctx, 'E433', 'entity', 'desc', ['Chemie']);
+    expect(result.path).toBe('wiki/entities/Polysorbate.md');
+  });
+
+  it('resolves an ambiguous designator independently of vault order', async () => {
+    const reversed = {
+      ...ambiguousVault,
+      mockVault: {
+        getMarkdownFiles: () => [...ambiguousVault.mockVault.getMarkdownFiles()].reverse(),
+      },
+    };
+    const forward = await resolvePagePath(makeCtx({ ...ambiguousVault, client: null }), 'E433', 'entity', 'desc');
+    const backward = await resolvePagePath(makeCtx({ ...reversed, client: null }), 'E433', 'entity', 'desc');
+    expect(backward.path).toBe(forward.path);
+  });
+
+  it('shows the matching pages to the dedup call ahead of the lexical filler', async () => {
+    let prompt = '';
+    const ctx = makeCtx({
+      ...ambiguousVault,
+      client: {
+        createMessage: async (args: unknown) => {
+          prompt = (args as { messages: Array<{ content: string }> }).messages[0].content;
+          return JSON.stringify({ match: true, path: 'wiki/entities/Polysorbate.md' });
+        },
+      },
+    });
+    const result = await resolvePagePath(ctx, 'E433', 'entity', 'desc', ['Chemie']);
+    expect(result.path).toBe('wiki/entities/Polysorbate.md');
+    expect(prompt.indexOf('Polysorbate.md')).toBeLessThan(prompt.indexOf('Polysorbat-80.md'));
+  });
+
   it('passes the slim "index" schema selector to buildSystemPrompt', async () => {
     // The dedup question is a same-type yes/no match; the matching criteria
     // live in the user prompt. Only "Wiki Structure" is needed from the

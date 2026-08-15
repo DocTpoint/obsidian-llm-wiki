@@ -96,7 +96,10 @@ export async function createOrUpdatePage(
   console.debug('name:', info.name);
   console.debug('type:', info.type);
 
-  const result = await resolvePagePath(ctx, info.name, pageType, info.summary);
+  // Issue #446: `info.type` is the term this page will carry as its own `tags:`
+  // (see the generation template), so it is like-for-like with the candidate
+  // pages' tags and needs no new read at the note.
+  const result = await resolvePagePath(ctx, info.name, pageType, info.summary, info.type ? [info.type] : undefined);
   if (result.path === null) {
     if (result.collision) {
       // Cross-type collision: a page for this item already exists in the

@@ -124,11 +124,20 @@ export async function resolvePagePath(
   name: string,
   pageType: 'entity' | 'concept',
   summary: string,
+  tags?: string[],
 ): Promise<ResolvedPathResult> {
   const folder = pageType === 'entity' ? WIKI_SUBFOLDERS.entities : WIKI_SUBFOLDERS.concepts;
   const otherFolder = pageType === 'entity' ? WIKI_SUBFOLDERS.concepts : WIKI_SUBFOLDERS.entities;
   const slug = slugify(name, ctx.settings.slugCase === 'preserve');
   const slugPath = `${ctx.settings.wikiFolder}/${folder}/${slug}.md`;
+
+  // Issue #446: what this call falls back to when it reaches no decision.
+  // `slugPath` (create a new page) for the ordinary case; for an ambiguous
+  // designator the matching pages demonstrably exist, so a new page is the one
+  // answer that is certainly wrong — it is replaced by the top-ranked
+  // candidate below, which is also what the pre-#446 code merged into, minus
+  // the dependency on vault iteration order.
+  let fallbackPath = slugPath;
 
   // Fast path: exact slug match (same type folder)
   const existing = await ctx.tryReadFile(slugPath);
@@ -151,7 +160,7 @@ export async function resolvePagePath(
 
     // Use ConflictResolver for deterministic slug/alias matching before LLM fallback.
     const resolver = new ConflictResolver(ctx.settings.wikiFolder, allPages);
-    const cr = resolver.resolve({ name, slug, pageType });
+    const cr = resolver.resolve({ name, slug, pageType, tags });
 
     if (cr.action === 'merge' && !cr.reason.includes('Cross-type')) {
       await appendAliases(ctx, cr.targetPath, [name]);
@@ -169,6 +178,18 @@ export async function resolvePagePath(
           targetPath: cr.targetPath,
         },
       };
+    }
+
+    // Issue #446: more than one same-type page carries this designator. The
+    // deterministic gate cannot say which one is meant — tags rank the
+    // candidates, they never decide identity — so the question goes to the
+    // semantic dedup below with the ranked candidates at the head of the
+    // list. Before this, `find` returned whichever page the vault happened to
+    // yield first and the ambiguity left no trace.
+    const ambiguous = cr.action === 'disambiguate' ? cr.candidates ?? [] : [];
+    if (ambiguous.length > 0) {
+      fallbackPath = cr.targetPath;
+      console.debug(`Entity resolution: ${cr.reason}`);
     }
 
     const sameTypePages = allPages
@@ -191,7 +212,12 @@ export async function resolvePagePath(
 
     if (sameTypePages.length === 0) return { path: slugPath };
 
-    const pagesList = selectDedupCandidates(name, summary, sameTypePages)
+    const selected = selectDedupCandidates(name, summary, sameTypePages);
+    // The pages that actually carry the designator lead the list; the lexical
+    // pre-filter supplies the rest as context.
+    const pagesList = (ambiguous.length > 0
+      ? [...ambiguous, ...selected.filter(p => !ambiguous.some(c => c.path === p.path))]
+      : selected)
       .map(p => {
         const aliasBlock = p.aliases?.length
           ? `\n  aliases: ${p.aliases.join(', ')}`
@@ -201,7 +227,7 @@ export async function resolvePagePath(
       .join('\n');
 
     const client = ctx.getClient();
-    if (!client) return { path: slugPath };
+    if (!client) return { path: fallbackPath };
 
     const prompt = renderTemplate(PROMPTS.resolveEntityDedup, {
       wikiFolder: ctx.settings.wikiFolder,
@@ -251,9 +277,9 @@ export async function resolvePagePath(
           ? `exception: ${String(parsed.error)}`
           : `${parsed.reason}, raw length ${parsed.rawLength}`;
       console.error(
-        `Entity resolution for "${name}": dedup reply unreadable (${detail}) — using slug path, no match decided`,
+        `Entity resolution for "${name}": dedup reply unreadable (${detail}) — using ${fallbackPath}, no match decided`,
       );
-      return { path: slugPath };
+      return { path: fallbackPath };
     }
 
     const result = parsed.value as { match?: boolean; path?: string | null };
@@ -266,10 +292,14 @@ export async function resolvePagePath(
       return { path: normalizedPath };
     }
   } catch (error) {
-    console.debug(`Entity resolution for "${name}" failed, using slug path:`, error);
+    console.debug(`Entity resolution for "${name}" failed, using ${fallbackPath}:`, error);
   }
 
-  return { path: slugPath };
+  // Also the `match === false` exit: for an ambiguous designator this is the
+  // one place where "neither candidate is it" would create a third page for a
+  // name that is already an alias twice, so it resolves to the top-ranked
+  // candidate instead. For every other call `fallbackPath` is `slugPath`.
+  return { path: fallbackPath };
 }
 
 /**
