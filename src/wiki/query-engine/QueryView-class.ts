@@ -538,10 +538,12 @@ export class QueryView extends ItemView {
         try {
           fullResponse = await this.plugin.llmClient.createMessageStream({
             model: queryModel,
-            // Issue #75 cap applied here rather than inherited: the advanced-
-            // settings wrapper only overrides createMessage, so a streaming
-            // call would otherwise ignore maxTokensPerCall and can exceed a
-            // local server's context window.
+            // Issue #75 cap applied here rather than inherited: QueryView pre-caps
+            // so the value is explicit and the `maxTokensPerCall=0` case
+            // (no wrapper cap) is still covered. Post-#451 the wrapper
+            // also caps `createMessageStream`; manual forwarding remains
+            // for `enableThinking` and `chatTemperature` which the wrapper
+            // does not inject.
             max_tokens: capMaxTokens(TOKENS_QUERY_ANSWER, this.plugin.settings),
             onFinish: (meta) => {
               if (meta.finishReason === 'length') {

@@ -37,6 +37,25 @@ export interface WrapperSettings {
   repetitionPenalty?: number;
 }
 
+// Closed union for the [llm] debug-log breadcrumb. Stays narrow so a typo
+// becomes a compile error instead of a degraded debug log.
+type LlmCallKind = 'plain' | 'typed' | 'stream';
+
+/**
+ * Concrete overlay type for the 5 settings this wrapper injects + the cap.
+ * Returning this (instead of `Record<string, unknown>`) keeps excess-property
+ * checks at the helper's return site, so a typo'd key is a compile error
+ * rather than a silent wire-level drop.
+ */
+type AdvancedSettingsOverlay = Partial<{
+  max_tokens: number;
+  temperature: number;
+  top_p: number;
+  repetition_penalty: number;
+  seed: number;
+  maxTokensPerCall: number;
+}>;
+
 /**
  * Returns a new LLMClient whose `createMessage` injects advanced settings
  * when set; otherwise passes through. The returned client's `createMessage`
@@ -49,8 +68,10 @@ export interface WrapperSettings {
  * (and other implementations) define `createMessageStream` and
  * `listModels` as prototype methods — spread only captures own
  * enumerable properties, which drops all prototype methods.
- * `Object.create(client)` preserves the prototype chain, so the
- * wrapper inherits `createMessageStream` from the original client.
+ * `Object.create(client)` preserves the prototype chain, so prototype
+ * methods like `listModels` stay available; `createMessage`,
+ * `createMessageWithOutput`, and `createMessageStream` are explicitly
+ * overridden below whenever the client implements them (Issue #451).
  */
 export function wrapWithAdvancedSettings(
   client: LLMClient,
@@ -59,10 +80,10 @@ export function wrapWithAdvancedSettings(
   const capTokens = settings.maxTokensPerCall > 0;
 
   // Preserve prototype chain — Object.create inherits all prototype
-  // methods (createMessageStream, listModels) from the original client.
+  // methods (listModels) from the original client.
   const wrapper = Object.create(client) as LLMClient;
   wrapper.createMessage = (params) => withTaskAccounting(params.task, async () => {
-    logLlmCall(params.task, params.model, params.max_tokens);
+    logLlmCall(params.task, params.model, params.max_tokens, 'plain');
     return client.createMessage({
       ...params,
       ...injectAdvancedSettings(params, settings, capTokens),
@@ -98,13 +119,20 @@ export function wrapWithAdvancedSettings(
 // Build the settings-injection overlay used by all three wrapper blocks.
 // Caller-wins semantics: each spread only fires when the caller's params
 // omitted the field AND the setting was configured.
+//
+// Returns `AdvancedSettingsOverlay` (not `Record<string, unknown>`) so a
+// typo'd key inside the literal is caught at compile time. Issue #451 was
+// the silent-drop class; this typed return prevents re-opening it inside
+// the helper.
 function injectAdvancedSettings(
   params: { max_tokens?: number; temperature?: number; top_p?: number; repetition_penalty?: number; seed?: number },
   settings: WrapperSettings,
   capTokens: boolean,
-): Record<string, unknown> {
+): AdvancedSettingsOverlay {
+  const maxTokensPresent = params.max_tokens !== undefined;
   return {
-    ...(capTokens ? { max_tokens: capMaxTokens(params.max_tokens ?? 0, { maxTokensPerCall: settings.maxTokensPerCall }), maxTokensPerCall: settings.maxTokensPerCall } : {}),
+    ...(capTokens && maxTokensPresent ? { max_tokens: capMaxTokens(params.max_tokens as number, { maxTokensPerCall: settings.maxTokensPerCall }) } : {}),
+    ...(capTokens ? { maxTokensPerCall: settings.maxTokensPerCall } : {}),
     ...(params.temperature === undefined && settings.extractionTemperature !== undefined ? { temperature: settings.extractionTemperature } : {}),
     ...(params.top_p === undefined && settings.extractionTopP !== undefined ? { top_p: settings.extractionTopP } : {}),
     ...(params.repetition_penalty === undefined && settings.repetitionPenalty !== undefined ? { repetition_penalty: settings.repetitionPenalty } : {}),
@@ -116,9 +144,11 @@ function injectAdvancedSettings(
 // this wrapper), so the step's name is logged here rather than at twelve
 // call sites. Without it the debug log prints a provider, a model and a
 // prompt length per call and never says which step asked. Stubbed out in
-// production builds along with every other `console.debug`.
-function logLlmCall(task: string | undefined, model: string, maxTokens: number, suffix?: string): void {
-  console.debug(`[llm] task=${task ?? 'untagged'} model=${model} max_tokens=${maxTokens}${suffix ? ` ${suffix}` : ''}`);
+// production builds along with every other `console.debug`. Format is
+// pre-#451: `(typed)` / `(stream)` disambiguate the breadcrumb.
+function logLlmCall(task: string | undefined, model: string, maxTokens: number, kind: LlmCallKind): void {
+  const suffix = kind === 'plain' ? '' : ` (${kind})`;
+  console.debug(`[llm] task=${task ?? 'untagged'} model=${model} max_tokens=${maxTokens}${suffix}`);
 }
 
 // Timed around the whole call, not on success: a call that throws still

@@ -242,5 +242,70 @@ describe('wrapWithAdvancedSettings — behavior parity (refactor C)', () => {
       const callArgs = (client.createMessageStream as ReturnType<typeof vi.fn>).mock.calls[0][0] as CreateMessageStreamParams;
       expect(callArgs.temperature).toBe(0.99);
     });
+
+    // Test F1: stream accounting seam. Pre-existing tests only covered
+    // createMessage / createMessageWithOutput for recordTaskUsage; the
+    // createMessageStream override's hardcoded 'untagged' baseline +
+    // finally-block timing have no coverage. Pinned here so a future refactor
+    // that drops the withTaskAccounting wrapping is caught here.
+    it('records stream usage under "untagged" with finite timing', async () => {
+      const { snapshotTaskUsage, taskUsageSince } = await import('../../core/llm-task-usage');
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, { maxTokensPerCall: 0 });
+      const before = snapshotTaskUsage();
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)(validStreamParams());
+      const delta = taskUsageSince(before);
+      const untagged = delta.find(([task]) => task === 'untagged');
+      expect(untagged).toBeDefined();
+      expect(untagged![1].calls).toBe(1);
+      expect(untagged![1].millis).toBeGreaterThanOrEqual(0);
+    });
+
+    // Test F1b: finally-block behavior — even when the underlying
+    // createMessageStream throws, the call is still counted.
+    it('still records stream usage when createMessageStream throws (finally-block timing)', async () => {
+      const { snapshotTaskUsage, taskUsageSince } = await import('../../core/llm-task-usage');
+      const client = makeStreamRecordingClient({
+        createMessageStreamImpl: async () => {
+          throw new Error('stream failed');
+        },
+      });
+      const wrapped = wrapWithAdvancedSettings(client, { maxTokensPerCall: 0 });
+      const before = snapshotTaskUsage();
+      await expect(
+        (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)(validStreamParams()),
+      ).rejects.toThrow('stream failed');
+      const delta = taskUsageSince(before);
+      const untagged = delta.find(([task]) => task === 'untagged');
+      expect(untagged).toBeDefined();
+      expect(untagged![1].calls).toBe(1);
+    });
+
+    // Test F2: typed cap branch. The 4 typed-path tests under
+    // llm-client-wrapper.test.ts all disable maxTokensPerCall, so a
+    // regression that drops the cap from the typed block alone would go
+    // undetected. Pin the cap reach-through here.
+    it('caps max_tokens on typed-output path when maxTokensPerCall is set', async () => {
+      type TypedParams = Parameters<NonNullable<LLMClient['createMessageWithOutput']>>[0];
+      const typedImpl = vi.fn(async (_p: TypedParams) => ({
+        text: 'typed-out',
+        finishReason: 'stop' as const,
+      }));
+      const typedClient: LLMClient = {
+        createMessage: vi.fn(async (_p: CreateMessageParams) => 'unused'),
+        createMessageWithOutput: typedImpl as unknown as LLMClient['createMessageWithOutput'],
+      };
+      const wrapped = wrapWithAdvancedSettings(typedClient, {
+        maxTokensPerCall: 100,
+        extractionTemperature: 0.7,
+      });
+      await (wrapped.createMessageWithOutput as (p: TypedParams) => Promise<unknown>)({
+        model: 'test-model',
+        max_tokens: 500,
+        messages: [{ role: 'user' as const, content: 'hi' }],
+      });
+      const sent = typedImpl.mock.calls[0][0] as TypedParams;
+      expect(sent.max_tokens).toBeLessThanOrEqual(100);
+    });
   });
 });
