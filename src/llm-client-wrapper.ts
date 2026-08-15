@@ -12,6 +12,11 @@
 // Issue #128: extractionTemperature / chatTemperature inject `temperature`.
 // Issue #128 follow-up: repetitionPenalty injects `repetition_penalty`.
 // Issue #75: maxTokensPerCall cap wraps max_tokens via capMaxTokens.
+//
+// v1.26.4 PATCH (Issue #451): createMessageStream was silently inheriting
+// verbatim via Object.create, dropping temperature/top_p/seed/repetitionPenalty
+// on the stream path. Added explicit override that mirrors the
+// createMessage / createMessageWithOutput pattern via shared helpers below.
 
 import { LLMClient } from './types';
 import { capMaxTokens } from './core/token-cap';
@@ -46,18 +51,6 @@ export interface WrapperSettings {
  * enumerable properties, which drops all prototype methods.
  * `Object.create(client)` preserves the prototype chain, so the
  * wrapper inherits `createMessageStream` from the original client.
- *
- * **Known bug (v1.26.3 PATCH discovered):** prototype inheritance of
- * `createMessageStream` means settings (temperature / top_p / seed /
- * repetitionPenalty / enableThinking) are NOT injected on the stream
- * path. PR #443 Phase B added explicit `createMessageWithOutput`
- * wrapping (which works correctly), but `createMessageStream` still
- * relies on prototype inheritance and silently bypasses the wrapper.
- * Affects Query Wiki + streaming UI. Tracked as a separate v1.27.0
- * issue — the fix requires either explicit stream wrapping or a
- * different wrapper strategy that does not rely on `Object.create`.
- * See [project_v1_26_3_ux_patch] for the discovery + CHANGELOG
- * #414 entry for the full context.
  */
 export function wrapWithAdvancedSettings(
   client: LLMClient,
@@ -68,96 +61,73 @@ export function wrapWithAdvancedSettings(
   // Preserve prototype chain — Object.create inherits all prototype
   // methods (createMessageStream, listModels) from the original client.
   const wrapper = Object.create(client) as LLMClient;
-  wrapper.createMessage = async (params) => {
-    const startedAt = Date.now();
-    // The one seam every call passes through (`createLLMClient` always returns
-    // this wrapper), so the step's name is logged here rather than at twelve
-    // call sites. Without it the debug log prints a provider, a model and a
-    // prompt length per call and never says which step asked — and an ingest
-    // is tens of calls. Stubbed out in production builds along with every
-    // other `console.debug`.
-    console.debug(`[llm] task=${params.task ?? 'untagged'} model=${params.model} max_tokens=${params.max_tokens}`);
-    // Timed around the whole call, not on success: a call that throws still
-    // spent the time, and leaving it out would flatter whichever step fails.
-    try {
-      return await client.createMessage({
-        ...params,
-        ...(capTokens ? { max_tokens: capMaxTokens(params.max_tokens, { maxTokensPerCall: settings.maxTokensPerCall }), maxTokensPerCall: settings.maxTokensPerCall } : {}),
-        ...(params.temperature === undefined && settings.extractionTemperature !== undefined ? { temperature: settings.extractionTemperature } : {}),
-        ...(params.top_p === undefined && settings.extractionTopP !== undefined ? { top_p: settings.extractionTopP } : {}),
-        ...(params.repetition_penalty === undefined && settings.repetitionPenalty !== undefined ? { repetition_penalty: settings.repetitionPenalty } : {}),
-        ...(params.seed === undefined && settings.samplingSeed !== undefined ? { seed: settings.samplingSeed } : {}),
-      });
-    } finally {
-      recordTaskUsage(params.task, Date.now() - startedAt);
-    }
-  };
+  wrapper.createMessage = (params) => withTaskAccounting(params.task, async () => {
+    logLlmCall(params.task, params.model, params.max_tokens);
+    return client.createMessage({
+      ...params,
+      ...injectAdvancedSettings(params, settings, capTokens),
+    });
+  });
 
-  // v1.26.3 PATCH Phase B (Issue #443): wrap the typed-output variant the
-  // same way as createMessage. `Object.create(client)` inherits the
-  // prototype implementation; an explicit override here keeps the seam
-  // intact — task accounting + advanced settings injection apply to
-  // Phase B callers (seed-selector / query-keywords / merge-triage /
-  // link-orphan / fix-dead-link / QueryView) identically to the 16
-  // legacy callers. Without this, a typed call would bypass the seam
-  // and record under 'untagged' with no temperature/top_p/seed override.
   if (client.createMessageWithOutput) {
-    wrapper.createMessageWithOutput = async (params) => {
-      const startedAt = Date.now();
-      console.debug(`[llm] task=${params.task ?? 'untagged'} model=${params.model} max_tokens=${params.max_tokens} (typed)`);
-      try {
-        return await client.createMessageWithOutput!({
-          ...params,
-          ...(capTokens ? { max_tokens: capMaxTokens(params.max_tokens, { maxTokensPerCall: settings.maxTokensPerCall }), maxTokensPerCall: settings.maxTokensPerCall } : {}),
-          ...(params.temperature === undefined && settings.extractionTemperature !== undefined ? { temperature: settings.extractionTemperature } : {}),
-          ...(params.top_p === undefined && settings.extractionTopP !== undefined ? { top_p: settings.extractionTopP } : {}),
-          ...(params.repetition_penalty === undefined && settings.repetitionPenalty !== undefined ? { repetition_penalty: settings.repetitionPenalty } : {}),
-          ...(params.seed === undefined && settings.samplingSeed !== undefined ? { seed: settings.samplingSeed } : {}),
-        });
-      } finally {
-        recordTaskUsage(params.task, Date.now() - startedAt);
-      }
-    };
+    wrapper.createMessageWithOutput = (params) => withTaskAccounting(params.task, async () => {
+      logLlmCall(params.task, params.model, params.max_tokens, 'typed');
+      return client.createMessageWithOutput!({
+        ...params,
+        ...injectAdvancedSettings(params, settings, capTokens),
+      });
+    });
   }
 
   // Issue #451: createMessageStream previously inherited verbatim via
-  // Object.create, silently dropping advanced settings on the stream
-  // path. Query Wiki's only production caller (QueryView-class.ts:539)
-  // already manually forwarded `chatTemperature` + `enableThinking` +
-  // a hard cap, so those weren't lost — but `extractionTopP`,
-  // `samplingSeed`, `repetitionPenalty`, `extractionTemperature` were.
-  //
-  // Fix: explicit override gated by `if (client.createMessageStream)`,
-  // mirroring the createMessageWithOutput pattern above. The "only
-  // fill if caller omitted" rule preserves QueryView's manual forwards
-  // (caller-wins semantics) — verified by the regression-guard test
-  // `caller-provided temperature wins over wrapper extractionTemperature`.
+  // Object.create, silently dropping advanced settings on the stream path.
+  // 'untagged' is hardcoded for task accounting — see Issue #469 for the
+  // follow-up to extend the interface with a task field.
   if (client.createMessageStream) {
-    wrapper.createMessageStream = async (params) => {
-      const startedAt = Date.now();
-      // Issue #451: createMessageStream's interface signature (types.ts:770-783)
-      // intentionally has no `task` field today — it was defined before per-step
-      // LLM accounting (Issue #99 + v1.25.4 plumbing) added the `task` label to
-      // createMessage. Query Wiki is the sole caller (QueryView-class.ts:539)
-      // and currently does not pass `task`, so we cannot reconstruct one here.
-      // Recording as 'untagged' is consistent with how createMessage handles
-      // missing labels — the per-step table will show one 'untagged' row whose
-      // source is "stream path" until a future PR extends the interface to
-      // carry `task` end-to-end.
-      console.debug(`[llm] task=untagged (stream) model=${params.model} max_tokens=${params.max_tokens}`);
-      try {
-        return await client.createMessageStream!({
-          ...params,
-          ...(capTokens ? { max_tokens: capMaxTokens(params.max_tokens, { maxTokensPerCall: settings.maxTokensPerCall }), maxTokensPerCall: settings.maxTokensPerCall } : {}),
-          ...(params.temperature === undefined && settings.extractionTemperature !== undefined ? { temperature: settings.extractionTemperature } : {}),
-          ...(params.top_p === undefined && settings.extractionTopP !== undefined ? { top_p: settings.extractionTopP } : {}),
-          ...(params.repetition_penalty === undefined && settings.repetitionPenalty !== undefined ? { repetition_penalty: settings.repetitionPenalty } : {}),
-          ...(params.seed === undefined && settings.samplingSeed !== undefined ? { seed: settings.samplingSeed } : {}),
-        });
-      } finally {
-        recordTaskUsage(undefined, Date.now() - startedAt);
-      }
-    };
+    wrapper.createMessageStream = (params) => withTaskAccounting(undefined, async () => {
+      logLlmCall(undefined, params.model, params.max_tokens, 'stream');
+      return client.createMessageStream!({
+        ...params,
+        ...injectAdvancedSettings(params, settings, capTokens),
+      });
+    });
   }
   return wrapper;
+}
+
+// Build the settings-injection overlay used by all three wrapper blocks.
+// Caller-wins semantics: each spread only fires when the caller's params
+// omitted the field AND the setting was configured.
+function injectAdvancedSettings(
+  params: { max_tokens?: number; temperature?: number; top_p?: number; repetition_penalty?: number; seed?: number },
+  settings: WrapperSettings,
+  capTokens: boolean,
+): Record<string, unknown> {
+  return {
+    ...(capTokens ? { max_tokens: capMaxTokens(params.max_tokens ?? 0, { maxTokensPerCall: settings.maxTokensPerCall }), maxTokensPerCall: settings.maxTokensPerCall } : {}),
+    ...(params.temperature === undefined && settings.extractionTemperature !== undefined ? { temperature: settings.extractionTemperature } : {}),
+    ...(params.top_p === undefined && settings.extractionTopP !== undefined ? { top_p: settings.extractionTopP } : {}),
+    ...(params.repetition_penalty === undefined && settings.repetitionPenalty !== undefined ? { repetition_penalty: settings.repetitionPenalty } : {}),
+    ...(params.seed === undefined && settings.samplingSeed !== undefined ? { seed: settings.samplingSeed } : {}),
+  };
+}
+
+// The one seam every call passes through (`createLLMClient` always returns
+// this wrapper), so the step's name is logged here rather than at twelve
+// call sites. Without it the debug log prints a provider, a model and a
+// prompt length per call and never says which step asked. Stubbed out in
+// production builds along with every other `console.debug`.
+function logLlmCall(task: string | undefined, model: string, maxTokens: number, suffix?: string): void {
+  console.debug(`[llm] task=${task ?? 'untagged'} model=${model} max_tokens=${maxTokens}${suffix ? ` ${suffix}` : ''}`);
+}
+
+// Timed around the whole call, not on success: a call that throws still
+// spent the time, and leaving it out would flatter whichever step fails.
+async function withTaskAccounting<T>(task: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  try {
+    return await fn();
+  } finally {
+    recordTaskUsage(task, Date.now() - startedAt);
+  }
 }
