@@ -159,17 +159,29 @@ export class ConflictResolver {
     }
 
     // 2. Cross-type match: exists in opposite folder
+    //
+    // Issue #446: the same designators collide here, only from the other side —
+    // when the extraction classifies `DHA` as a concept, the two entity pages
+    // that carry it are cross-type matches and there are no same-type ones. The
+    // ambiguity is identical; only the contract differs, because this branch
+    // reports a collision the caller merges into rather than a path it writes.
+    // Ranking the matches keeps that contract and drops the dependency on list
+    // order. Routing a cross-type ambiguity to the semantic dedup would be the
+    // fuller answer, but that call is same-type by construction and gets its
+    // own design.
     const otherExactPath = `${this.wikiFolder}/${otherFolder}/${check.slug}.md`;
-    match = otherTypePages.find(p => p.path === otherExactPath || slugMatchKeys(p).has(checkKey));
-    if (match) {
+    const crossMatches = otherTypePages.filter(p => p.path === otherExactPath || slugMatchKeys(p).has(checkKey));
+    if (crossMatches.length > 0) {
+      const [best] = rankByTagOverlap(crossMatches, check.tags);
       return {
         action: 'merge',
-        targetPath: match.path,
-        existingPath: match.path,
+        targetPath: best.path,
+        existingPath: best.path,
         existingType: otherFolder === WIKI_SUBFOLDERS.entities ? 'entity' : 'concept',
-        aliasToAdd: check.name !== match.title ? check.name : null,
-        confidence: 'high',
-        reason: `Cross-type collision: ${check.pageType} "${check.name}" → ${match.path}`,
+        aliasToAdd: check.name !== best.title ? check.name : null,
+        confidence: crossMatches.length > 1 ? 'medium' : 'high',
+        reason: `Cross-type collision: ${check.pageType} "${check.name}" → ${best.path}`
+          + (crossMatches.length > 1 ? ` (${crossMatches.length} candidates, ranked)` : ''),
       };
     }
 
