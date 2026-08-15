@@ -63,6 +63,11 @@ export class LLMWikiSettingTab extends PluginSettingTab {
    * `tempSettings` → `plugin.settings`. Returns false if the flush
    * failed (caller must skip saveSettings so the typed key survives
    * for retry — see flushApiKey for failure semantics).
+   *
+   * Contract: this is a pure write-through. It MUST NOT cascade,
+   * auto-correct, or otherwise mutate `tempSettings` beyond the
+   * post-flush `apiKey` wipe. Per-task model ownership lives in
+   * `setFieldValue` (which fires `cascadeUnifiedModelChange`).
    */
   public commitTempSettings(): boolean {
     // Flush before wipe — see flushApiKey for failure semantics.
@@ -72,8 +77,8 @@ export class LLMWikiSettingTab extends PluginSettingTab {
     // success. Belt-and-suspenders so a future caller bypassing
     // flushApiKey can't reintroduce the v1.25.3 #182 plaintext leak.
     this.tempSettings.apiKey = '';
-    // v1.26.4 PATCH #456: commit is a pure write-through;
-    // cascade lives in setFieldValue (settings.ts:355).
+    // Pure write-through: commit MUST NOT cascade. Per-task model
+    // ownership lives in setFieldValue → cascadeUnifiedModelChange.
     this.plugin.settings = {
       ...this.tempSettings,
       watchedFolders: [...(this.tempSettings.watchedFolders || [])],
