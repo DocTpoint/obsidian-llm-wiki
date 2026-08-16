@@ -179,6 +179,33 @@ describe('resolvePagePath — LLM semantic dedup fallback', () => {
     expect(prompt.indexOf('Polysorbate.md')).toBeLessThan(prompt.indexOf('Polysorbat-80.md'));
   });
 
+  // Code-review F1 (2026-08-16): every ambiguous-designator fallback must
+  // latch the extracted name as an alias on the resolved page, matching the
+  // pre-#446 merge path. Observable case: the designator carries a
+  // non-slug-normalized character (trailing dash) that survives as an alias
+  // but is stripped from the slug — so the extracted name is neither an
+  // existing alias nor equal to the page's filename, and the write is visible.
+  it('latches the extracted name on the tag-ranked fallback page (no-client exit)', async () => {
+    const ctx = makeCtx({
+      files: {
+        'wiki/entities/No2.md': '---\ntags:\n  - Biochemie\n---\nbody',
+        'wiki/entities/NO2.md': '---\ntags:\n  - other\n---\nbody',
+      },
+      mockVault: {
+        getMarkdownFiles: () => [
+          { path: 'wiki/entities/No2.md', basename: 'No2' },
+          { path: 'wiki/entities/NO2.md', basename: 'NO2' },
+        ],
+      },
+      client: null,
+    });
+    const result = await resolvePagePath(ctx, 'no2-', 'entity', 'desc', ['Biochemie']);
+    expect(result.path).toBe('wiki/entities/No2.md');
+    const written = ctx.written.get('wiki/entities/No2.md') ?? '';
+    expect(written).toContain('aliases:');
+    expect(written).toContain('no2-');
+  });
+
   it('passes the slim "index" schema selector to buildSystemPrompt', async () => {
     // The dedup question is a same-type yes/no match; the matching criteria
     // live in the user prompt. Only "Wiki Structure" is needed from the

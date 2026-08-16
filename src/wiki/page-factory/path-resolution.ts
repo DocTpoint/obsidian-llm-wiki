@@ -139,6 +139,18 @@ export async function resolvePagePath(
   // the dependency on vault iteration order.
   let fallbackPath = slugPath;
 
+  // Issue #446 follow-up (code-review F1): the pre-#446 merge path latched the
+  // designator as an alias on the merged page, so a later ingest hit it by
+  // single-match. The disambiguate fallback must keep that latch — without it,
+  // every re-ingest re-enters the ambiguity path (paying an LLM dedup call)
+  // and the merge target can flip when a candidate's tags change. `appendAliases`
+  // is idempotent (drops filename-equal + already-present aliases), so the
+  // ordinary `slugPath` (new-page) fallback is skipped via the guard below.
+  const latchAndReturn = async (path: string): Promise<ResolvedPathResult> => {
+    if (path !== slugPath) await appendAliases(ctx, path, [name]);
+    return { path };
+  };
+
   // Fast path: exact slug match (same type folder)
   const existing = await ctx.tryReadFile(slugPath);
   if (existing !== null) {
@@ -227,7 +239,7 @@ export async function resolvePagePath(
       .join('\n');
 
     const client = ctx.getClient();
-    if (!client) return { path: fallbackPath };
+    if (!client) return await latchAndReturn(fallbackPath);
 
     const prompt = renderTemplate(PROMPTS.resolveEntityDedup, {
       wikiFolder: ctx.settings.wikiFolder,
@@ -279,7 +291,7 @@ export async function resolvePagePath(
       console.error(
         `Entity resolution for "${name}": dedup reply unreadable (${detail}) — using ${fallbackPath}, no match decided`,
       );
-      return { path: fallbackPath };
+      return await latchAndReturn(fallbackPath);
     }
 
     const result = parsed.value as { match?: boolean; path?: string | null };
@@ -299,7 +311,7 @@ export async function resolvePagePath(
   // one place where "neither candidate is it" would create a third page for a
   // name that is already an alias twice, so it resolves to the top-ranked
   // candidate instead. For every other call `fallbackPath` is `slugPath`.
-  return { path: fallbackPath };
+  return await latchAndReturn(fallbackPath);
 }
 
 /**

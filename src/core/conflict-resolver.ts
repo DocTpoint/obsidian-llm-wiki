@@ -109,10 +109,13 @@ export class ConflictResolver {
    * Determine what to do with a newly extracted entity/concept.
    * Returns a ConflictResolution that the caller should follow.
    *
-   * Resolution order (deterministic, first match wins):
-   * 1. Same-type slug/alias match → merge into existing page
-   * 2. Cross-type slug/alias match → merge into opposite folder page
-   * 3. No match → create new page
+   * Resolution order (deterministic):
+   * 1. Same-type exact path match → merge into existing page
+   * 2. Same-type slug/alias match on exactly one page → merge into that page
+   * 3. Same-type slug/alias match on more than one page → 'disambiguate'
+   *    with `candidates` ranked by tag overlap (Issue #446)
+   * 4. Cross-type slug/alias match → merge into opposite-folder page
+   * 5. No match → create new page
    */
   resolve(check: ConflictCheck): ConflictResolution {
     const folder = folderOf(check.pageType);
