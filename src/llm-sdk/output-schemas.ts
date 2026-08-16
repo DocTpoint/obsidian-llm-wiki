@@ -181,8 +181,33 @@ const ConceptItem = z.object({
 export const SourceAnalysisLLMSchema = z.object({
   source_title: z.string().optional(),
   summary: z.string().optional(),
-  entities: z.array(EntityItem).optional(),
-  concepts: z.array(ConceptItem).optional(),
+  // Issue #463: `entities` and `concepts` MUST be in the wire
+  // `required` array. Without this, an LLM response of `{}` (or one
+  // whose top-level keys are mangled by a small local model under
+  // grammar constraint, per DocTpoint's 2026-08-16 measurement) is
+  // formally valid at the top level — `additionalProperties: true`
+  // permits any key set, and `required` was empty — so
+  // `strict: true` had nothing to enforce. `normalizeBatchResponse`
+  // then reported 'unusable' on round 1 and abort.
+  //
+  // Fix: drop `.optional()` on these two arrays. `.passthrough()` at
+  // the top level is preserved, so models that emit extras like
+  // `confidence` or `score` still parse — the user requirement
+  // "针对一些格式内容多变的属性，必须留好冗余空间" is honored. Only
+  // the *absence* of the two structural arrays is rejected.
+  // Mirrors the existing pattern in `LemmaClassifyLLMSchema` (`kind`
+  // is required; extras pass through).
+  //
+  // `source_title`, `summary`, `key_points`, `related_pages`,
+  // `contradictions` remain `.optional()` because
+  // `normalizeBatchResponse` does not consult them for batch-validity
+  // (only entities + concepts do), and the runtime has explicit
+  // fallbacks for missing source_title (filename) and missing summary
+  // (lemma-guarantee skip). See
+  // src/__tests__/llm-sdk/output-schemas.test.ts for the contract
+  // these changes satisfy.
+  entities: z.array(EntityItem),
+  concepts: z.array(ConceptItem),
   contradictions: z.array(z.object({
     claim: z.string(),
     source_page: z.string(),

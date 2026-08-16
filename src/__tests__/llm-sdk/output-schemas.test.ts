@@ -13,6 +13,7 @@
 // would silently get undefined fields and crash downstream.
 
 import { describe, it, expect } from 'vitest';
+import { Output } from 'ai';
 import {
   SeedSelectorSchema,
   QueryKeywordsSchema,
@@ -159,14 +160,42 @@ describe('output-schemas (Phase B expanded scope)', () => {
       expect(r.concepts?.[0].name).toBe('Semantic Versioning');
     });
 
-    it('accepts an empty object (graceful fallback)', () => {
-      const r = SourceAnalysisLLMSchema.parse({});
-      expect(r.entities).toBeUndefined();
-      expect(r.source_title).toBeUndefined();
+    it('REJECTS an empty object (Issue #463 fix: required entities + concepts)', () => {
+      // Issue #463 (DocTpoint 2026-08-16): the wire schema must
+      // enforce presence of `entities` and `concepts` so LM Studio's
+      // `strict: true` has something to enforce. Before the fix,
+      // `{}` was accepted and `normalizeBatchResponse` reported
+      // 'unusable' on round 1. After the fix, Zod throws on `{}` —
+      // the AI SDK's `parseCompleteOutput` converts that into
+      // `NoObjectGeneratedError`, which the caller's catch block
+      // routes to the repair path rather than silently producing a
+      // quietly-empty SourceAnalysis.
+      expect(() => SourceAnalysisLLMSchema.parse({})).toThrow();
     });
 
-    it('passes through extra unknown fields (forward-compat)', () => {
+    it('ACCEPTS empty entities + concepts arrays (empty-batch signal path)', () => {
+      // The empty-batch signal path: when a model emits
+      // `{entities: [], concepts: []}`, `normalizeBatchResponse`
+      // reports 'empty' (not 'unusable') and the batch loop stops
+      // cleanly. The schema must distinguish this from `{}` so the
+      // caller can tell "no items to extract" from "model produced
+      // garbage". This is why `required` must be present-key only —
+      // empty arrays are valid.
+      const r = SourceAnalysisLLMSchema.parse({ entities: [], concepts: [] });
+      expect(r.entities).toEqual([]);
+      expect(r.concepts).toEqual([]);
+    });
+
+    it('passes through extra unknown fields alongside required arrays (forward-compat)', () => {
+      // The user requirement "针对一些格式内容多变的属性，必须留好冗余空间"
+      // means a model that emits extras like `confidence` must not be
+      // rejected. Combined with the Issue #463 fix, the test must
+      // include the required `entities` + `concepts` arrays AND the
+      // unknown `confidence` field. `additionalProperties: true` at
+      // the top level is preserved by `.passthrough()`.
       const r = SourceAnalysisLLMSchema.parse({
+        entities: [],
+        concepts: [],
         source_title: 'X',
         confidence: 0.95, // model added this on its own
       });
@@ -176,7 +205,156 @@ describe('output-schemas (Phase B expanded scope)', () => {
     it('rejects entities item missing name (required structural field)', () => {
       expect(() => SourceAnalysisLLMSchema.parse({
         entities: [{ type: 'person' }],
+        concepts: [],
       })).toThrow();
+    });
+
+    it('Issue #463: rejects missing entities only (required array is per-key)', async () => {
+      // Even with `concepts` present, missing `entities` must be
+      // rejected — `required` is per-key, not all-or-nothing. This
+      // catches a regression where someone relaxes the schema by
+      // marking both arrays optional again.
+      const output = Output.object({
+        schema: SourceAnalysisLLMSchema,
+        name: 'source_analysis',
+      });
+      await expect(
+        output.parseCompleteOutput(
+          { text: JSON.stringify({ concepts: [] }) },
+          {
+            response: {},
+            usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+            finishReason: 'stop',
+          } as never,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('Issue #463: rejects missing concepts only', async () => {
+      const output = Output.object({
+        schema: SourceAnalysisLLMSchema,
+        name: 'source_analysis',
+      });
+      await expect(
+        output.parseCompleteOutput(
+          { text: JSON.stringify({ entities: [] }) },
+          {
+            response: {},
+            usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+            finishReason: 'stop',
+          } as never,
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('Issue #463: AI SDK parseCompleteOutput accepts {entities:[], concepts:[]} (empty signal)', async () => {
+      // The full AI SDK path — not just Zod — must preserve the
+      // empty-signal distinction. This guards against a future SDK
+      // version or schema adapter that rejects empty arrays.
+      const output = Output.object({
+        schema: SourceAnalysisLLMSchema,
+        name: 'source_analysis',
+      });
+      const parsed = await output.parseCompleteOutput(
+        { text: JSON.stringify({ entities: [], concepts: [] }) },
+        {
+          response: {},
+          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+          finishReason: 'stop',
+        } as never,
+      );
+      expect(parsed).toEqual({ entities: [], concepts: [] });
+    });
+
+    it('Issue #463: AI SDK parseCompleteOutput accepts stray-char keys (passthrough preserved)', async () => {
+      // The #463 symptom on LM Studio is mangled top-level keys
+      // (e.g. `source_title_` instead of `source_title`). With the
+      // fix, these MUST still parse — the user requirement is
+      // passthrough at the top level. Only the *absence* of
+      // entities/concepts is rejected. This test guards against an
+      // over-zealous future "fix" that drops passthrough.
+      const strayCharJson = JSON.stringify({
+        source_title_: 'Ectoin.md',
+        summary_: 'Ectoin ist ein Extremolyt...',
+        entities: [],
+        concepts: [],
+        confidence: 0.9,
+      });
+      const output = Output.object({
+        schema: SourceAnalysisLLMSchema,
+        name: 'source_analysis',
+      });
+      const parsed = await output.parseCompleteOutput(
+        { text: strayCharJson },
+        {
+          response: {},
+          usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+          finishReason: 'stop',
+        } as never,
+      );
+      const obj = parsed as Record<string, unknown>;
+      expect(obj.source_title_).toBe('Ectoin.md');
+      expect(obj.confidence).toBe(0.9);
+      expect(obj.entities).toEqual([]);
+      expect(obj.concepts).toEqual([]);
+    });
+
+    it('Issue #463: wire schema top-level has required containing entities and concepts', async () => {
+      // Wire-shape contract: `required: ['entities', 'concepts']` is
+      // emitted on the top-level object. LM Studio's `strict: true`
+      // uses this array to enforce key presence — without it, a
+      // model returning `{}` is formally valid and the bug
+      // reproduces.
+      const output = Output.object({
+        schema: SourceAnalysisLLMSchema,
+        name: 'source_analysis',
+      });
+      const responseFormat = await output.responseFormat;
+      const wireSchema = (responseFormat as unknown as { schema: Record<string, unknown> }).schema;
+      const required = wireSchema.required;
+      expect(Array.isArray(required)).toBe(true);
+      expect(required as string[]).toContain('entities');
+      expect(required as string[]).toContain('concepts');
+    });
+
+    it('Issue #463: wire schema top-level retains additionalProperties: true (passthrough requirement)', async () => {
+      // The fix MUST keep `.passthrough()` at the top level so models
+      // can emit extra fields like `confidence`, `score`, or
+      // whatever shape they choose. DocTpoint's 2026-08-16 measurement
+      // confirmed `additionalProperties: false` is NOT required to
+      // fix #463 — only `required` is. This test guards against
+      // dropping passthrough in a future refactor.
+      const output = Output.object({
+        schema: SourceAnalysisLLMSchema,
+        name: 'source_analysis',
+      });
+      const responseFormat = await output.responseFormat;
+      const wireSchema = (responseFormat as unknown as { schema: Record<string, unknown> }).schema;
+      expect(wireSchema.additionalProperties).toBe(true);
+    });
+
+    it('Issue #463: wire schema source_title / summary / key_points / etc remain optional (no scope creep)', async () => {
+      // The fix is narrow on purpose. `source_title`, `summary`,
+      // `key_points`, `related_pages`, `contradictions` stay
+      // `.optional()` because:
+      //   1. `normalizeBatchResponse` does not consult them for
+      //      batch-loop validity (only `entities` + `concepts` do).
+      //   2. The runtime has explicit fallbacks for missing
+      //      source_title (filename) and missing summary (lemma
+      //      guarantee skip).
+      //   3. Existing tests pass with these as optional.
+      const output = Output.object({
+        schema: SourceAnalysisLLMSchema,
+        name: 'source_analysis',
+      });
+      const responseFormat = await output.responseFormat;
+      const wireSchema = (responseFormat as unknown as { schema: Record<string, unknown> }).schema;
+      const required = (wireSchema.required as string[] | undefined) ?? [];
+      expect(required).not.toContain('source_title');
+      expect(required).not.toContain('summary');
+      expect(required).not.toContain('key_points');
+      expect(required).not.toContain('related_pages');
+      expect(required).not.toContain('contradictions');
     });
   });
 
