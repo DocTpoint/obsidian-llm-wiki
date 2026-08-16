@@ -165,4 +165,147 @@ describe('wrapWithAdvancedSettings — behavior parity (refactor C)', () => {
       expect(typeof (raw as unknown as Record<string, unknown>).createMessageStream).toBe('function');
     });
   });
+
+  // Issue #451: createMessageStream previously inherited via Object.create,
+  // so wrapper-level settings (temperature / top_p / seed / repetition_penalty
+  // / enableThinking / maxTokensPerCall cap) were silently dropped on the
+  // stream path. Query Wiki's only production caller (QueryView-class.ts:539)
+  // manually forwarded `chatTemperature` + `enableThinking` + a hard cap, so
+  // those weren't lost — but `extractionTopP`, `samplingSeed`, `repetitionPenalty`,
+  // `extractionTemperature` were.
+  //
+  // The fix mirrors createMessageWithOutput's pattern: an explicit override
+  // block gated by `if (client.createMessageStream)`. Use the same
+  // "only fill if caller omitted" rule so QueryView's existing manual
+  // forwards are not double-injected (caller-wins).
+  describe('Issue #451: createMessageStream settings injection', () => {
+    type CreateMessageStreamParams = Parameters<NonNullable<LLMClient['createMessageStream']>>[0];
+
+    function makeStreamRecordingClient(opts: {
+      createMessageStreamImpl?: (params: CreateMessageStreamParams) => Promise<string>;
+    }): LLMClient {
+      return {
+        createMessage: vi.fn(async (_p: CreateMessageParams) => 'unused'),
+        createMessageStream: vi.fn(opts.createMessageStreamImpl ?? (async (_p: CreateMessageStreamParams) => 'stream-echo')) as unknown as LLMClient['createMessageStream'],
+      };
+    }
+
+    function validStreamParams(overrides: Partial<CreateMessageStreamParams> = {}): CreateMessageStreamParams {
+      return {
+        model: 'test-model',
+        max_tokens: 100,
+        messages: [{ role: 'user' as const, content: 'hi' }],
+        onChunk: () => undefined,
+        ...overrides,
+      };
+    }
+
+    it.each([
+      ['extractionTemperature', 'temperature', 0.42] as const,
+      ['extractionTopP', 'top_p', 0.88] as const,
+      ['samplingSeed', 'seed', 42] as const,
+      ['repetitionPenalty', 'repetition_penalty', 1.15] as const,
+    ])('injects %s on stream path when caller omits %s', async (settingKey, fieldKey, value) => {
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 0,
+        [settingKey]: value,
+      });
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)(validStreamParams());
+      const callArgs = (client.createMessageStream as ReturnType<typeof vi.fn>).mock.calls[0][0] as CreateMessageStreamParams;
+      expect(callArgs[fieldKey as keyof CreateMessageStreamParams]).toBe(value);
+    });
+
+    it('caps max_tokens via maxTokensPerCall on stream path when caller does not pre-cap', async () => {
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 100,
+      });
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)(validStreamParams({ max_tokens: 500 }));
+      const callArgs = (client.createMessageStream as ReturnType<typeof vi.fn>).mock.calls[0][0] as CreateMessageStreamParams;
+      // capMaxTokens may downscale; the key assertion is that max_tokens is
+      // ≤ maxTokensPerCall (= 100), not the raw 500 caller passed.
+      expect(callArgs.max_tokens).toBeLessThanOrEqual(100);
+    });
+
+    // REGRESSION GUARD: QueryView-class.ts:563-564 already manually forwards
+    // `chatTemperature` and `enableThinking`. A naive wrapper that always
+    // overwrites would double-inject. Caller-wins semantics must hold on
+    // the stream path too.
+    it('caller-provided temperature wins over wrapper extractionTemperature (no double-inject)', async () => {
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 0,
+        extractionTemperature: 0.42,
+      });
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)(validStreamParams({ temperature: 0.99 }));
+      const callArgs = (client.createMessageStream as ReturnType<typeof vi.fn>).mock.calls[0][0] as CreateMessageStreamParams;
+      expect(callArgs.temperature).toBe(0.99);
+    });
+
+    // Test F1: stream accounting seam. Pre-existing tests only covered
+    // createMessage / createMessageWithOutput for recordTaskUsage; the
+    // createMessageStream override's hardcoded 'untagged' baseline +
+    // finally-block timing have no coverage. Pinned here so a future refactor
+    // that drops the withTaskAccounting wrapping is caught here.
+    it('records stream usage under "untagged" with finite timing', async () => {
+      const { snapshotTaskUsage, taskUsageSince } = await import('../../core/llm-task-usage');
+      const client = makeStreamRecordingClient({});
+      const wrapped = wrapWithAdvancedSettings(client, { maxTokensPerCall: 0 });
+      const before = snapshotTaskUsage();
+      await (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)(validStreamParams());
+      const delta = taskUsageSince(before);
+      const untagged = delta.find(([task]) => task === 'untagged');
+      expect(untagged).toBeDefined();
+      expect(untagged![1].calls).toBe(1);
+      expect(untagged![1].millis).toBeGreaterThanOrEqual(0);
+    });
+
+    // Test F1b: finally-block behavior — even when the underlying
+    // createMessageStream throws, the call is still counted.
+    it('still records stream usage when createMessageStream throws (finally-block timing)', async () => {
+      const { snapshotTaskUsage, taskUsageSince } = await import('../../core/llm-task-usage');
+      const client = makeStreamRecordingClient({
+        createMessageStreamImpl: async () => {
+          throw new Error('stream failed');
+        },
+      });
+      const wrapped = wrapWithAdvancedSettings(client, { maxTokensPerCall: 0 });
+      const before = snapshotTaskUsage();
+      await expect(
+        (wrapped.createMessageStream as (p: CreateMessageStreamParams) => Promise<string>)(validStreamParams()),
+      ).rejects.toThrow('stream failed');
+      const delta = taskUsageSince(before);
+      const untagged = delta.find(([task]) => task === 'untagged');
+      expect(untagged).toBeDefined();
+      expect(untagged![1].calls).toBe(1);
+    });
+
+    // Test F2: typed cap branch. The 4 typed-path tests under
+    // llm-client-wrapper.test.ts all disable maxTokensPerCall, so a
+    // regression that drops the cap from the typed block alone would go
+    // undetected. Pin the cap reach-through here.
+    it('caps max_tokens on typed-output path when maxTokensPerCall is set', async () => {
+      type TypedParams = Parameters<NonNullable<LLMClient['createMessageWithOutput']>>[0];
+      const typedImpl = vi.fn(async (_p: TypedParams) => ({
+        text: 'typed-out',
+        finishReason: 'stop' as const,
+      }));
+      const typedClient: LLMClient = {
+        createMessage: vi.fn(async (_p: CreateMessageParams) => 'unused'),
+        createMessageWithOutput: typedImpl as unknown as LLMClient['createMessageWithOutput'],
+      };
+      const wrapped = wrapWithAdvancedSettings(typedClient, {
+        maxTokensPerCall: 100,
+        extractionTemperature: 0.7,
+      });
+      await (wrapped.createMessageWithOutput as (p: TypedParams) => Promise<unknown>)({
+        model: 'test-model',
+        max_tokens: 500,
+        messages: [{ role: 'user' as const, content: 'hi' }],
+      });
+      const sent = typedImpl.mock.calls[0][0] as TypedParams;
+      expect(sent.max_tokens).toBeLessThanOrEqual(100);
+    });
+  });
 });
