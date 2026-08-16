@@ -2,7 +2,7 @@
 
 > Feature planning and improvement proposals
 
-**Version:** v1.26.3 PATCH SHIPPED 2026-08-14 (tag `1.26.3`, 5 PRs / 3290 tests / 97 files / +9799/-785). **v1.26.4 PATCH in design** (3 bugs: #456 split-model persistence + #451 stream-path + #449 cacheBreakpoint). v1.27.0 MINOR in design. v1.26.2 PATCH SHIPPED 2026-08-09. v1.26.1 PATCH SHIPPED 2026-08-08. | **Updated:** 2026-08-14
+**Version:** v1.26.3 PATCH SHIPPED 2026-08-14 (tag `1.26.3`, 5 PRs / 3290 tests / 97 files / +9799/-785). **v1.26.4 PATCH in design** (5 bugs: #456 split-model persistence + #451 stream-path + #449 cacheBreakpoint + #459/#460 lint prompt tag vocab + #463 extraction wire-schema required). v1.27.0 MINOR in design. v1.26.2 PATCH SHIPPED 2026-08-09. v1.26.1 PATCH SHIPPED 2026-08-08. | **Updated:** 2026-08-16
 
 ## Current Status
 
@@ -59,7 +59,7 @@ See [CLAUDE.md §"📦 Development Workflow"](./CLAUDE.md) + [`.claude/skills/ob
 
 **v1.26.3 PATCH SHIPPED 2026-08-14** (canonical record in [CHANGELOG.md §1.26.3](./CHANGELOG.md#1263---2026-08-12)): 5 PRs — #447 (Issue #443, JSON-schema wire + 11 caller migrations) + #448 (B1-B3 UX + B2.5 i18n + Toast i18n) + #453 (Issue #414 `repetitionPenalty` dialect dispatch) + #450 (Issue #438 `sources:` frontmatter data-loss, Finding 1 fixed in `2560ab4`) + #454 (A1 placeholder detector widening + repetitionPenalty UX hint, gated via `core/repetition-penalty-dialect.ts`). Test count 2992 → 3290 (+298).
 
-**v1.26.4 PATCH in design (4 bugs, user direction 2026-08-14):** each is a single-PR PATCH-scope fix; combine into one release. Scope estimate: ~180-250 LOC production + ~190 LOC tests.
+**v1.26.4 PATCH in design (5 bugs, user direction 2026-08-14, + #463 on 2026-08-16):** each is a single-PR PATCH-scope fix; combine into one release. Scope estimate: ~180-250 LOC production + ~190 LOC tests.
 
 | # | Title | File | LOC est. | TDD scope |
 |---|---|---|---|---|
@@ -67,10 +67,11 @@ See [CLAUDE.md §"📦 Development Workflow"](./CLAUDE.md) + [`.claude/skills/ob
 | **#449** | `cacheBreakpoint` declared + set, but 0 SDK clients read it → Anthropic `cache_control: { type: 'ephemeral' }` wire-up (Direction 1, per-note caching only) | `src/llm-sdk/anthropic-sdk-client.ts` (~15 LOC); `src/llm-sdk/openai-compat-sdk-client.ts` (passthrough no-op since `@ai-sdk/openai-compatible` doesn't honor cache hint yet) | ~15 prod + 30 test | Wire-body assertion that `cache_control` is present when `cacheBreakpoint` is set; absent when not set |
 | **#451** | `createMessageStream` drops all settings (temperature / top_p / seed / repetitionPenalty / enableThinking) | `src/llm-client-wrapper.ts` (Path 1 = mirror `createMessageWithOutput`) | ~30-60 prod + 50-100 test | Wire-body / stream-text test asserts injection reaches the LLM call |
 | **#459 / #460** | `fillEmptyPage` lint prompt hardcodes default tag taxonomy contradicting runtime injection (silent for default vocab, breaks disjoint custom vocabularies like biochemistry domain) | `src/wiki/prompts/fixes.ts:47` (1 line: defer to system-layer Active Tag Vocabulary) | ~1 prod + 68 test (test already in PR #460) | (1) `buildSystemPrompt` carries active vocabulary on `lint` task; (2) no `FIX_PROMPTS` line enumerates ≥3 default-taxonomy values |
+| **#463** | LM Studio extraction returns nothing since 1.26.3 — the extraction wire schema had no top-level `required` array, so `strict: true` had nothing to enforce; model keys arrive mangled (`source_title_`), `normalizeBatchResponse` reports round 1 unusable | `src/llm-sdk/output-schemas.ts:184-185` (drop `.optional()` from `entities` + `concepts`; keep `.passthrough()` per DocTpoint 2026-08-16 measurement) | ~2 prod + 8 test | (1) `{}` rejected (wire `required`); (2) `{entities:[], concepts:[]}` accepted (empty-batch signal); (3) wire `required` contains entities+concepts; (4) `additionalProperties` stays `true`; (5) five non-structural fields stay out of `required` |
 
-**v1.26.4 release plan:** 4 branches (or 4 commits in one branch), simplify + code-review on combined diff, release-skill v1.7.1 Step 5b.5 Bot pre-review BEFORE tag. PR #460 already APPROVED at review event (green-dalii 2026-08-14 05:45 UTC). Target ship date 2026-08-21 (7 days).
+**v1.26.4 release plan:** 5 branches (or 5 commits in one branch), simplify + code-review on combined diff, release-skill v1.7.1 Step 5b.5 Bot pre-review BEFORE tag. PR #460 already APPROVED at review event (green-dalii 2026-08-14 05:45 UTC). Target ship date 2026-08-21 (7 days).
 
-**Test count delta:** +22 (from #460 test) + ~110-160 (from #456 + #449 + #451) = 3290 → 3470-3520.
+**Test count delta:** +22 (from #460 test) + ~110-160 (from #456 + #449 + #451) + 8 (from #463) = 3290 → 3478-3528.
 
 **Remaining follow-ups (moved to v1.27.0 window):**
 - **#407 Stages 1+2** — port the 8 silent-failure call sites (`path-resolution.ts:220` + `conversation-ingest.ts:337` first), one PR per blast radius.
