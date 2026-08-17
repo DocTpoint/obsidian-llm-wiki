@@ -13,6 +13,8 @@ export interface PageRef {
   path: string;
   title: string;
   aliases?: string[];
+  /** Issue #446: domain tags of the page, used to rank ambiguous matches. */
+  tags?: string[];
 }
 
 export type PageType = 'entity' | 'concept';
@@ -21,9 +23,16 @@ export interface ConflictCheck {
   name: string;
   slug: string;
   pageType: PageType;
+  /**
+   * Issue #446: domain tags of the item being placed — in the ingest path the
+   * extracted `type`, which is what the generated page will carry as its own
+   * `tags:`. Ranking signal only, see `rankByTagOverlap`. Optional: a caller
+   * that has none leaves the ranking on its path tie-break.
+   */
+  tags?: string[];
 }
 
-export type ConflictAction = 'create' | 'merge' | 'flag';
+export type ConflictAction = 'create' | 'merge' | 'flag' | 'disambiguate';
 
 export interface ConflictResolution {
   action: ConflictAction;
@@ -33,6 +42,13 @@ export interface ConflictResolution {
   aliasToAdd?: string | null;   // alias to add (null = redundant with title/filename)
   confidence: 'high' | 'medium' | 'low';
   reason: string;
+  /**
+   * Issue #446: every same-type page the designator matched, ranked. Only set
+   * when `action` is 'disambiguate' (more than one match). `targetPath` is the
+   * top-ranked one, so a caller that ignores this field still resolves — and
+   * resolves the same way on every page order.
+   */
+  candidates?: PageRef[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -55,6 +71,32 @@ function slugMatchKeys(page: PageRef): Set<string> {
   return keys;
 }
 
+/**
+ * Issue #446: order pages that a designator matched equally well.
+ *
+ * Tags rank, they never decide: this function only permutes a list, it never
+ * drops a candidate and never turns a match into a non-match. Tag sets of a
+ * page and of a naming note are disjoint in the ordinary case — a page carries
+ * the aspect it was created under, a note the aspect it was written about — so
+ * a disjoint set is the absence of a signal, not evidence of a different
+ * subject.
+ *
+ * The tie-break is the path, compared by code unit rather than by locale, so
+ * the result is independent both of the input order and of the host's collation.
+ */
+function rankByTagOverlap(matches: PageRef[], checkTags?: string[]): PageRef[] {
+  const wanted = new Set((checkTags ?? []).map(t => t.toLowerCase()));
+  const overlap = (p: PageRef): number =>
+    wanted.size === 0 ? 0 : (p.tags ?? []).filter(t => wanted.has(t.toLowerCase())).length;
+
+  return [...matches].sort((a, b) => {
+    const byOverlap = overlap(b) - overlap(a);
+    if (byOverlap !== 0) return byOverlap;
+    if (a.path === b.path) return 0;
+    return a.path < b.path ? -1 : 1;
+  });
+}
+
 // ── Main resolver ─────────────────────────────────────────────────
 
 export class ConflictResolver {
@@ -67,10 +109,13 @@ export class ConflictResolver {
    * Determine what to do with a newly extracted entity/concept.
    * Returns a ConflictResolution that the caller should follow.
    *
-   * Resolution order (deterministic, first match wins):
-   * 1. Same-type slug/alias match → merge into existing page
-   * 2. Cross-type slug/alias match → merge into opposite folder page
-   * 3. No match → create new page
+   * Resolution order (deterministic):
+   * 1. Same-type exact path match → merge into existing page
+   * 2. Same-type slug/alias match on exactly one page → merge into that page
+   * 3. Same-type slug/alias match on more than one page → 'disambiguate'
+   *    with `candidates` ranked by tag overlap (Issue #446)
+   * 4. Cross-type slug/alias match → merge into opposite-folder page
+   * 5. No match → create new page
    */
   resolve(check: ConflictCheck): ConflictResolution {
     const folder = folderOf(check.pageType);
@@ -90,28 +135,56 @@ export class ConflictResolver {
         reason: `Same-type exact path match: ${exactPath}`,
       };
     }
-    match = sameTypePages.find(p => slugMatchKeys(p).has(checkKey));
-    if (match) {
+    // Issue #446: a short designator is a title or an alias on more than one
+    // page often enough to matter (23 of them in a 2838-page vault). `find`
+    // returned whichever the page list happened to hold first, so the merge
+    // target was a function of vault iteration order and nothing said the
+    // question had been open.
+    const slugMatches = sameTypePages.filter(p => slugMatchKeys(p).has(checkKey));
+    if (slugMatches.length === 1) {
+      const only = slugMatches[0];
       return {
         action: 'merge',
-        targetPath: match.path,
+        targetPath: only.path,
         confidence: 'high',
-        reason: `Same-type slug/alias match: title=${match.title} slug=${check.slug}`,
+        reason: `Same-type slug/alias match: title=${only.title} slug=${check.slug}`,
+      };
+    }
+    if (slugMatches.length > 1) {
+      const ranked = rankByTagOverlap(slugMatches, check.tags);
+      return {
+        action: 'disambiguate',
+        targetPath: ranked[0].path,
+        candidates: ranked,
+        confidence: 'low',
+        reason: `Ambiguous designator: ${ranked.length} same-type pages match slug=${check.slug} (${ranked.map(p => p.title).join(', ')})`,
       };
     }
 
     // 2. Cross-type match: exists in opposite folder
+    //
+    // Issue #446: the same designators collide here, only from the other side —
+    // when the extraction classifies `DHA` as a concept, the two entity pages
+    // that carry it are cross-type matches and there are no same-type ones. The
+    // ambiguity is identical; only the contract differs, because this branch
+    // reports a collision the caller merges into rather than a path it writes.
+    // Ranking the matches keeps that contract and drops the dependency on list
+    // order. Routing a cross-type ambiguity to the semantic dedup would be the
+    // fuller answer, but that call is same-type by construction and gets its
+    // own design.
     const otherExactPath = `${this.wikiFolder}/${otherFolder}/${check.slug}.md`;
-    match = otherTypePages.find(p => p.path === otherExactPath || slugMatchKeys(p).has(checkKey));
-    if (match) {
+    const crossMatches = otherTypePages.filter(p => p.path === otherExactPath || slugMatchKeys(p).has(checkKey));
+    if (crossMatches.length > 0) {
+      const [best] = rankByTagOverlap(crossMatches, check.tags);
       return {
         action: 'merge',
-        targetPath: match.path,
-        existingPath: match.path,
+        targetPath: best.path,
+        existingPath: best.path,
         existingType: otherFolder === WIKI_SUBFOLDERS.entities ? 'entity' : 'concept',
-        aliasToAdd: check.name !== match.title ? check.name : null,
-        confidence: 'high',
-        reason: `Cross-type collision: ${check.pageType} "${check.name}" → ${match.path}`,
+        aliasToAdd: check.name !== best.title ? check.name : null,
+        confidence: crossMatches.length > 1 ? 'medium' : 'high',
+        reason: `Cross-type collision: ${check.pageType} "${check.name}" → ${best.path}`
+          + (crossMatches.length > 1 ? ` (${crossMatches.length} candidates, ranked)` : ''),
       };
     }
 

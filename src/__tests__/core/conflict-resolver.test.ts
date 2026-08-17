@@ -66,3 +66,64 @@ describe('ConflictResolver', () => {
     expect(result.reason).toContain('Cross-type');
   });
 });
+
+// Issue #446: a short designator can be title-or-alias on more than one page.
+// `E433` is an alias on both Polysorbat-80 and Polysorbate; `CR` is caloric
+// restriction and chromium. Which of them a resolution picks must not depend on
+// the order `getExistingWikiPages` happened to return.
+describe('ConflictResolver — ambiguous designators', () => {
+  const ambiguous = [
+    { path: 'wiki/entities/polysorbat-80.md', title: 'Polysorbat-80', aliases: ['E433'] },
+    { path: 'wiki/entities/polysorbate.md', title: 'Polysorbate', aliases: ['E433'] },
+  ];
+
+  it('resolves independently of page order', () => {
+    const forward = new ConflictResolver(WIKI_FOLDER, ambiguous)
+      .resolve({ name: 'E433', slug: 'e433', pageType: 'entity' });
+    const reversed = new ConflictResolver(WIKI_FOLDER, [...ambiguous].reverse())
+      .resolve({ name: 'E433', slug: 'e433', pageType: 'entity' });
+
+    expect(reversed.targetPath).toBe(forward.targetPath);
+  });
+
+  it('reports the ambiguity instead of silently merging', () => {
+    const result = new ConflictResolver(WIKI_FOLDER, ambiguous)
+      .resolve({ name: 'E433', slug: 'e433', pageType: 'entity' });
+
+    expect(result.action).toBe('disambiguate');
+    expect(result.candidates?.map(c => c.title).sort()).toEqual(['Polysorbat-80', 'Polysorbate']);
+    expect(result.confidence).toBe('low');
+  });
+
+  it('ranks a candidate that shares a tag above one that does not', () => {
+    const tagged = [
+      { path: 'wiki/entities/chrom.md', title: 'Chrom', aliases: ['CR'], tags: ['Mineralstoffe'] },
+      { path: 'wiki/entities/kalorienrestriktion.md', title: 'Kalorienrestriktion', aliases: ['CR'], tags: ['Ernährung'] },
+    ];
+    const result = new ConflictResolver(WIKI_FOLDER, tagged)
+      .resolve({ name: 'CR', slug: 'cr', pageType: 'entity', tags: ['Ernährung'] });
+
+    expect(result.candidates?.[0].title).toBe('Kalorienrestriktion');
+    expect(result.targetPath).toBe('wiki/entities/kalorienrestriktion.md');
+  });
+
+  it('keeps every candidate when the tags overlap with none of them', () => {
+    // [R-chrom]: a page carries the aspect it was created under, a note the
+    // aspect it was written about — a disjoint tag set is a missing signal,
+    // never grounds for treating a match as a different subject.
+    const result = new ConflictResolver(WIKI_FOLDER, ambiguous)
+      .resolve({ name: 'E433', slug: 'e433', pageType: 'entity', tags: ['Toxikologie'] });
+
+    expect(result.action).toBe('disambiguate');
+    expect(result.candidates).toHaveLength(2);
+  });
+
+  it('leaves a single match on the unchanged merge path', () => {
+    const result = new ConflictResolver(WIKI_FOLDER, [ambiguous[0]])
+      .resolve({ name: 'E433', slug: 'e433', pageType: 'entity', tags: ['Toxikologie'] });
+
+    expect(result.action).toBe('merge');
+    expect(result.confidence).toBe('high');
+    expect(result.candidates).toBeUndefined();
+  });
+});
