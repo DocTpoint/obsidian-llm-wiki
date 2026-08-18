@@ -40,6 +40,57 @@ import { wrapReasoningContent } from '../core/markdown';
 // extractProviderMessage handles both via the same nested lookup.
 export { mapAiSdkError };
 
+/**
+ * Issue #449 v1.26.4 PATCH follow-up (DocTpoint blocking review 2026-08-15):
+ * `cacheBreakpoint` is a byte offset into the FIRST user message's text
+ * content (set by `source-analyzer.ts:404` as `staticPrefix.length`,
+ * measured from the rendered `analyzeSource` template up to but not
+ * including `{{batch_context}}`). Anthropic prompt caching is a prefix
+ * match on render order `tools → system → messages`; a marker must land
+ * on whichever block the offset points at.
+ *
+ * Pre-fix (PR #464 head `c985196`) attached the marker to the system block.
+ * That caches tools + system (a few KB, below Anthropic's 1024-token
+ * minimum cache floor) but leaves the 75K-char user-message prefix
+ * uncached — the silent no-op class of regression that this fix closes.
+ *
+ * Emit the user message as two text parts cut at the offset, with
+ * `cacheControl` on the first part. AI SDK v6's Anthropic adapter
+ * (`@ai-sdk/anthropic/dist/index.mjs:2316-2340`) reads `cacheControl`
+ * from `TextPart.providerOptions` and emits `cache_control: { type:
+ * 'ephemeral' }` on the corresponding wire block. See also
+ * `TextPart` at `@ai-sdk/provider-utils/dist/index.d.ts:615-627`.
+ *
+ * Defensive behaviour:
+ *   - `cacheBreakpoint === undefined` → passthrough (no split).
+ *   - No user message in the array → passthrough.
+ *   - First user message has non-string content (parts already) → passthrough.
+ *   - Offset out of range → clamp to `[0, content.length]`.
+ *
+ * @returns New message array (never mutates input).
+ */
+function buildMessagesWithCacheControl(
+  messages: ReadonlyArray<{ role: 'user' | 'assistant'; content: string | unknown[] }>,
+  cacheBreakpoint: number | undefined,
+): Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: 'text'; text: string; providerOptions?: { anthropic?: { cacheControl?: { type: 'ephemeral' } } } }> }> {
+  if (cacheBreakpoint === undefined) return messages.slice() as never;
+  const firstUserIdx = messages.findIndex((m) => m.role === 'user');
+  if (firstUserIdx === -1) return messages.slice() as never;
+  const first = messages[firstUserIdx];
+  if (typeof first.content !== 'string') return messages.slice() as never;
+  const offset = Math.max(0, Math.min(cacheBreakpoint, first.content.length));
+  const prefix = first.content.slice(0, offset);
+  const suffix = first.content.slice(offset);
+  const rebuilt: { role: 'user' | 'assistant'; content: Array<{ type: 'text'; text: string; providerOptions?: { anthropic?: { cacheControl?: { type: 'ephemeral' } } } }> } = {
+    ...first,
+    content: [
+      { type: 'text' as const, text: prefix, providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' as const } } } },
+      { type: 'text' as const, text: suffix },
+    ],
+  };
+  return [...messages.slice(0, firstUserIdx), rebuilt, ...messages.slice(firstUserIdx + 1)] as never;
+}
+
 export interface AnthropicSdkClientOptions {
   apiKey: string;
   /**
@@ -107,7 +158,14 @@ export class AnthropicSdkClient implements LLMClient {
   }
 
   async createMessage(params: LLMClient['createMessage'] extends (p: infer P) => unknown ? P : never): Promise<string> {
-    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, enableThinking, onFinish } = params;
+    const { model, max_tokens, system, messages, temperature, top_p, repetition_penalty, enableThinking, cacheBreakpoint, onFinish } = params;
+
+    // Issue #449 v1.26.4 PATCH follow-up: when cacheBreakpoint is defined,
+    // split the FIRST user message's text content at the offset and attach
+    // `cacheControl` to the prefix part (DocTpoint blocking review 2026-08-15).
+    // system stays a plain string — the cache marker lives on the user
+    // block, not the system block. Absent cacheBreakpoint → passthrough.
+    const messagesWithCacheControl = buildMessagesWithCacheControl(messages, cacheBreakpoint);
 
     try {
       const languageModel = this.getProvider(model, this.fetchImpl);
@@ -116,8 +174,10 @@ export class AnthropicSdkClient implements LLMClient {
       const result = await generateText({
         model: languageModel,
         // Anthropic accepts system at top-level; AI-SDK abstracts this.
+        // Truthy-check drops `system: ''` so it cannot consume one of
+        // Anthropic's 4 cache breakpoints (Issue #449 Branch D fix).
         ...(system ? { system } : {}),
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: messagesWithCacheControl,
         maxOutputTokens: max_tokens,
         providerOptions: this.buildProviderOptions({
           enableThinking,
@@ -146,7 +206,7 @@ export class AnthropicSdkClient implements LLMClient {
         const result = await generateText({
           model: retryLanguageModel,
           ...(system ? { system } : {}),
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          messages: messagesWithCacheControl,
           maxOutputTokens: max_tokens,
           providerOptions: this.buildProviderOptions({
             enableThinking,
