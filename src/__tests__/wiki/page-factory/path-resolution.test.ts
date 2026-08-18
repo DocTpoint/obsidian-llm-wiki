@@ -179,13 +179,17 @@ describe('resolvePagePath — LLM semantic dedup fallback', () => {
     expect(prompt.indexOf('Polysorbate.md')).toBeLessThan(prompt.indexOf('Polysorbat-80.md'));
   });
 
-  // Code-review F1 (2026-08-16): every ambiguous-designator fallback must
-  // latch the extracted name as an alias on the resolved page, matching the
-  // pre-#446 merge path. Observable case: the designator carries a
-  // non-slug-normalized character (trailing dash) that survives as an alias
-  // but is stripped from the slug — so the extracted name is neither an
-  // existing alias nor equal to the page's filename, and the write is visible.
-  it('latches the extracted name on the tag-ranked fallback page (no-client exit)', async () => {
+  // #446 follow-up: an ambiguous-designator fallback must not latch the
+  // extracted name as an alias, unlike the decided merge paths, which still do.
+  // The latch cannot end the ambiguity it was meant to end — ConflictResolver
+  // matches over slug keys, and an alias whose slug the page already carries
+  // adds none (measured in conflict-resolver.test.ts) — so the next ingest
+  // returns here, and what the write leaves behind is the designator claimed by
+  // whichever candidate ranked first this time, and by the next one when the
+  // ranking moves. Fixture as in the original latch test: the designator
+  // carries a character that survives as an alias but is stripped from the
+  // slug, so a write would be visible.
+  it('does not latch the extracted name on the tag-ranked fallback page (no-client exit)', async () => {
     const ctx = makeCtx({
       files: {
         'wiki/entities/No2.md': '---\ntags:\n  - Biochemie\n---\nbody',
@@ -199,11 +203,15 @@ describe('resolvePagePath — LLM semantic dedup fallback', () => {
       },
       client: null,
     });
+    // `written` is the seeded file map itself, so the pin is that no entry
+    // changed and none was added — not that the map is empty.
+    const before = new Map(ctx.written);
     const result = await resolvePagePath(ctx, 'no2-', 'entity', 'desc', ['Biochemie']);
     expect(result.path).toBe('wiki/entities/No2.md');
-    const written = ctx.written.get('wiki/entities/No2.md') ?? '';
-    expect(written).toContain('aliases:');
-    expect(written).toContain('no2-');
+    expect(ctx.written.size).toBe(before.size);
+    for (const [path, content] of before) {
+      expect(ctx.written.get(path)).toBe(content);
+    }
   });
 
   it('passes the slim "index" schema selector to buildSystemPrompt', async () => {

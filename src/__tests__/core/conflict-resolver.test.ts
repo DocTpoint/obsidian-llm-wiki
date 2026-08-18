@@ -126,4 +126,28 @@ describe('ConflictResolver — ambiguous designators', () => {
     expect(result.confidence).toBe('high');
     expect(result.candidates).toBeUndefined();
   });
+
+  it('stays ambiguous after the extracted name is appended as an alias', () => {
+    // Why the ambiguous fallback does not latch the designator (see
+    // path-resolution.ts): matching keys on computeSlug(title) and
+    // computeSlug(alias), so an alias that slugifies to a key the page already
+    // carries adds nothing. slugMatches stays at 2 and the next ingest reaches
+    // the same fallback — the dedup call a latch was meant to save is still
+    // paid. Fixture: a designator whose trailing character survives as an alias
+    // but is stripped from the slug.
+    const check = { name: 'no2-', slug: 'no2', pageType: 'entity' as const, tags: ['Biochemie'] };
+    const pages = [
+      { path: 'wiki/entities/No2.md', title: 'No2', aliases: ['NO2−'], tags: ['Biochemie'] },
+      { path: 'wiki/entities/NO2.md', title: 'NO2', aliases: [], tags: ['other'] },
+    ];
+
+    const first = new ConflictResolver(WIKI_FOLDER, pages).resolve(check);
+    expect(first.action).toBe('disambiguate');
+    expect(first.targetPath).toBe('wiki/entities/No2.md');
+
+    const latched = [{ ...pages[0], aliases: ['NO2−', 'no2-'] }, pages[1]];
+    const second = new ConflictResolver(WIKI_FOLDER, latched).resolve(check);
+    expect(second.action).toBe('disambiguate');
+    expect(second.candidates).toHaveLength(2);
+  });
 });
