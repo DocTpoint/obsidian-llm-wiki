@@ -373,7 +373,7 @@ describe('AnthropicSdkClient', () => {
       expect(asMessages(call)[0].content).toBe('hi');
     });
 
-    it('co-emits cache_control on a non-English source content (locale-stable contract — byte-position, not text-content)', async () => {
+    it('co-emits cache_control on a non-English source content (locale-stable contract — UTF-16 code-unit position, not bytes and not text-content)', async () => {
       const client = new AnthropicSdkClient({ apiKey: 'sk-ant-test' });
       const longContent = 'Ü'.repeat(42) + 'ß'.repeat(10); // German source content
       await client.createMessage({

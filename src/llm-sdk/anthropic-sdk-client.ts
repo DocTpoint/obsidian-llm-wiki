@@ -42,17 +42,22 @@ export { mapAiSdkError };
 
 /**
  * Issue #449 v1.26.4 PATCH follow-up (DocTpoint blocking review 2026-08-15):
- * `cacheBreakpoint` is a byte offset into the FIRST user message's text
- * content (set by `source-analyzer.ts:404` as `staticPrefix.length`,
+ * `cacheBreakpoint` is a UTF-16 code-unit offset into the FIRST user
+ * message's text content — `String.length`, not bytes (set by
+ * `source-analyzer.ts:404` as `staticPrefix.length`,
  * measured from the rendered `analyzeSource` template up to but not
  * including `{{batch_context}}`). Anthropic prompt caching is a prefix
  * match on render order `tools → system → messages`; a marker must land
  * on whichever block the offset points at.
  *
  * Pre-fix (PR #464 head `c985196`) attached the marker to the system block.
- * That caches tools + system (a few KB, below Anthropic's 1024-token
- * minimum cache floor) but leaves the 75K-char user-message prefix
- * uncached — the silent no-op class of regression that this fix closes.
+ * That caches tools + system (a few KB, below Anthropic's minimum
+ * cacheable size on every current model) but leaves the 75K-char
+ * user-message prefix uncached — the silent no-op class of regression
+ * that this fix closes. The floor itself is model-dependent and not
+ * monotonic across generations — 512 / 1024 / 2048 / 4096 tokens
+ * depending on the model — so it must not be written into the code as
+ * a constant; a few KB is below all of them.
  *
  * Emit the user message as two text parts cut at the offset, with
  * `cacheControl` on the first part. AI SDK v6's Anthropic adapter
@@ -66,6 +71,14 @@ export { mapAiSdkError };
  *   - No user message in the array → passthrough.
  *   - First user message has non-string content (parts already) → passthrough.
  *   - Offset out of range → clamp to `[0, content.length]`.
+ *   - Empty prefix after clamping (offset <= 0) → passthrough, NOT a
+ *     split. The AI SDK core drops empty text parts in the user branch
+ *     unconditionally (`ai/dist/index.mjs:1451`; the assistant branch two
+ *     lines below keeps them when `providerOptions` is set), so a split at
+ *     offset 0 emits a single block and NO `cache_control` anywhere in the
+ *     body — the same silent no-op this helper exists to close, and one a
+ *     part-level assertion cannot see. There is nothing to cache in an
+ *     empty prefix, so declining the split is also the honest shape.
  *
  * @returns New message array (never mutates input).
  */
@@ -79,6 +92,11 @@ function buildMessagesWithCacheControl(
   const first = messages[firstUserIdx];
   if (typeof first.content !== 'string') return messages.slice() as never;
   const offset = Math.max(0, Math.min(cacheBreakpoint, first.content.length));
+  // An empty prefix cannot carry the marker: the SDK core drops the part and
+  // the whole body ships without `cache_control`. Reachable from a negative
+  // offset through the clamp above, and from `staticPrefix.length === 0`
+  // upstream (Issue #493). Leave the message as it is instead.
+  if (offset === 0) return messages.slice() as never;
   const prefix = first.content.slice(0, offset);
   const suffix = first.content.slice(offset);
   const rebuilt: { role: 'user' | 'assistant'; content: Array<{ type: 'text'; text: string; providerOptions?: { anthropic?: { cacheControl?: { type: 'ephemeral' } } } }> } = {
