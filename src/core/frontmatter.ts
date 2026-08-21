@@ -11,6 +11,14 @@ export interface FrontmatterData {
   sources?: string[];
   tags?: string[];
   aliases?: string[];
+  /**
+   * domain axis stage 2 (#568): the domain axis. A source page carries every
+   * tag of its note; entity/concept pages carry a model-chosen subset (Stufe 3).
+   * Canonical on purpose — a passthrough field cannot be unioned by the array
+   * helpers (they re-emit the old lines), and the constraints pass drops block
+   * items under unknown keys. Absence is not a signal (opt-in layer).
+   */
+  domains?: string[];
   [key: string]: unknown;
 }
 
@@ -233,6 +241,7 @@ export function upsertFrontmatterField(content: string, key: string, value: stri
  */
 export const CANONICAL_FRONTMATTER_KEYS = new Set([
   'type', 'created', 'updated', 'sources', 'tags', 'reviewed', 'aliases',
+  'domains', // domain axis stage 2 (#568)
 ]);
 
 /**
@@ -481,6 +490,12 @@ export function serializeFrontmatter(
     lines.push('tags:');
   }
 
+  // domain axis stage 2 (#568): block style only — the domain values are
+  // nested (`Gruppe/Wert`) and the inline-tag regex in fix-runners never reads them.
+  if (Array.isArray(fm.domains) && fm.domains.length > 0) {
+    lines.push(`domains:${yamlStringify(fm.domains)}`);
+  }
+
   if (fm.reviewed) lines.push('reviewed: true');
 
   if (Array.isArray(fm.aliases)) {
@@ -563,6 +578,10 @@ export function mergeFrontmatter(
       updated,
       sources: mergedSources,
       tags: unionTags(fm.tags, incomingTags),
+      // domain axis stage 2 (#568): canonical now, so it must be carried
+      // explicitly — the passthrough no longer does it. Union with the incoming
+      // page's domains arrives with Stufe 3, when the extraction delivers them.
+      domains: Array.isArray(fm.domains) ? fm.domains : undefined,
       reviewed: fm.reviewed,
       aliases: Array.isArray(fm.aliases) ? fm.aliases : undefined,
     },
@@ -714,7 +733,7 @@ export function enforceFrontmatterConstraints(
   // every line and skips every `- ` item, so a block-form list under an unknown
   // key came back as its header alone. `sources:` is canonical and is re-emitted
   // from the parsed array below (see #438 B); `extractPassthroughLines` already
-  // treats it as known.
+  // treats it as known. (`domains:` likewise — domain axis stage 2, #568.)
   const passthroughLines = extractPassthroughLines(content);
 
   // Preserve existing provenance (block OR flow form) across the rewrite.
@@ -732,6 +751,13 @@ export function enforceFrontmatterConstraints(
   const rawSources = parseFrontmatter(content)?.sources;
   const preservedSources = Array.isArray(rawSources)
     ? rawSources.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    : undefined;
+
+  // domain axis stage 2 (#568): same shape as `sources` above — the block
+  // items were dropped by the list-item skip in the walk, so re-emit the parsed array.
+  const rawDomains = parseFrontmatter(content)?.domains;
+  const preservedDomains = Array.isArray(rawDomains)
+    ? rawDomains.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
     : undefined;
 
   const hasTags = foundTags || collectedTags.length > 0;
@@ -772,6 +798,7 @@ export function enforceFrontmatterConstraints(
       updated: today,
       sources: Array.isArray(preservedSources) && preservedSources.length > 0 ? preservedSources : undefined,
       tags: dedupedTags,
+      domains: preservedDomains && preservedDomains.length > 0 ? preservedDomains : undefined,
       aliases: (foundAliases || aliases.length > 0) ? aliases : undefined,
     },
     { passthroughLines, tagStyle: 'inline', emitEmptyTags: hasTags }

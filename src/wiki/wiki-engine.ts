@@ -24,7 +24,7 @@ import { TEXTS } from '../texts';
 import { renderTemplate } from '../core/template-renderer';
 import { slugify } from '../core/slug';
 import { resolveSourceSlug } from '../core/source-slug';
-import { parseFrontmatter, upsertFrontmatterField, mergeFrontmatterArrayField, extractBody } from '../core/frontmatter';
+import { parseFrontmatter, upsertFrontmatterField, mergeFrontmatterArrayField, replaceFrontmatterArrayField, extractBody } from '../core/frontmatter';
 import { setGenerationComplete } from '../core/incomplete-page-cleaner';
 import { convertPdfToMarkdown, UnsupportedProviderError, EncryptedPdfError } from '../core/pdf-converter';
 import { MineruPdfError, MINERU_PHASE_KEY } from '../core/mineru-converter';
@@ -1557,6 +1557,16 @@ export class WikiEngine {
         maxChars: SOURCE_PAGE_MENTIONS_MAX_CHARS,
       },
     );
+
+    // domain axis stage 2 (#568): the source page is a 1:1 projection of
+    // its note, so it carries every note tag in `domains:` — replaced, not
+    // merged, on every ingest, because the note is the truth and there is
+    // nothing to decide here. `tags:` stays the plugin's format axis (#90/#114).
+    // A note without tags leaves no field: absence is not a signal.
+    const noteDomains = extractSourceTags(content);
+    if (noteDomains.length > 0) {
+      finalContent = replaceFrontmatterArrayField(finalContent, 'domains', noteDomains);
+    }
 
     await this.createOrUpdateFile(path, finalContent);
     return path;

@@ -41,6 +41,12 @@ export async function mergeDuplicatePages(
   const targetAliases = Array.isArray(targetFm?.aliases) ? targetFm.aliases : [];
   const sourceAliases = Array.isArray(sourceFm?.aliases) ? sourceFm.aliases : [];
 
+  // domain axis stage 2 (#568): the domain axis is unioned like `sources:`
+  // — survivor first, then the absorbed page, first occurrence wins.
+  const targetDomains = Array.isArray(targetFm?.domains) ? targetFm.domains : [];
+  const sourceDomains = Array.isArray(sourceFm?.domains) ? sourceFm.domains : [];
+  const mergedDomains = [...targetDomains, ...sourceDomains].filter((d, i, a) => d && a.indexOf(d) === i);
+
   const extractH1 = (content: string): string | null => {
     const bodyMatch = content.match(/^---[\s\S]*?\n---\n?([\s\S]*)/);
     if (!bodyMatch) return null;
@@ -154,6 +160,7 @@ export async function mergeDuplicatePages(
       updated: today,
       sources: mergedSourcesList,
       tags: Array.isArray(targetFm?.tags) ? targetFm.tags : [],
+      domains: mergedDomains.length > 0 ? mergedDomains : undefined,
       reviewed: targetFm?.reviewed,
       aliases: dedupedAliases,
     },
