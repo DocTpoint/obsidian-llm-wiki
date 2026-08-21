@@ -34,8 +34,9 @@ import type { SourceRejection } from '../core/source-requirements';
 // v1.25.1 Phase C-PR1: detectRateLimitFailures is invoked exclusively by runBatchedWithRetry (engine-internals/page-batch-runner.ts).
 import { formatRateLimitNotice } from '../core/rate-limit';
 import { extractSourceTags } from '../core/arrays';
-import { gateCandidates } from '../core/candidate-gate';
 import { buildVaultResolver } from '../core/related-link-corrector';
+import { gateCandidates, applyCoverageThreshold } from '../core/candidate-gate';
+import { selectDomains, DOMAINS_FIELD } from '../core/domain-axis'; // domain axis stage 3 (#568)
 import { getSourceLanguage, isCrossLanguage } from '../core/source-language';
 import { cleanMarkdownResponse } from '../core/markdown';
 import { injectMentionsSection } from '../core/mentions-injector';
@@ -1048,6 +1049,7 @@ export class WikiEngine {
       // note that declares a different `language:` carries translated names
       // and is not gated; a wiki language without a profile is reported, not
       // silently skipped — the user turned this on.
+      const rawSource = opts?.contentOverride ?? await this.app.vault.read(file);
       if (this.settings.skipMentionOnlyCandidates === true) {
         const wikiLang = this.settings.wikiLanguage || 'en';
         const sourceLang = getSourceLanguage(file, this.app);
@@ -1076,6 +1078,39 @@ export class WikiEngine {
             analysis.entities = gated.entities;
             analysis.concepts = gated.concepts;
           }
+        }
+      }
+
+      // domain axis stage 3 (#568): the semantic half follows on the
+      // survivors — the extraction reported per candidate how the source treats
+      // it (`coverage`), the threshold in candidate-gate.ts says what is enough;
+      // a missing value keeps the candidate. Then the per-item domain subset
+      // is validated against the note's own tags: a value the note does not
+      // carry is dropped (logged), not written. Runs regardless of the #521
+      // opt-in — the deterministic gate is upstream's setting, this half is
+      // the local domain-axis design.
+      {
+        // #620 parity: a dropped name the vault already has a page for keeps
+        // its edge in the survivors' related_* lists — the coverage gate must
+        // not prune what the deterministic gate was taught to keep.
+        const coverageResolve = buildVaultResolver({ wikiFolder: this.settings.wikiFolder, pages: await this.getExistingWikiPages() });
+        const covered = applyCoverageThreshold(analysis, name => coverageResolve(name) !== undefined);
+        if (covered.dropped.length > 0) {
+          const list = covered.dropped.map(d => `${d.name} (${d.kind}, ${d.verdict})`).join('; ');
+          const kept = covered.linkedAnyway.length > 0 ? ` — linked anyway (existing page): ${covered.linkedAnyway.join('; ')}` : '';
+          console.warn(`[candidate-gate] ${file.path}: dropped ${covered.dropped.length} of ${analysis.entities.length + analysis.concepts.length} candidates — ${list}${kept}`);
+          this.onProgress?.(`Candidate gate: ${covered.dropped.length} dropped — ${list}${kept}`);
+          analysis.entities = covered.entities;
+          analysis.concepts = covered.concepts;
+        }
+        const noteTags = extractSourceTags(rawSource);
+        for (const item of [...analysis.entities, ...analysis.concepts]) {
+          const selection = selectDomains(item.domains, noteTags);
+          if (selection.rejected.length > 0) {
+            console.debug(`[domain-axis] ${file.path}: "${item.name}" — dropped ${selection.rejected.length} value(s) the note does not carry: ${selection.rejected.join(', ')}`);
+          }
+          if (selection.kept.length > 0) item.domains = selection.kept;
+          else delete item.domains;
         }
       }
 
@@ -1565,7 +1600,7 @@ export class WikiEngine {
     // A note without tags leaves no field: absence is not a signal.
     const noteDomains = extractSourceTags(content);
     if (noteDomains.length > 0) {
-      finalContent = replaceFrontmatterArrayField(finalContent, 'domains', noteDomains);
+      finalContent = replaceFrontmatterArrayField(finalContent, DOMAINS_FIELD, noteDomains);
     }
 
     await this.createOrUpdateFile(path, finalContent);

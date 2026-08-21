@@ -112,6 +112,10 @@ export interface EntityInfo {
   mentions_with_provenance?: MentionWithProvenance[];
   related_entities?: string[];
   related_concepts?: string[];
+  /** domain axis stage 3 (#568) — see {@link CandidateCoverage}. */
+  coverage?: CandidateCoverage;
+  /** domain axis stage 3 (#568): the subset of the source note's domain tags this item carries. */
+  domains?: string[];
 }
 
 export interface ConceptInfo {
@@ -124,7 +128,23 @@ export interface ConceptInfo {
   mentions_with_provenance?: MentionWithProvenance[];
   related_concepts: string[];
   related_entities?: string[];
+  /** domain axis stage 3 (#568) — see {@link CandidateCoverage}. */
+  coverage?: CandidateCoverage;
+  /** domain axis stage 3 (#568): the subset of the source note's domain tags this item carries. */
+  domains?: string[];
 }
+
+/**
+ * domain axis stage 3 (#568): how the source treats an extracted
+ * candidate — an observation the model reports per item in the extraction
+ * call, not a judgement. `defined`: the source says what it is; `discussed`:
+ * the source says something substantive about it (properties, effects,
+ * relations); `named`: only an example, list member or passing mention. The
+ * threshold that turns this into "page or no page" lives in code
+ * (`core/candidate-gate.ts`), never in the prompt. A missing value is not a
+ * signal: the candidate is kept.
+ */
+export type CandidateCoverage = 'defined' | 'discussed' | 'named';
 
 export interface ContradictionInfo {
   claim: string;

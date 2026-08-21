@@ -17,7 +17,8 @@ import { parseJsonResponse, parseJsonResult } from '../core/json';
 import { isCrossLanguage, normalizeSourceLanguage, getWikiLanguageName } from '../core/source-language';
 import { renderTemplate } from '../core/template-renderer';
 import { matchExtractedToExisting } from '../core/index-search';
-import { coerceToArray } from '../core/arrays';
+import { coerceToArray, extractSourceTags } from '../core/arrays';
+import { buildDomainContext } from '../core/domain-axis'; // domain axis stage 3 (#568)
 import { isBlankSource } from '../core/frontmatter';
 import { MAX_TOKENS_BATCH, TOKENS_PER_ITEM_BUDGET, TOKENS_LEMMA_CLASSIFY, TOKENS_TYPE_REPAIR, SOURCE_ANALYZER_RETRY_MULTIPLIER } from '../constants';
 import { getExistingWikiPages } from './lint/get-existing-pages';
@@ -279,9 +280,14 @@ export class SourceAnalyzer {
     // Issue #244 (manual test fix): inject the source's original vault path
     // so the LLM records it in `mentions_with_provenance[i].source_path`
     // instead of guessing `wiki/sources/<slug>`.
+    // domain axis stage 3 (#568): the note's own tags are the allowed
+    // list for the per-item `domains` subset. Rendered into the static prefix
+    // (before {{batch_context}}) so every round of this note shares it and the
+    // prefix cache holds; empty string when the note has no tags.
     const templateUntouched = renderTemplate(PROMPTS.analyzeSource, {
       content,
       source_path: file.path,
+      domain_context: buildDomainContext(extractSourceTags(content)),
     });
     const batchMarker = '{{batch_context}}';
     const markerIdx = templateUntouched.indexOf(batchMarker);

@@ -33,7 +33,8 @@ import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { canonicalizeSectionHeaders, stripUnknownSections } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
-import { parseFrontmatter, enforceFrontmatterConstraints } from '../../core/frontmatter';
+import { parseFrontmatter, enforceFrontmatterConstraints, replaceFrontmatterArrayField } from '../../core/frontmatter';
+import { DOMAINS_FIELD } from '../../core/domain-axis'; // domain axis stage 3 (#568)
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
@@ -300,7 +301,13 @@ export async function createNewPage(
     const sourcedContent = sourceSlug
       ? appendSourceSlugToFrontmatter(mentionsInjectedContent, sourceSlug)
       : mentionsInjectedContent;
-    await ctx.createOrUpdateFile(path, sourcedContent);
+    // Domain axis stage 3: the extraction's domain subset for this page
+    // (already validated against the note's tags in the engine). A new
+    // page has nothing to union with, so replace = set; no subset, no field.
+    const domainedContent = info.domains?.length
+      ? replaceFrontmatterArrayField(sourcedContent, DOMAINS_FIELD, info.domains)
+      : sourcedContent;
+    await ctx.createOrUpdateFile(path, domainedContent);
     return path;
   } catch (error) {
     throw contextualizeError(error, info.name, pageType);

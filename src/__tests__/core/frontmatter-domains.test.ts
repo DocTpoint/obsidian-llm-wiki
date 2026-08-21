@@ -130,3 +130,38 @@ tags: [substance]
     expect(mergeFrontmatterArrayField(content, 'aliases', ['x'])).not.toContain('domains');
   });
 });
+
+// domain axis stage 3 (#568): mergeFrontmatter unions the incoming page's
+// domain subset like `sources:` — existing first, first occurrence wins.
+describe('mergeFrontmatter — incoming domains (domain axis stage 3, #568)', () => {
+  const PAGE = `---
+type: entity
+created: 2026-01-01
+domains:
+  - "Sorte/Mineralstoff"
+---
+
+# Zink
+`;
+
+  it('unions incoming domains after the existing ones, deduplicated', () => {
+    const { frontmatter } = mergeFrontmatter(PAGE, 'sources/zink', undefined, ['Thema/Ernährung', 'Sorte/Mineralstoff', 'Fach/Endokrinologie']);
+    const fm = parseFrontmatter(frontmatter + '\n\nbody') ?? {};
+    expect(fm.domains).toEqual(['Sorte/Mineralstoff', 'Thema/Ernährung', 'Fach/Endokrinologie']);
+  });
+
+  it('keeps the existing domains when nothing comes in', () => {
+    const { frontmatter } = mergeFrontmatter(PAGE, 'sources/zink');
+    expect(parseFrontmatter(frontmatter + '\n\nbody')?.domains).toEqual(['Sorte/Mineralstoff']);
+    const { frontmatter: fm2 } = mergeFrontmatter(PAGE, 'sources/zink', undefined, []);
+    expect(parseFrontmatter(fm2 + '\n\nbody')?.domains).toEqual(['Sorte/Mineralstoff']);
+  });
+
+  it('creates the field on a page that had none, and leaves none when neither side has values', () => {
+    const bare = '---\ntype: entity\ncreated: 2026-01-01\n---\n\n# Zink\n';
+    const { frontmatter } = mergeFrontmatter(bare, 'sources/zink', undefined, ['Thema/Ernährung']);
+    expect(parseFrontmatter(frontmatter + '\n\nbody')?.domains).toEqual(['Thema/Ernährung']);
+    const { frontmatter: none } = mergeFrontmatter(bare, 'sources/zink', undefined, []);
+    expect(none).not.toContain('domains');
+  });
+});

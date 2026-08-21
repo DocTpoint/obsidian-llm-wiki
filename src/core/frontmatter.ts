@@ -532,7 +532,9 @@ function unionTags(existing: unknown, incoming?: string[]): string[] {
 export function mergeFrontmatter(
   existingContent: string,
   newSourcePath: string,
-  incomingTags?: string[]
+  incomingTags?: string[],
+  /** domain axis stage 3 (#568): the incoming page's domain subset, unioned after the existing values. */
+  incomingDomains?: readonly string[],
 ): { frontmatter: string; body: string; wasMerged: boolean } {
   const fm = parseFrontmatter(existingContent);
   const body = extractBody(existingContent);
@@ -563,6 +565,15 @@ export function mergeFrontmatter(
   const created = fm.created || localDateStamp();
   const updated = localDateStamp();
 
+  // domain axis stage 3 (#568): union like `sources:` — existing first,
+  // then the incoming subset, first occurrence wins. Empty → no field.
+  const mergedDomains: string[] = Array.isArray(fm.domains)
+    ? fm.domains.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+    : [];
+  for (const d of incomingDomains ?? []) {
+    if (d && !mergedDomains.includes(d)) mergedDomains.push(d);
+  }
+
   // Always emit a `tags:` line (bare when empty) to preserve prior behavior.
   // Issue #356 follow-up: also pass through unknown top-level fields
   // (`redirect_to:`, `parent_org:`, user-authored metadata) so the full-page
@@ -579,9 +590,9 @@ export function mergeFrontmatter(
       sources: mergedSources,
       tags: unionTags(fm.tags, incomingTags),
       // domain axis stage 2 (#568): canonical now, so it must be carried
-      // explicitly — the passthrough no longer does it. Union with the incoming
-      // page's domains arrives with Stufe 3, when the extraction delivers them.
-      domains: Array.isArray(fm.domains) ? fm.domains : undefined,
+      // explicitly — the passthrough no longer does it. Stage 3: unioned with
+      // the incoming page's subset above.
+      domains: mergedDomains.length > 0 ? mergedDomains : undefined,
       reviewed: fm.reviewed,
       aliases: Array.isArray(fm.aliases) ? fm.aliases : undefined,
     },

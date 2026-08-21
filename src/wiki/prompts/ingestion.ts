@@ -9,7 +9,7 @@ export const INGESTION_PROMPTS = {
 
 **Source File Content:**
 {{content}}
-
+{{domain_context}}
 {{batch_context}}
 
 **Extraction Scope:**
@@ -25,6 +25,8 @@ export const INGESTION_PROMPTS = {
 4b. OPTIONAL — mentions_with_provenance: for each verbatim quote, you can also output structured provenance with the quote, source_path, source_slug, and extracted_at timestamp. This enables programmatic cross-source Mentions tracking. When omitted, the system auto-generates provenance from mentions_in_source.
 4c. CROSS-LANGUAGE TRANSLATION (only when wikiLanguage is different from source language): each entry in mentions_with_provenance may include an optional 'translation' field -- a wiki-language translation of the quote. The 'quote' field itself MUST stay verbatim in the source's original language; translation goes in a separate field. Skip this field entirely when source and wiki languages match.
 5. For related_entities and related_concepts: identify entities/concepts mentioned in the same context as this item. These should be other items extracted from this same source file
+5b. For coverage: report how the source treats this item — "defined" when the source says what it is, "discussed" when the source says something substantive about it (properties, effects, relationships), "named" when it appears only as an example, in an enumeration, or as a passing mention. Report what the text does; do not decide whether that is enough
+5c. For domains (only when a "Domain tags of this source" list is given above): output the subset of that list that describes what this item itself is or belongs to — not merely the context it appears in. Use [] when none applies. Never add a tag that is not in the list; omit the field when no list is given
 6. Identify contradictions or conflicts with the existing Wiki (only output contradictions in the first round)
 7. Generate key points from the source file (only output key_points in the first round)
 
@@ -41,7 +43,9 @@ export const INGESTION_PROMPTS = {
       "mentions_in_source": ["Verbatim sentence from source: '...'.", "Another verbatim quote: '...'."],
       "mentions_with_provenance": [{"quote": "Verbatim sentence from source: '...'.", "translation": "OPTIONAL: <wiki_language> translation only when cross-language wiki", "source_path": "path/to/source.md", "source_slug": "source-slug", "extracted_at": "2026-07-05T00:00:00Z"}],
       "related_entities": ["Related entity names from this source"],
-      "related_concepts": ["Related concept names from this source"]
+      "related_concepts": ["Related concept names from this source"],
+      "coverage": "defined|discussed|named",
+      "domains": ["Subset of the source's domain tags that describe this item itself; [] when none"]
     }
   ],
   "concepts": [
@@ -53,7 +57,9 @@ export const INGESTION_PROMPTS = {
       "mentions_in_source": ["Verbatim sentence from source: '...'.", "Another verbatim quote: '...'."],
       "mentions_with_provenance": [{"quote": "Verbatim sentence from source: '...'.", "translation": "OPTIONAL: <wiki_language> translation only when cross-language wiki", "source_path": "path/to/source.md", "source_slug": "source-slug", "extracted_at": "2026-07-05T00:00:00Z"}],
       "related_concepts": ["Related concept names from this source"],
-      "related_entities": ["Related entity names from this source"]
+      "related_entities": ["Related entity names from this source"],
+      "coverage": "defined|discussed|named",
+      "domains": ["Subset of the source's domain tags that describe this item itself; [] when none"]
     }
   ],
   "contradictions": [

@@ -103,6 +103,7 @@ export async function mergePage(
       existingContent,
       sourceSlug ? `sources/${sourceSlug}` : sourceFile.path,
       incomingTypeTag(ctx.settings, pageType, info.type),
+      info.domains, // domain axis stage 3 (#568): union the extraction's domain subset
     );
 
     // Issue #312 part 2 — deterministic, no LLM: is this source the page's own
@@ -425,6 +426,7 @@ export async function appendToReviewedPage(
       existingContent,
       sourceSlug ? `sources/${sourceSlug}` : sourceFile.path,
       incomingTypeTag(ctx.settings, pageKind, info.type),
+      info.domains, // domain axis stage 3 (#568): union the extraction's domain subset
     );
 
     // 2. Minimal LLM check for genuinely new content. Same note-excerpt

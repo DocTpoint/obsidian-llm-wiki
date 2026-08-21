@@ -88,14 +88,22 @@ function mergeMentionsFields<
   T extends {
     mentions_in_source?: string[];
     mentions_with_provenance?: MentionWithProvenance[];
+    domains?: string[];
   },
 >(existing: T, incoming: T): T {
+  // domain axis stage 3 (#568): a later round that names the same item
+  // again may carry its own domain subset — union it; `coverage` stays with the
+  // first observation (the rounds see the same text).
+  const incomingDomains = incoming.domains?.length ? dedupStrings(existing.domains, incoming.domains) : undefined;
+  const base: T = incomingDomains && incomingDomains.length !== (existing.domains?.length ?? 0)
+    ? { ...existing, domains: incomingDomains }
+    : existing;
   const hasProvenance = incoming.mentions_with_provenance?.length;
   const hasLegacy = incoming.mentions_in_source?.length;
-  if (!hasProvenance && !hasLegacy) return existing;
+  if (!hasProvenance && !hasLegacy) return base;
 
   return {
-    ...existing,
+    ...base,
     mentions_with_provenance: dedupMentionsByProvenanceKey(
       existing.mentions_with_provenance,
       incoming.mentions_with_provenance,

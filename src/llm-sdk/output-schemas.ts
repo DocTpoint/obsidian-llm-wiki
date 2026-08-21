@@ -179,6 +179,10 @@ const EntityItem = z.object({
   mentions_with_provenance: z.array(MentionWithProvenanceItem).optional(),
   related_entities: z.array(z.string()).optional(),
   related_concepts: z.array(z.string()).optional(),
+  // domain axis stage 3 (#568): observation + subset, both optional —
+  // a missing value is not a signal (see CandidateCoverage in types.ts).
+  coverage: z.string().optional(),
+  domains: z.array(z.string()).optional(),
 }).passthrough();
 
 const ConceptItem = z.object({
@@ -190,6 +194,8 @@ const ConceptItem = z.object({
   mentions_with_provenance: z.array(MentionWithProvenanceItem).optional(),
   related_concepts: z.array(z.string()).optional(),
   related_entities: z.array(z.string()).optional(),
+  coverage: z.string().optional(), // domain axis stage 3 (#568), as on EntityItem
+  domains: z.array(z.string()).optional(),
 }).passthrough();
 
 export const SourceAnalysisLLMSchema = z.object({
