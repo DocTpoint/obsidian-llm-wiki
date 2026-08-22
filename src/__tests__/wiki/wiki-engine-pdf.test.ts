@@ -15,10 +15,11 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { TFile, TFolder } from 'obsidian';
+import { Notice, TFile, TFolder } from 'obsidian';
 import { createWikiEngineHarness, wikiPagesWritten } from '../__support__/wiki-engine-harness';
 import * as pdfConverter from '../../core/pdf-converter';
 import { convertPdfToMarkdown } from '../../core/pdf-converter';
+import { MineruPdfError } from '../../core/mineru-converter';
 
 // Mock pdf-converter so we don't need real PDF bytes / SubtleCrypto / LLM call.
 // Tests assert on WikiEngine's integration with the converter's return value.
@@ -132,6 +133,38 @@ describe('WikiEngine.ingestSource — PDF cache-only branch (#PR2 redo)', () => 
     await expect(h.engine.ingestSource(pdfFile('sources/paper.pdf'))).rejects.toThrow(/LLM API timeout/);
     // No skip report — error was thrown, not reported
     expect(h.reports.at(-1)?.skipped).toBeFalsy();
+  });
+
+  it('propagates MinerU API errors instead of reporting unsupported PDF', async () => {
+    mockedConvert.mockRejectedValueOnce(new MineruPdfError('MinerU request failed with HTTP 401.'));
+    const h = createWikiEngineHarness();
+
+    await expect(h.engine.ingestSource(pdfFile('sources/paper.pdf'))).rejects.toThrow(/HTTP 401/);
+
+    expect(h.reports.at(-1)?.skipped).toBeFalsy();
+  });
+
+  it('reads the MinerU token from SecretStorage and wires phase progress', async () => {
+    mockedConvert.mockResolvedValueOnce({
+      markdown: '# Paper\n\nbody',
+      metadata: { convertedAt: '2026-08-03T00:00:00Z', converter: 'mineru/vlm' },
+    });
+    const h = createWikiEngineHarness({
+      settings: {
+        markdownConversionBackend: 'mineru',
+      },
+      llmResponses: [JSON.stringify({ source_title: 'P', summary: 's', entities: [], concepts: [] })],
+    });
+    Object.assign(h.engine['app'], {
+      secretStorage: { getSecret: vi.fn(() => 'secret-token') },
+    });
+
+    await h.engine.ingestSource(pdfFile('sources/paper.pdf'));
+
+    const call = mockedConvert.mock.calls[0]?.[0];
+    expect(call?.mineruApiToken).toBe('secret-token');
+    expect(call?.settings).not.toHaveProperty('mineruApiToken');
+    expect(typeof call?.onMineruPhase).toBe('function');
   });
 
   it('does NOT write a sidecar file by default (cache-only architecture)', async () => {
@@ -480,6 +513,19 @@ describe('WikiEngine.ingestSource — PDF cache-only branch (#PR2 redo)', () => 
       // After completion, isIngesting() flips back to false.
       expect(h.engine.isIngesting()).toBe(false);
     });
+
+    it('handles MinerU AbortError and clears the PDF ingestion lifecycle', async () => {
+      mockedConvert.mockRejectedValueOnce(new DOMException('cancelled', 'AbortError'));
+      const h = createWikiEngineHarness({ settings: { markdownConversionBackend: 'mineru' } });
+      Object.assign(h.engine['app'], {
+        secretStorage: { getSecret: vi.fn(() => 'secret-token') },
+      });
+
+      await expect(h.engine.ingestSource(pdfFile('sources/paper.pdf'))).resolves.toBeUndefined();
+
+      expect(h.engine.wasCancelled).toBe(true);
+      expect(h.engine.isIngesting()).toBe(false);
+    });
   });
 
   // v1.25.0 PR3 follow-up #8 (Bug D, e2e 2026-07-17): cancel-during-PDF-
@@ -556,5 +602,147 @@ describe('WikiEngine.ingestSource — PDF cache-only branch (#PR2 redo)', () => 
       // converter call it was unsubscribed-from-cancel.
       expect(receivedAbortSignal!.aborted).toBe(false);
     });
+  });
+});
+
+//  v1.27.0 MINOR #404 follow-up — Altitude #1 (multi-format routing) +
+//  Altitude #3 (duration-based completion Notice). These tests guard the
+//  new routing decision and the duration threshold; they sit alongside
+//  the PDF-cache-only tests above.
+describe('WikiEngine.ingestSource — Altitude #1 multi-format routing (#404 follow-up)', () => {
+  // Reset the shared `mockedConvert` mock between these tests — the
+  // PDF-cache-only describe block above has its own beforeEach that does
+  // not reach across block boundaries, so the multi-format tests need to
+  // reset state themselves to keep assertions independent.
+  beforeEach(() => {
+    mockedConvert.mockReset();
+  });
+
+  function pngFile(path = 'sources/diagram.png'): TFile {
+    const name = path.split('/').pop() ?? 'diagram.png';
+    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    const file = Object.assign(new TFile(), {
+      path, name, basename: 'diagram', extension: 'png',
+    });
+    if (dir) {
+      const folder = new TFolder();
+      folder.path = dir;
+      (file as unknown as { parent: TFolder }).parent = folder;
+    }
+    return file;
+  }
+
+  function docxFile(path = 'sources/report.docx'): TFile {
+    const name = path.split('/').pop() ?? 'report.docx';
+    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    const file = Object.assign(new TFile(), {
+      path, name, basename: 'report', extension: 'docx',
+    });
+    if (dir) {
+      const folder = new TFolder();
+      folder.path = dir;
+      (file as unknown as { parent: TFolder }).parent = folder;
+    }
+    return file;
+  }
+
+  it('routes a .png to the conversion path when backend === "mineru"', async () => {
+    mockedConvert.mockResolvedValueOnce({
+      markdown: '# Diagram\n\nbody',
+      metadata: { convertedAt: '2026-08-22T00:00:00Z', converter: 'mineru/vlm' },
+    });
+    const h = createWikiEngineHarness({
+      settings: { markdownConversionBackend: 'mineru' },
+      llmResponses: [JSON.stringify({ source_title: 'P', summary: 's', entities: [], concepts: [] })],
+    });
+    Object.assign(h.engine['app'], {
+      secretStorage: { getSecret: vi.fn(() => 'secret-token') },
+    });
+
+    await h.engine.ingestSource(pngFile('sources/diagram.png'));
+
+    // The conversion path was taken — `convertPdfToMarkdown` was called
+    // with the PNG file (despite the parameter name `pdfFile`, the
+    // underlying field is just a TFile).
+    expect(mockedConvert).toHaveBeenCalledTimes(1);
+    const call = mockedConvert.mock.calls[0]?.[0] as { pdfFile?: { path?: string } };
+    expect(call?.pdfFile?.path).toBe('sources/diagram.png');
+  });
+
+  it('routes a .docx to the conversion path when backend === "mineru"', async () => {
+    mockedConvert.mockResolvedValueOnce({
+      markdown: '# Report\n\nbody',
+      metadata: { convertedAt: '2026-08-22T00:00:00Z', converter: 'mineru/vlm' },
+    });
+    const h = createWikiEngineHarness({
+      settings: { markdownConversionBackend: 'mineru' },
+      llmResponses: [JSON.stringify({ source_title: 'P', summary: 's', entities: [], concepts: [] })],
+    });
+    Object.assign(h.engine['app'], {
+      secretStorage: { getSecret: vi.fn(() => 'secret-token') },
+    });
+
+    await h.engine.ingestSource(docxFile('sources/report.docx'));
+
+    expect(mockedConvert).toHaveBeenCalledTimes(1);
+    const call = mockedConvert.mock.calls[0]?.[0] as { pdfFile?: { path?: string } };
+    expect(call?.pdfFile?.path).toBe('sources/report.docx');
+  });
+
+  it('does NOT route a .png to conversion when backend === "native" (native is PDF-only)', async () => {
+    // Native backend has no image input support. The .png should fall
+    // through to the standard text-ingest path, which calls vault.read
+    // (returns the file's content — empty in this test fixture).
+    const h = createWikiEngineHarness();
+    await h.engine.ingestSource(pngFile('sources/diagram.png'));
+
+    // Conversion was NOT invoked.
+    expect(mockedConvert).not.toHaveBeenCalled();
+  });
+});
+
+// #404 UX follow-up — MinerU limit rejections (server-side page cap,
+// client-side size cap) arrive as MineruPdfError with a machine-readable
+// `code`. The engine must route coded errors through the reportSkip
+// pipeline (localized Notice + skip report, batch continues) instead of
+// re-throwing the raw English server message to the command-layer Toast.
+describe('WikiEngine.ingestSource — coded MinerU limit rejections (#404 UX follow-up)', () => {
+  const NoticeMock = Notice as unknown as { instances: Array<{ message: string; hidden: boolean }> };
+
+  beforeEach(() => {
+    mockedConvert.mockReset();
+    NoticeMock.instances.length = 0;
+  });
+
+  it('skips with reason=mineru-page-limit and a localized Notice on a coded page-limit error', async () => {
+    mockedConvert.mockRejectedValueOnce(
+      new MineruPdfError('number of pages exceeds limit (200 pages), please split the file and try again', 'page-limit'),
+    );
+    const h = createWikiEngineHarness();
+
+    await h.engine.ingestSource(pdfFile('sources/big.pdf'), { interactive: true });
+
+    // No wiki pages; reported as a skip with the new reason.
+    expect(wikiPagesWritten(h.writtenPaths)).toEqual([]);
+    expect(h.reports.at(-1)?.skipped).toBe(true);
+    expect(h.reports.at(-1)?.rejectedFiles?.[0]?.reason).toBe('mineru-page-limit');
+    // Localized Notice with the limit substituted — raw server English
+    // must NOT surface in the UI.
+    const messages = NoticeMock.instances.map(n => n.message);
+    expect(messages.some(m => /200-page limit/.test(m))).toBe(true);
+    expect(messages.some(m => m.includes('{limit}'))).toBe(false);
+    expect(messages.some(m => m.includes('please split the file'))).toBe(false);
+  });
+
+  it('skips with reason=mineru-size-limit and a localized Notice on a coded size-limit error', async () => {
+    mockedConvert.mockRejectedValueOnce(new MineruPdfError('MinerU accepts files up to 200 MB.', 'size-limit'));
+    const h = createWikiEngineHarness();
+
+    await h.engine.ingestSource(pdfFile('sources/big.pdf'), { interactive: true });
+
+    expect(h.reports.at(-1)?.rejectedFiles?.[0]?.reason).toBe('mineru-size-limit');
+    const messages = NoticeMock.instances.map(n => n.message);
+    expect(messages.some(m => /200 MB/.test(m))).toBe(true);
+    expect(messages.some(m => m.includes('{limit}'))).toBe(false);
   });
 });
