@@ -1,4 +1,7 @@
-// Regression guard for the CLI's `requestUrl` shim (#417 / PR #418).
+// Regression guard for the instrument's `requestUrl` shim (#417 / PR #418),
+// ported from the deleted `src/__tests__/tools/llm-wiki-cli/obsidian-shim.test.ts`
+// during the v1.27.0 MINOR migration (PR #511 review, DocTpoint finding 2 —
+// the deleted tests were not all parser-contract tests).
 //
 // The shim stands in for Obsidian's `requestUrl`, which goes through Electron's
 // `net` and imposes no ceiling on how long a server may take before it sends
@@ -16,7 +19,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { requestUrl } from '../../../../tools/llm-wiki-cli/src/obsidian';
+import { requestUrl } from '../../../../tools/dev-instrument/src/shim';
 
 let server: Server | undefined;
 
@@ -36,7 +39,7 @@ async function serve(
   return `http://127.0.0.1:${addr.port}`;
 }
 
-describe('llm-wiki-cli requestUrl shim — no global fetch, no header ceiling', () => {
+describe('dev-instrument requestUrl shim — no global fetch, no header ceiling', () => {
   afterEach(async () => {
     vi.unstubAllGlobals();
     if (server !== undefined) {

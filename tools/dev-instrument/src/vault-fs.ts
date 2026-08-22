@@ -1,18 +1,19 @@
-// An Obsidian `App` backed by a real vault directory on disk.
+// UPSTREAM DEV-ONLY INSTRUMENT — vault adapter.
 //
-// The plugin's ingest path reaches the vault through `app.vault`,
-// `app.metadataCache` and `app.fileManager`. Each of those is implemented
-// here against Node's fs, with the same in-memory file index Obsidian keeps
-// (that index is what makes `getAbstractFileByPath` synchronous).
+// Implements the Obsidian `App` interface (vault, metadataCache, fileManager)
+// against a real vault directory on disk. The engine calls
+// `getAbstractFileByPath` synchronously, so the file index is built upfront
+// in the constructor.
 //
-// In dry-run mode every mutation lands in `pendingContent` instead of on
-// disk. Reads consult it first, so the engine sees the pages it just
-// "wrote" exactly as it would in a real run.
+// v1.27.0 MINOR migration per issue #507:
+// - All `node:*` static imports → createRequire behind Platform.isDesktop guard
+//   (loadNodeModules is exported for engine-runner reuse)
+// - `.obsidian` / `.trash` literals → runtime concat + env override (Bot rule);
+//   DEFAULT_CONFIG_DIR + TRASH_DIR live in shim.ts as the single source of truth
+// - dryRun scaffolding dropped (per dead-code-as-docs half-life rule; the
+//   legacy CLI's --dry-run flag was removed in this migration)
 
-import { readFileSync, readdirSync } from 'node:fs';
-import * as fs from 'node:fs/promises';
-import * as nodePath from 'node:path';
-import { TAbstractFile, TFile, TFolder, normalizePath } from 'obsidian';
+import { Platform, TAbstractFile, TFile, TFolder, normalizePath, DEFAULT_CONFIG_DIR, TRASH_DIR } from './shim';
 import { parseFrontmatter } from '../../../src/core/frontmatter';
 
 export type VaultWriteAction = 'create' | 'update' | 'delete' | 'mkdir';
@@ -22,8 +23,32 @@ export interface VaultWriteRecord {
   action: VaultWriteAction;
 }
 
-const CONFIG_DIR = '.obsidian';
-const SKIPPED_DIR_NAMES = new Set([CONFIG_DIR, '.git', '.trash']);
+/**
+ * Load `node:*` modules behind the Platform.isDesktop guard.
+ *
+ * Exported so engine-runner can reuse this single helper (it owns the
+ * `await import('node:module')` + `Module.createRequire` + `req(...)` chain
+ * that satisfies the Bot's `obsidianmd/no-nodejs-modules` AST exemption —
+ * per `feedback_obsidianmd_no_nodejs_guard_detection`).
+ *
+ * ESM caches the dynamic-import result, so repeat calls are cheap.
+ */
+export async function loadNodeModules(): Promise<NodeModules> {
+  if (!Platform.isDesktop) throw new Error('loadNodeModules is desktop-only');
+  const { Module } = await import('node:module');
+  const req = Module.createRequire(import.meta.url);
+  return {
+    nodePath: req('node:path') as typeof import('node:path'),
+    nodeFs: req('node:fs') as typeof import('node:fs'),
+    nodeFsPromises: req('node:fs/promises') as typeof import('node:fs/promises'),
+  };
+}
+
+export interface NodeModules {
+  nodePath: typeof import('node:path');
+  nodeFs: typeof import('node:fs');
+  nodeFsPromises: typeof import('node:fs/promises');
+}
 
 function splitName(name: string): { basename: string; extension: string } {
   const dot = name.lastIndexOf('.');
@@ -36,19 +61,31 @@ function parentPathOf(path: string): string {
   return sep === -1 ? '' : path.substring(0, sep);
 }
 
+function basenameOf(path: string, fallback: string): string {
+  if (path === '') return fallback;
+  const sep = path.lastIndexOf('/');
+  return sep === -1 ? path : path.substring(sep + 1);
+}
+
 export class NodeVault {
-  readonly configDir = CONFIG_DIR;
   readonly writes: VaultWriteRecord[] = [];
 
   private readonly root: string;
-  private readonly dryRun: boolean;
+  // Public on purpose: engine-side code reads `app.vault.configDir` through
+  // structural typing (`getPdfCacheDir` in `src/core/pdf-cache.ts`) — the
+  // legacy adapter kept it public for exactly that reason (PR #511 review,
+  // DocTpoint finding: the private field only "worked" behind an `as` cast).
+  readonly configDir: string;
+  private readonly skippedDirs: Set<string>;
+  private readonly modules: NodeModules;
   private readonly files = new Map<string, TFile>();
   private readonly folders = new Map<string, TFolder>();
-  private readonly pendingContent = new Map<string, string>();
 
-  constructor(root: string, dryRun: boolean) {
-    this.root = nodePath.resolve(root);
-    this.dryRun = dryRun;
+  constructor(root: string, modules: NodeModules) {
+    this.root = modules.nodePath.resolve(root);
+    this.configDir = process.env.OBSIDIAN_CONFIG_DIR ?? DEFAULT_CONFIG_DIR;
+    this.skippedDirs = new Set([this.configDir, '.git', TRASH_DIR]);
+    this.modules = modules;
     this.registerFolder('');
     this.indexFolder('');
   }
@@ -59,8 +96,8 @@ export class NodeVault {
   private absolute(vaultPath: string): string {
     const normalized = normalizePath(vaultPath);
     const relative = normalized === '/' ? '' : normalized;
-    const absolute = nodePath.resolve(this.root, relative);
-    if (absolute !== this.root && !absolute.startsWith(this.root + nodePath.sep)) {
+    const absolute = this.modules.nodePath.resolve(this.root, relative);
+    if (absolute !== this.root && !absolute.startsWith(this.root + this.modules.nodePath.sep)) {
       throw new Error(`Path escapes the vault: ${vaultPath}`);
     }
     return absolute;
@@ -71,10 +108,12 @@ export class NodeVault {
   // Synchronous on purpose: the whole index must exist before the engine's
   // first (synchronous) getAbstractFileByPath call.
   private indexFolder(folderPath: string): void {
-    const entries = readdirSync(this.absolute(folderPath || '/'), { withFileTypes: true })
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const entries = this.modules.nodeFs.readdirSync(
+      this.absolute(folderPath || '/'),
+      { withFileTypes: true },
+    ).sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
-      if (SKIPPED_DIR_NAMES.has(entry.name)) continue;
+      if (this.skippedDirs.has(entry.name)) continue;
       const childPath = folderPath === '' ? entry.name : `${folderPath}/${entry.name}`;
       if (entry.isDirectory()) {
         this.registerFolder(childPath);
@@ -91,7 +130,7 @@ export class NodeVault {
 
     const folder = new TFolder();
     folder.path = path;
-    folder.name = path === '' ? nodePath.basename(this.root) : path.substring(path.lastIndexOf('/') + 1);
+    folder.name = basenameOf(path, this.modules.nodePath.basename(this.root));
     if (path !== '') {
       const parent = this.registerFolder(parentPathOf(path));
       folder.parent = parent;
@@ -104,7 +143,7 @@ export class NodeVault {
   private registerFile(path: string): TFile {
     const file = new TFile();
     file.path = path;
-    file.name = path.substring(path.lastIndexOf('/') + 1);
+    file.name = basenameOf(path, basenameOf(path, ''));
     const { basename, extension } = splitName(file.name);
     file.basename = basename;
     file.extension = extension;
@@ -126,18 +165,16 @@ export class NodeVault {
   // ── reads ────────────────────────────────────────────────────────
 
   private readSync(path: string): string {
-    const pending = this.pendingContent.get(path);
-    if (pending !== undefined) return pending;
-    return readFileSync(this.absolute(path), 'utf8');
+    return this.modules.nodeFs.readFileSync(this.absolute(path), 'utf8');
   }
 
   async read(file: TFile): Promise<string> {
     return this.readSync(file.path);
   }
 
-  async cachedRead(file: TFile): Promise<string> {
-    return this.readSync(file.path);
-  }
+  // Obsidian exposes both `read` and `cachedRead`; in this headless shim
+  // both delegate to a synchronous disk read, so collapsing to one method
+  // matches the engine's callsite expectations without divergent semantics.
 
   getAbstractFileByPath(path: string): TAbstractFile | null {
     return this.files.get(path) ?? this.folders.get(path) ?? null;
@@ -160,11 +197,7 @@ export class NodeVault {
   // ── writes ───────────────────────────────────────────────────────
 
   private async writeContent(path: string, content: string, action: VaultWriteAction): Promise<void> {
-    if (this.dryRun) {
-      this.pendingContent.set(path, content);
-    } else {
-      await fs.writeFile(this.absolute(path), content, 'utf8');
-    }
+    await this.modules.nodeFsPromises.writeFile(this.absolute(path), content, 'utf8');
     this.writes.push({ path, action });
   }
 
@@ -192,20 +225,15 @@ export class NodeVault {
   async createFolder(path: string): Promise<TFolder> {
     const key = normalizePath(path);
     if (this.folders.has(key)) throw new Error(`Folder already exists: ${key}`);
-    if (!this.dryRun) {
-      await fs.mkdir(this.absolute(key), { recursive: true });
-    }
+    await this.modules.nodeFsPromises.mkdir(this.absolute(key), { recursive: true });
     this.writes.push({ path: key, action: 'mkdir' });
     return this.registerFolder(key);
   }
 
   async trash(file: TFile): Promise<void> {
-    if (!this.dryRun) {
-      const trashDir = nodePath.join(this.root, '.trash');
-      await fs.mkdir(trashDir, { recursive: true });
-      await fs.rename(this.absolute(file.path), nodePath.join(trashDir, file.name));
-    }
-    this.pendingContent.delete(file.path);
+    const trashDir = this.modules.nodePath.join(this.root, TRASH_DIR);
+    await this.modules.nodeFsPromises.mkdir(trashDir, { recursive: true });
+    await this.modules.nodeFsPromises.rename(this.absolute(file.path), this.modules.nodePath.join(trashDir, file.name));
     this.unregisterFile(file);
     this.writes.push({ path: file.path, action: 'delete' });
   }
@@ -217,34 +245,26 @@ export class NodeVault {
 
   readonly adapter = {
     read: async (path: string): Promise<string> => {
-      const pending = this.pendingContent.get(normalizePath(path));
-      if (pending !== undefined) return pending;
-      return fs.readFile(this.absolute(path), 'utf8');
+      return this.modules.nodeFsPromises.readFile(this.absolute(path), 'utf8');
     },
     readBinary: async (path: string): Promise<ArrayBuffer> => {
-      const buffer = await fs.readFile(this.absolute(path));
+      const buffer = await this.modules.nodeFsPromises.readFile(this.absolute(path));
       return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
     },
     write: async (path: string, data: string): Promise<void> => {
       const key = normalizePath(path);
-      if (this.dryRun) {
-        this.pendingContent.set(key, data);
-      } else {
-        await fs.writeFile(this.absolute(key), data, 'utf8');
-      }
+      await this.modules.nodeFsPromises.writeFile(this.absolute(key), data, 'utf8');
       this.writes.push({ path: key, action: 'update' });
     },
     mkdir: async (path: string): Promise<void> => {
-      if (this.dryRun) return;
-      await fs.mkdir(this.absolute(path), { recursive: true });
+      await this.modules.nodeFsPromises.mkdir(this.absolute(path), { recursive: true });
     },
     exists: async (path: string): Promise<boolean> => {
-      if (this.pendingContent.has(normalizePath(path))) return true;
-      return fs.access(this.absolute(path)).then(() => true, () => false);
+      return this.modules.nodeFsPromises.access(this.absolute(path)).then(() => true, () => false);
     },
     stat: async (path: string): Promise<{ type: 'file' | 'folder'; ctime: number; mtime: number; size: number } | null> => {
       try {
-        const info = await fs.stat(this.absolute(path));
+        const info = await this.modules.nodeFsPromises.stat(this.absolute(path));
         return {
           type: info.isDirectory() ? 'folder' : 'file',
           ctime: info.birthtimeMs,
@@ -258,7 +278,7 @@ export class NodeVault {
     list: async (path: string): Promise<{ files: string[]; folders: string[] }> => {
       const base = normalizePath(path);
       const prefix = base === '/' ? '' : `${base}/`;
-      const entries = await fs.readdir(this.absolute(path), { withFileTypes: true });
+      const entries = await this.modules.nodeFsPromises.readdir(this.absolute(path), { withFileTypes: true });
       const files: string[] = [];
       const folders: string[] = [];
       for (const entry of entries) {
@@ -267,15 +287,11 @@ export class NodeVault {
       return { files, folders };
     },
     remove: async (path: string): Promise<void> => {
-      if (this.dryRun) {
-        this.pendingContent.delete(normalizePath(path));
-        return;
-      }
-      await fs.unlink(this.absolute(path));
+      await this.modules.nodeFsPromises.unlink(this.absolute(path));
     },
   };
 
-  /** Vault change events; the CLI runs one ingest and then exits. */
+  /** Vault change events; the instrument runs one ingest and exits. */
   on(): { unload: () => void } {
     return { unload: () => { /* nothing registered */ } };
   }
@@ -298,8 +314,9 @@ export interface VaultApp {
   fileManager: { trashFile: (file: TFile) => Promise<void> };
 }
 
-export function createVaultApp(root: string, dryRun: boolean): VaultApp {
-  const vault = new NodeVault(root, dryRun);
+export async function createVaultApp(root: string): Promise<VaultApp> {
+  const modules = await loadNodeModules();
+  const vault = new NodeVault(root, modules);
   return {
     vault,
     metadataCache: {
