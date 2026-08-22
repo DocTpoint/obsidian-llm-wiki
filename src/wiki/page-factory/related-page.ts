@@ -20,6 +20,7 @@ import { TOKENS_PAGE_GENERATION } from '../../constants';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { mergeFrontmatter, parseFrontmatter } from '../../core/frontmatter';
+import { incomingTypeTag } from '../../core/tag-vocab';
 import { stripMentionsSection } from '../../core/mentions-parser';
 import { renderTemplate } from '../../core/template-renderer';
 import {
@@ -82,19 +83,23 @@ export async function updateRelatedPage(
 
   const existingContent = await ctx.app.vault.read(abstractFile);
 
+  // Hoisted above the merge so this source's type reaches `tags:`; the skip
+  // decision below reads the same value. Which list it came from is the kind,
+  // so the vocabulary check below needs no second lookup.
+  const asEntity = analysis.entities.find(e => e.name === pageName);
+  const newInfo = asEntity || analysis.concepts.find(c => c.name === pageName);
+
   // 1. Programmatic frontmatter merge (sources + updated).
   // Issue #155: cite the canonical source PAGE link (disambiguated slug).
   const { frontmatter, body: existingBody } = mergeFrontmatter(
     existingContent,
     sourceSlug ? `sources/${sourceSlug}` : sourceFile.path,
+    incomingTypeTag(ctx.settings, asEntity ? 'entity' : 'concept', newInfo?.type),
   );
 
   // Issue #131: when the source extracted nothing matching this page, skip the
   // LLM entirely — record the new source in frontmatter and leave the body
   // untouched (a no-op rewrite corrupts verbatim text).
-  const newInfo =
-    analysis.entities.find(e => e.name === pageName) ||
-    analysis.concepts.find(c => c.name === pageName);
   if (!newInfo) {
     await ctx.createOrUpdateFile(page.path, `${frontmatter}\n\n${existingBody}`);
     return true;
