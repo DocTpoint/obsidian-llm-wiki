@@ -115,10 +115,9 @@ export function slugKeys(
 //     dedup value above the page basename and collide with everything;
 //     two-character aliases (ML / HD / CD / AI / UI / ...) are common in
 //     real-world vaults and would be too aggressive to drop, so the
-//     floor is 2, not 3. Tunable per-vault via the setting of the
-//     same name; pass-through callers (existing code paths) keep
-//     v1.25.9 behaviour because the default matches the threshold
-//     they implicitly assumed was being applied.
+//     floor is 2, not 3. Tunable per vault via the `minAliasLength`
+//     setting, which callers pass as `minLength`; callers that pass
+//     nothing keep the constant, i.e. v1.25.9 behaviour.
 //   - Optional `existingAliasesAcrossPages` argument lets callers (alias
 //     completion, merge triage) reject candidates that would create a
 //     wikilink ambiguity by overlapping with an alias already on
@@ -141,6 +140,7 @@ export function filterRedundantAliases(
   pagePath: string,
   candidateAliases: string[],
   existingAliasesAcrossPages?: readonly string[],
+  minLength: number = MIN_ALIAS_LENGTH,
 ): string[] {
   const fileName = pagePath.split('/').pop() || '';
   const fileKey = aliasKey(fileName.replace(/\.md$/i, ''));
@@ -149,7 +149,7 @@ export function filterRedundantAliases(
     for (const raw of existingAliasesAcrossPages) {
       if (typeof raw !== 'string') continue;
       const trimmed = raw.trim();
-      if (trimmed.length >= MIN_ALIAS_LENGTH) {
+      if (trimmed.length >= minLength) {
         crossPageKeys.add(aliasKey(trimmed));
       }
     }
@@ -158,7 +158,7 @@ export function filterRedundantAliases(
   return candidateAliases.filter(alias => {
     if (typeof alias !== 'string') return false;
     const trimmed = alias.trim();
-    if (trimmed.length < MIN_ALIAS_LENGTH) return false;
+    if (trimmed.length < minLength) return false;
     const key = aliasKey(trimmed);
     if (key === fileKey) return false; // already resolves to this file — redundant
     if (crossPageKeys.has(key)) return false; // already used on another page — wikilink ambiguity
