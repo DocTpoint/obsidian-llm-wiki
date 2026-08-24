@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **Status.** Latest shipped: v1.26.4 PATCH (2026-08-19). Composition details in the v1.26.4 entry below. The v1.26.5 PATCH slot was CANCELLED 2026-08-19 — folded into v1.27.0 MINOR to amortize release-cycle overhead. Pending work tracks live in [ROADMAP.md](./ROADMAP.md).
 
+### Changed
+
+- **Dev instrument: the process exit code follows the ingest report (Issue #417 secondary, split out of PR #418 as its own decision).** `tools/dev-instrument/run-instrument.mjs` exits `0` when the engine's report says `success: true`, `1` when it says `success: false`, when no report was emitted, or when the run throws before the engine, and `2` when `<vault> <source>` is missing (usage now goes to stderr, nothing to stdout). Before, the code was whatever the last throw decided — a failed ingest exited `1` only because `ingestSource` rethrows after reporting, a run that ended without a report exited `0`, and a run without arguments printed usage on stdout and exited `0`. `exitCodeForReport` (`tools/dev-instrument/src/exit-code.ts`) is the single seam; a process-level test drives the real launcher and pins no positionals → `2` and a report with `success false` → `1` against a vault whose local provider points at a closed port.
+
 ### Fixed
 
 - **Create path persisted an alias equal to the page's own filename (Issue #536).** The model routinely lists the page name among the aliases it writes; `appendAliases` refuses exactly that via `filterRedundantAliases`, but `enforceFrontmatterConstraints` — the other writer of `aliases:` on `createNewPage`, `fillEmptyPage` and `mergeDuplicatePages` — did not know the page path and kept it (20 % of the pages in a 2.4 K-page build, 8 of 11 under 1.26.x). The function now takes an optional `pagePath` and applies the same gate; callers without a path are unchanged. Space/hyphen variants stay, as before. 5 regression tests.
