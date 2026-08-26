@@ -1680,6 +1680,50 @@ describe('OpenAICompatSdkClient', () => {
       expect(result.usage).toBeUndefined();
     });
 
+    it('recovery branch preserves the true finishReason and reports finish exactly once (#544)', async () => {
+      // DocTpoint PR #544 review: in origin (b) — generateText RESOLVED, the
+      // output getter then threw NoOutputGeneratedError — the early
+      // reportFinish already delivered the true finishReason (typically
+      // `length` when reasoning burned the budget). The recovery branch must
+      // not re-report ('stop', undefined): last-write-wins consumers like
+      // source-analyzer would see a masked 'stop', so length-keyed remedies
+      // never fire on a budget-truncated composite. The returned object must
+      // carry the hoisted reason too.
+      mockGenerateText.mockReset();
+      const resolved = {
+        ...makeResultWithReasoning('', 'truncated json from the reasoning channel'),
+        finishReason: 'length',
+      } as Awaited<ReturnType<typeof generateText>>;
+      // The output getter throws AFTER resolution — mirrors ai@6.0.230's
+      // readOutput path where Output.json() finds nothing parseable.
+      Object.defineProperty(resolved, 'output', {
+        get() { throw makeNoOutputError(); },
+        configurable: true,
+      });
+      mockGenerateText.mockResolvedValueOnce(resolved);
+
+      const onFinish = vi.fn();
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const result = await client.createMessageWithOutput!({
+        model: 'deepseek-v4-flash',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object' },
+        onFinish,
+      });
+
+      expect(result.text).toContain('truncated json');
+      expect(result.output).toBeUndefined();
+      expect(result.finishReason).toBe('length');
+      expect(result.usage).toBeDefined();
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onFinish.mock.calls[0][0].finishReason).toBe('length');
+    });
+
     it('does NOT trigger 3-tier demotion chain on NoOutputGeneratedError (different error class)', async () => {
       // The 3-tier chain runs on APICallError + statusCode===400.
       // NoOutputGeneratedError is AISDKError, not APICallError — same
@@ -1727,6 +1771,68 @@ describe('OpenAICompatSdkClient', () => {
       });
 
       expect(result).toBe('');
+      expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    });
+
+    it('recovers the composed text when the typed-path output getter throws NoOutputGeneratedError (Issue #506)', async () => {
+      // Origin (b) of NoOutputGeneratedError on createMessageWithOutput:
+      // generateText RESOLVED, but nothing parsed into `output`, so the
+      // SDK's `.output` getter (ai@6.0.230 dist/index.mjs:5146) throws.
+      // The payload travelled in the reasoning channel, and the client
+      // has already composed reasoning + visible text into a local
+      // before readOutput() touches the getter. The catch must return
+      // that composite — not the empty quiet shape — so caller-side
+      // parseJsonResponse can recover the JSON (Layer 3).
+      //
+      // NOTE: this is NOT the err.response recovery the issue sketched.
+      // The class carries no `.response` (constructor is {message,
+      // cause} only), so an in-scope recovery is the only real one.
+      const REASONING_JSON = '{"translated": "# 欢迎使用你的维基"}';
+      const throwing = makeResultWithReasoning('', [{ text: REASONING_JSON }]) as unknown as Record<string, unknown>;
+      Object.defineProperty(throwing, 'output', {
+        get() { throw new NoOutputGeneratedError(); },
+      });
+      mockGenerateText.mockReset();
+      mockGenerateText.mockResolvedValueOnce(throwing as never);
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const result = await client.createMessageWithOutput!({
+        model: 'deepseek-v4-flash',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'translate' }],
+        response_format: { type: 'json_object' },
+      });
+
+      // The JSON-shaped reasoning payload reaches the caller.
+      expect(result.text).toContain(REASONING_JSON);
+      expect(result.output).toBeUndefined();
+      expect(result.finishReason).toBe('stop');
+    });
+
+    it('keeps the empty quiet path when nothing was composed (origin a — generateText rejected)', async () => {
+      // Origin (a): generateText itself rejects (stream flush without a
+      // terminal chunk). No result exists in scope and the class carries
+      // no `.response` to mine — the quiet path stays correct.
+      mockGenerateText.mockReset();
+      mockGenerateText.mockRejectedValueOnce(makeNoOutputError());
+
+      const client = new OpenAICompatSdkClient({
+        apiKey: 'sk-test',
+        baseURL: 'https://api.deepseek.com/v1',
+        provider: 'deepseek',
+      });
+      const result = await client.createMessageWithOutput!({
+        model: 'deepseek-v4-flash',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'extract' }],
+        response_format: { type: 'json_object' },
+      });
+
+      expect(result.text).toBe('');
       expect(mockGenerateText).toHaveBeenCalledTimes(1);
     });
   });
