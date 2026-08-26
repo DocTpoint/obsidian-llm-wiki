@@ -20,9 +20,10 @@ import { renderWikiConfigSection } from './settings-sections/wiki-config-section
 import { renderAutoMaintainSection } from './settings-sections/auto-maintain-section';
 import { renderAdvancedSettingsSection } from './settings-sections/advanced-settings-section';
 import { copyCodexDeviceCode, runCodexDeviceAuth, runCodexModelRefresh, runCodexSignOut } from './openai-codex-auth-controls';
+import { copyBedrockUserCode, runBedrockDeviceAuth, runBedrockSignOut, type BedrockDevicePrompt } from './bedrock-auth-controls';
 import { applyCodexModelPolicy } from '../core/openai-codex-model-policy';
 import type { CodexDevicePrompt } from './openai-codex-auth-controls';
-import { NOTICE_NORMAL, NOTICE_ERROR } from '../constants';
+import { BEDROCK_DEFAULT_REGION, NOTICE_NORMAL, NOTICE_ERROR } from '../constants';
 import { ProviderSecretStore } from '../llm-sdk/provider-secret-store';
 
 // v1.25.5: getSettingDefinitions() implemented as a no-op stub for
@@ -35,6 +36,13 @@ export class LLMWikiSettingTab extends PluginSettingTab {
   public codexAuthBusy = false;
   public codexDevicePrompt: CodexDevicePrompt | null = null;
   private codexModelRefreshAttemptedAt = 0;
+  // #425 Bedrock Stage 2 — SSO login state + in-memory IAM key buffers
+  // (flushed to SecretStorage once on tab close, mirroring flushApiKey).
+  public bedrockAuthBusy = false;
+  public bedrockDevicePrompt: BedrockDevicePrompt | null = null;
+  public bedrockIamKeyBuffer = '';
+  public bedrockIamSecretBuffer = '';
+  public bedrockIamSessionTokenBuffer = '';
 
   constructor(app: App, plugin: LLMWikiPlugin) {
     super(app, plugin);
@@ -89,6 +97,13 @@ export class LLMWikiSettingTab extends PluginSettingTab {
 
   // Auto-save when user navigates away from settings tab
   hide(): void {
+    // #425: IAM key buffers flush BEFORE the change check — they never
+    // touch tempSettings, so without this they would be dropped on a
+    // no-op close even though the user typed keys. Gated to iam mode so
+    // keys typed then ABANDONED (mode switched away) are not persisted.
+    if ((this.tempSettings.bedrockAuthMethod ?? 'api-key') === 'iam') {
+      this.flushBedrockIamKeys();
+    }
     const hasChanges = JSON.stringify(this.tempSettings) !== JSON.stringify(this.plugin.settings);
     if (hasChanges) {
       // commitTempSettings owns the flush; skip saveSettings on failure
@@ -97,6 +112,38 @@ export class LLMWikiSettingTab extends PluginSettingTab {
       if (!commitSucceeded) return;
       void this.plugin.saveSettings();
       console.debug('Settings auto-saved on tab close');
+    }
+  }
+
+  /**
+   * #425 Bedrock Stage 2: flush typed static IAM keys into SecretStorage
+   * once per edit session (mirrors flushApiKey discipline). Only writes
+   * when the user actually entered both required fields; partial input
+   * is kept in memory for retry. Returns void because the buffers are
+   * wiped ONLY after setSecret returns — there is no commit step whose
+   * skipping this return value would need to gate (the #339 hazard of
+   * wipe-before-IO-success cannot occur by construction; a test pins it).
+   */
+  public flushBedrockIamKeys(): void {
+    const accessKeyId = this.bedrockIamKeyBuffer.trim();
+    const secretAccessKey = this.bedrockIamSecretBuffer.trim();
+    if (accessKeyId.length === 0 && secretAccessKey.length === 0) return;
+    if (accessKeyId.length === 0 || secretAccessKey.length === 0) {
+      // Partial entry — keep buffers so the user can complete them.
+      new Notice(this.getText('bedrockIamRequired'), NOTICE_ERROR);
+      return;
+    }
+    try {
+      const sessionToken = this.bedrockIamSessionTokenBuffer.trim();
+      this.plugin.bedrockAuthManager?.saveIamKeys(
+        sessionToken.length > 0 ? { accessKeyId, secretAccessKey, sessionToken } : { accessKeyId, secretAccessKey },
+      );
+      this.bedrockIamKeyBuffer = '';
+      this.bedrockIamSecretBuffer = '';
+      this.bedrockIamSessionTokenBuffer = '';
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : 'Unknown error';
+      new Notice(this.getText('bedrockIamSaveFailed').replace('{}', detail), NOTICE_ERROR);
     }
   }
 
@@ -320,6 +367,82 @@ export class LLMWikiSettingTab extends PluginSettingTab {
   public async signOutOpenAICodex(): Promise<void> {
     await runCodexSignOut({ isBusy: () => this.codexAuthBusy, isSignedIn: () => this.plugin.codexAuthManager?.hasCredential() === true, confirm: () => this.confirmOpenAICodexSignOut(), signOut: () => this.plugin.signOutOpenAICodex(), showError: (error) => { new Notice(this.codexAuthError(error), NOTICE_ERROR); }, setBusy: (value) => { this.codexAuthBusy = value; }, setReady: (value) => { this.tempSettings.llmReady = value; }, render: () => { this.display(); } });
     this.syncCodexModelsFromPlugin();
+  }
+
+  // ===== #425 Bedrock Stage 2 — SSO auth controls =====
+
+  private bedrockAuthError(error: unknown): string {
+    const detail = error instanceof Error ? error.message : String(error);
+    return this.getText('bedrockSsoFailed').replace('{}', detail);
+  }
+
+  public async loginBedrockSso(): Promise<void> {
+    const manager = this.plugin.bedrockAuthManager;
+    if (!manager || this.bedrockAuthBusy) return;
+    const startUrl = (this.tempSettings.bedrockSsoStartUrl ?? '').trim();
+    if (startUrl.length === 0) {
+      new Notice(this.getText('bedrockSsoStartUrlName'), NOTICE_ERROR);
+      return;
+    }
+    const signedInBefore = manager.hasSsoToken();
+    // DeviceLoginSession is structurally a BedrockDevicePrompt — pass
+    // the session through directly.
+    await runBedrockDeviceAuth({
+      beginLogin: () => manager.beginDeviceLogin(startUrl, this.tempSettings.bedrockRegion || BEDROCK_DEFAULT_REGION),
+      openExternal: (url) => this.plugin.openExternal(url),
+      setPrompt: (prompt) => { this.bedrockDevicePrompt = prompt; },
+      showError: (error) => { new Notice(this.bedrockAuthError(error), NOTICE_ERROR); },
+      setBusy: (value) => { this.bedrockAuthBusy = value; },
+      setReady: (value) => { this.tempSettings.llmReady = value; },
+      render: () => { this.display(); },
+    });
+    // Post-login prefill (#425): when the token is fresh AND both
+    // fields are empty, ask the portal for the single visible account/
+    // role and fill them in. Ambiguous or failed discovery silently
+    // keeps manual entry authoritative.
+    if (!signedInBefore && manager.hasSsoToken()) {
+      const accountEmpty = (this.tempSettings.bedrockSsoAccountId ?? '').trim().length === 0;
+      const roleEmpty = (this.tempSettings.bedrockSsoRoleName ?? '').trim().length === 0;
+      if (accountEmpty && roleEmpty) {
+        const found = await manager.discoverAccountRole().catch(() => null);
+        if (found) {
+          this.tempSettings.bedrockSsoAccountId = found.accountId;
+          this.tempSettings.bedrockSsoRoleName = found.roleName;
+          new Notice(this.getText('bedrockSsoDetectedPrefill').replace('{}', `${found.accountId} / ${found.roleName}`), NOTICE_NORMAL);
+          this.display();
+        }
+      }
+    }
+  }
+
+  public async copyBedrockUserCode(): Promise<void> {
+    if (!this.bedrockDevicePrompt) return;
+    try { await copyBedrockUserCode(this.bedrockDevicePrompt.userCode, navigator.clipboard); } catch (error) { new Notice(this.bedrockAuthError(error), NOTICE_ERROR); }
+  }
+
+  private confirmBedrockSignOut(): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      new ConfirmModal(this.app, {
+        title: this.getText('bedrockSsoSignOutButton'),
+        body: `${this.getText('bedrockSsoSignOutButton')}?`,
+        confirmText: this.getText('bedrockSsoSignOutButton'),
+        cancelText: this.getText('cancelButton'),
+        onChoice: (confirmed) => resolve(confirmed),
+      }).open();
+    });
+  }
+
+  public async signOutBedrock(): Promise<void> {
+    await runBedrockSignOut({
+      isBusy: () => this.bedrockAuthBusy,
+      isSignedIn: () => this.plugin.bedrockAuthManager?.hasSsoToken() === true,
+      confirm: () => this.confirmBedrockSignOut(),
+      signOut: async () => { this.plugin.bedrockAuthManager?.signOut(); },
+      showError: (error) => { new Notice(this.bedrockAuthError(error), NOTICE_ERROR); },
+      setBusy: (value) => { this.bedrockAuthBusy = value; },
+      setReady: (value) => { this.tempSettings.llmReady = value; },
+      render: () => { this.display(); },
+    });
   }
 
   /** Read the current model string for any of the 4 model fields. */

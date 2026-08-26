@@ -23,7 +23,7 @@ import type { LLMTask } from '../core/model-resolver';
 import { TEXTS } from '../texts';
 import { getText } from '../core/i18n';
 import { createLLMClient } from '../core/create-plugin-llm-client';
-import { providerRequiresApiKey } from '../core/provider-auth';
+import { providerRequiresApiKey, usesBedrockAwsCredentials } from '../core/provider-auth';
 import { resolveProviderApiKey } from '../llm-sdk/provider-api-key-resolver';
 import type { CodexAuthManager } from '../llm-sdk/openai-codex/auth-manager';
 import { applyCodexModelPolicy } from '../core/openai-codex-model-policy';
@@ -41,6 +41,8 @@ export interface ConnectionCommandsHost {
   llmClient: LLMClient | null;
   wikiEngine: import('../wiki/wiki-engine').WikiEngine;
   codexAuthManager: CodexAuthManager | null;
+  /** #425 Bedrock Stage 2 — plugin-owned credential orchestrator. */
+  bedrockAuthManager: import('../llm-sdk/bedrock-sso/credential-manager').BedrockAuthManager | null;
   manifest: { version: string };
   initializeLLMClient(): void;
   saveSettings(): Promise<void>;
@@ -64,11 +66,25 @@ export const connectionCommands = {
     if (this.settings.provider === 'openai-codex' && this.codexAuthManager?.hasCredential() !== true) {
       return { success: false, message: t.codexAuthRequired };
     }
+    // #425 Bedrock Stage 2: in sso/iam modes AWS credentials replace the
+    // bearer key (single predicate in core/provider-auth), so the
+    // credential-presence gate runs BEFORE the API-key gate and never
+    // surfaces a misleading missing-key error.
+    const awsCredMode = usesBedrockAwsCredentials(this.settings.provider, this.settings.bedrockAuthMethod);
+    if (awsCredMode) {
+      const method = this.settings.bedrockAuthMethod!;
+      if (method === 'sso' && this.bedrockAuthManager?.hasSsoToken() !== true) {
+        return { success: false, message: t.bedrockSsoRequired };
+      }
+      if (method === 'iam' && this.bedrockAuthManager?.hasIamKeys() !== true) {
+        return { success: false, message: t.bedrockIamRequired };
+      }
+    }
     // v1.25.7 PATCH: accept an optional pendingApiKey so the Test
     // Connection button can forward the in-memory typed key from
     // tab.tempSettings.apiKey, bypassing the stale SecretStorage value.
     // Production callers (initializeLLMClient etc.) pass undefined.
-    if (providerRequiresApiKey(this.settings.provider) && !resolveProviderApiKey(
+    if (!awsCredMode && providerRequiresApiKey(this.settings.provider) && !resolveProviderApiKey(
       { apiKey: this.settings.apiKey, providerApiKeySecretId: this.settings.providerApiKeySecretId },
       this.app.secretStorage,
       pendingApiKey,
@@ -97,7 +113,7 @@ export const connectionCommands = {
     }
 
     try {
-      const testClient = createLLMClient(this.settings, this.codexAuthManager ?? undefined, this.manifest.version, this.app.secretStorage, pendingApiKey);
+      const testClient = createLLMClient(this.settings, this.codexAuthManager ?? undefined, this.manifest.version, this.app.secretStorage, pendingApiKey, this.bedrockAuthManager ?? undefined);
 
       for (const probe of probePlan) {
         const attempted = new Set<string>();

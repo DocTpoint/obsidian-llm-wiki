@@ -32,10 +32,12 @@
 
 import { Platform, Setting } from 'obsidian';
 import type { LLMWikiSettingTab } from '../settings';
+import type { LLMWikiSettings } from '../../types';
 import { PREDEFINED_PROVIDERS } from '../../types';
 import { BEDROCK_REGIONS, BEDROCK_DEFAULT_REGION, NATIVE_PDF_PROVIDER_IDS, MAX_BATCH_DELAY_MS } from '../../constants';
 import { renderRangeSlider } from '../settings-helpers';
 import { getCodexAuthUiState } from '../openai-codex-auth-controls';
+import { getBedrockAuthUiState } from '../bedrock-auth-controls';
 import { resolveInitialApiKey } from '../../llm-sdk/provider-api-key-resolver';
 
 export function renderProviderSection(tab: LLMWikiSettingTab, containerEl: HTMLElement): void {
@@ -46,6 +48,10 @@ export function renderProviderSection(tab: LLMWikiSettingTab, containerEl: HTMLE
   const isCodex = tempSettings.provider === 'openai-codex';
   const isBedrock = tempSettings.provider === 'bedrock-anthropic'
     || tempSettings.provider === 'bedrock-openai';
+  // #425: in sso/iam modes the bearer API-key field is inert (AWS
+  // credentials sign instead) — hiding it prevents "which one do I
+  // fill?" confusion.
+  const bedrockAwsCredMode = isBedrock && (tempSettings.bedrockAuthMethod ?? 'api-key') !== 'api-key';
 
   // LLM Provider (highest priority - must configure first).
   // v1.25.1 Phase C-PR2 fix: this heading was previously emitted from
@@ -98,7 +104,7 @@ export function renderProviderSection(tab: LLMWikiSettingTab, containerEl: HTMLE
       new Setting(containerEl).setName(tab.getText('codexAuthDeviceInstructions').replace('{}', prompt.userCode)).setDesc(prompt.verificationUrl).addButton(button => button.setButtonText(tab.getText('codexAuthCopyCode')).onClick(() => { void tab.copyOpenAICodexDeviceCode(); })).addButton(button => button.setButtonText(tab.getText('cancelButton')).setWarning().onClick(() => { prompt.cancel(); }));
     }
     if (isSignedIn) tab.queueStaleCodexModelRefresh();
-  } else if (!isOllama && !isLmStudio) {
+  } else if (!isOllama && !isLmStudio && !bedrockAwsCredMode) {
     // v1.25.3 #182: read the key through the tested ProviderSecretStore
     // helper (matches Codex's codexAuthManager UX). The text component
     // is an in-memory buffer; the actual SecretStorage write happens
@@ -182,6 +188,108 @@ export function renderProviderSection(tab: LLMWikiSettingTab, containerEl: HTMLE
           tempSettings.model = '';
         });
       });
+
+    // #425 Bedrock Stage 2 — auth method + credential surfaces. Secrets
+    // never live in settings: SSO runs a device login, IAM keys buffer
+    // in-memory and flush to SecretStorage on tab close.
+    const currentAuthMethod = tempSettings.bedrockAuthMethod ?? 'api-key';
+    new Setting(containerEl)
+      .setName(tab.getText('bedrockAuthMethodName'))
+      .setDesc(tab.getText('bedrockAuthMethodDesc'))
+      .addDropdown(dropdown => {
+        dropdown.addOption('api-key', tab.getText('bedrockAuthOptionApiKey'));
+        dropdown.addOption('sso', tab.getText('bedrockAuthOptionSso'));
+        dropdown.addOption('iam', tab.getText('bedrockAuthOptionIam'));
+        dropdown.setValue(currentAuthMethod);
+        dropdown.onChange((value) => {
+          const previous = tempSettings.bedrockAuthMethod ?? 'api-key';
+          tempSettings.bedrockAuthMethod = value as LLMWikiSettings['bedrockAuthMethod'];
+          // Leaving iam mode abandons any half-typed key buffers — wipe
+          // them so a later tab close cannot persist abandoned secrets.
+          if (previous === 'iam' && value !== 'iam') {
+            tab.bedrockIamKeyBuffer = '';
+            tab.bedrockIamSecretBuffer = '';
+            tab.bedrockIamSessionTokenBuffer = '';
+          }
+          tempSettings.llmReady = false;
+          tab.display();
+        });
+      });
+
+    const bedrockAuthMethod = currentAuthMethod;
+    if (bedrockAuthMethod === 'sso') {
+      new Setting(containerEl)
+        .setName(tab.getText('bedrockSsoStartUrlName'))
+        .setDesc(tab.getText('bedrockSsoStartUrlDesc'))
+        .addText(text => text
+          .setValue(tempSettings.bedrockSsoStartUrl ?? '')
+          .onChange((value) => { tempSettings.bedrockSsoStartUrl = value; }));
+      new Setting(containerEl)
+        .setName(tab.getText('bedrockSsoAccountIdName'))
+        .setDesc(tab.getText('bedrockSsoAccountIdDesc'))
+        .addText(text => text
+          .setValue(tempSettings.bedrockSsoAccountId ?? '')
+          .onChange((value) => { tempSettings.bedrockSsoAccountId = value; tempSettings.llmReady = false; }));
+      new Setting(containerEl)
+        .setName(tab.getText('bedrockSsoRoleNameName'))
+        .setDesc(tab.getText('bedrockSsoRoleNameDesc'))
+        .addText(text => text
+          .setValue(tempSettings.bedrockSsoRoleName ?? '')
+          .onChange((value) => { tempSettings.bedrockSsoRoleName = value; tempSettings.llmReady = false; }));
+
+      const ssoSignedIn = tab.plugin.bedrockAuthManager?.hasSsoToken() === true;
+      const ssoState = getBedrockAuthUiState({ isBusy: tab.bedrockAuthBusy, isSignedIn: ssoSignedIn });
+      const expiryMs = tab.plugin.bedrockAuthManager?.ssoTokenExpiry() ?? null;
+      const status = tab.bedrockAuthBusy
+        ? tab.getText('bedrockSsoBusy')
+        : ssoSignedIn && expiryMs !== null
+          ? tab.getText('bedrockSsoStatusSignedIn').replace('{}', new Date(expiryMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+          : tab.getText('bedrockSsoStatusSignedOut');
+      const authSetting = new Setting(containerEl)
+        .setName(tab.getText('bedrockAuthOptionSso'))
+        .setDesc(status);
+      if (ssoState.showLogin) authSetting.addButton(button => button.setButtonText(tab.getText('bedrockSsoLoginButton')).onClick(() => { void tab.loginBedrockSso(); }));
+      if (ssoState.showSignOut) authSetting.addButton(button => button.setButtonText(tab.getText('bedrockSsoSignOutButton')).setWarning().onClick(() => { void tab.signOutBedrock(); }));
+      if (tab.bedrockDevicePrompt) {
+        const prompt = tab.bedrockDevicePrompt;
+        new Setting(containerEl)
+          .setName(tab.getText('bedrockSsoUserCodeInstructions').replace('{}', prompt.userCode))
+          .setDesc(prompt.verificationUriComplete ?? prompt.verificationUri)
+          .addButton(button => button.setButtonText(tab.getText('bedrockSsoCopyCode')).onClick(() => { void tab.copyBedrockUserCode(); }))
+          .addButton(button => button.setButtonText(tab.getText('cancelButton')).setWarning().onClick(() => { prompt.cancel(); }));
+      }
+    } else if (bedrockAuthMethod === 'iam') {
+      new Setting(containerEl)
+        .setName(tab.getText('bedrockIamKeyName'))
+        .setDesc(tab.getText('bedrockIamKeyDesc'))
+        .addText(text => text
+          .setValue(tab.bedrockIamKeyBuffer)
+          .onChange((value) => { tab.bedrockIamKeyBuffer = value; tempSettings.llmReady = false; }));
+      new Setting(containerEl)
+        .setName(tab.getText('bedrockIamSecretName'))
+        .setDesc(tab.getText('bedrockIamSecretDesc'))
+        .addText(text => {
+          text.inputEl.type = 'password';
+          text.setValue(tab.bedrockIamSecretBuffer).onChange((value) => { tab.bedrockIamSecretBuffer = value; tempSettings.llmReady = false; });
+        });
+      new Setting(containerEl)
+        .setName(tab.getText('bedrockIamSessionTokenName'))
+        .setDesc(tab.getText('bedrockIamSessionTokenDesc'))
+        .addText(text => text
+          .setValue(tab.bedrockIamSessionTokenBuffer)
+          .onChange((value) => { tab.bedrockIamSessionTokenBuffer = value; tempSettings.llmReady = false; }));
+      // Destructive-credential control for iam mode: without this there
+      // is no UI path to remove saved keys (sign-out lives in sso mode).
+      if (tab.plugin.bedrockAuthManager?.hasIamKeys() === true) {
+        new Setting(containerEl)
+          .setName(tab.getText('bedrockIamClearButton'))
+          .addButton(button => button.setButtonText(tab.getText('bedrockIamClearButton')).setWarning().onClick(() => {
+            tab.plugin.bedrockAuthManager?.clearIamKeys();
+            tempSettings.llmReady = false;
+            tab.display();
+          }));
+      }
+    }
   }
 
   // Page Generation Concurrency + Batch Delay — both rendered via the
