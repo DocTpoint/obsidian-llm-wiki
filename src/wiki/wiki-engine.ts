@@ -36,6 +36,7 @@ import { extractSourceTags } from '../core/arrays';
 import { gateCandidates } from '../core/candidate-gate';
 import { getSourceLanguage, isCrossLanguage } from '../core/source-language';
 import { cleanMarkdownResponse } from '../core/markdown';
+import { injectMentionsSection } from '../core/mentions-injector';
 import { SchemaManager, SchemaTask } from '../schema/schema-manager';
 import {
   buildSystemPrompt,
@@ -126,6 +127,11 @@ function errorToString(value: unknown): string {
 // v1.25.1 Phase C-PR1: setsEqual moved to engine-internals/graph-cache.ts
 // (private to GraphCache). Removed from wiki-engine.ts to avoid duplicate export;
 // no external callers — see git grep before this change.
+
+// Issue #496: on a source page the Mentions section IS the payload, so its
+// total budget is raised above the formatter's 500-char default — the same
+// default that would otherwise ellipsize exactly what this route preserves.
+const SOURCE_PAGE_MENTIONS_MAX_CHARS = 2000;
 
 export class WikiEngine {
   private app: App;
@@ -1383,7 +1389,6 @@ export class WikiEngine {
       normalizePath(`${this.settings.wikiFolder}/concepts`),
       normalizePath(`${this.settings.wikiFolder}/sources`)
     ];
-
     for (const folder of folders) {
       try {
         await this.app.vault.createFolder(folder);
@@ -1485,6 +1490,25 @@ export class WikiEngine {
         finalContent = withAliases;
       }
     }
+
+    // Issue #496 (Cause 2): the source page's Mentions section comes from
+    // what extraction already captured over the FULL source text — not from
+    // a model that only ever saw content.substring(0, 500). Same programmatic
+    // route as entity pages (#244); with nothing captured the injector also
+    // strips any section the model wrote itself, because a quote built from
+    // a 500-character window is fabrication, not provenance. The budget is
+    // raised: on a source page the quotes ARE the payload, and the default
+    // 500-char section cap would ellipsize exactly what this route exists
+    // to preserve.
+    finalContent = injectMentionsSection(
+      finalContent,
+      analysis.mentions_in_source ?? [],
+      file.path,
+      {
+        sectionLabel: getSectionLabels(this.settings).mentions_in_source,
+        maxChars: SOURCE_PAGE_MENTIONS_MAX_CHARS,
+      },
+    );
 
     await this.createOrUpdateFile(path, finalContent);
     return path;
