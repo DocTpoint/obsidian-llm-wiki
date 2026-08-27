@@ -18,7 +18,7 @@
 // self-agreement over three draws) and inconsistent between formulations
 // (0.9 % to 13.9 % filtered). The model keeps the remaining two thirds: its
 // `coverage` observation meets COVERAGE_BELOW_THRESHOLD below (stage 3 of the
-// design, local patch) — same module, same contract, after this gate.
+// design, #568) — same module, same contract, after this gate.
 //
 // Opt-in (`settings.skipMentionOnlyCandidates`, off by default): it changes
 // which pages an ingest writes, so it is the user's choice, not an upgrade's.

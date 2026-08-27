@@ -13,7 +13,7 @@ export interface FrontmatterData {
   aliases?: string[];
   /**
    * domain axis stage 2 (#568): the domain axis. A source page carries every
-   * tag of its note; entity/concept pages carry a model-chosen subset (Stufe 3).
+   * tag of its note; entity/concept pages carry a model-chosen subset (stage 3).
    * Canonical on purpose — a passthrough field cannot be unioned by the array
    * helpers (they re-emit the old lines), and the constraints pass drops block
    * items under unknown keys. Absence is not a signal (opt-in layer).

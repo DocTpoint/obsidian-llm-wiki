@@ -36,7 +36,7 @@ import { formatRateLimitNotice } from '../core/rate-limit';
 import { extractSourceTags } from '../core/arrays';
 import { buildVaultResolver } from '../core/related-link-corrector';
 import { gateCandidates, applyCoverageThreshold } from '../core/candidate-gate';
-import { selectDomains, DOMAINS_FIELD } from '../core/domain-axis'; // domain axis stage 3 (#568)
+import { selectDomains, collectDomainVocabulary, DOMAINS_FIELD } from '../core/domain-axis'; // domain axis stage 3 (#568)
 import { getSourceLanguage, isCrossLanguage } from '../core/source-language';
 import { cleanMarkdownResponse } from '../core/markdown';
 import { injectMentionsSection } from '../core/mentions-injector';
@@ -1085,8 +1085,8 @@ export class WikiEngine {
       // survivors — the extraction reported per candidate how the source treats
       // it (`coverage`), the threshold in candidate-gate.ts says what is enough;
       // a missing value keeps the candidate. Then the per-item domain subset
-      // is validated against the note's own tags: a value the note does not
-      // carry is dropped (logged), not written. Runs regardless of the #521
+      // is validated against the vault's tag vocabulary: a value no note
+      // carries is dropped (logged), not written. Runs regardless of the #521
       // opt-in — the deterministic gate is upstream's setting, this half is
       // the local domain-axis design.
       {
@@ -1103,11 +1103,11 @@ export class WikiEngine {
           analysis.entities = covered.entities;
           analysis.concepts = covered.concepts;
         }
-        const noteTags = extractSourceTags(rawSource);
+        const domainVocabulary = collectDomainVocabulary(this.app, this.settings.wikiFolder);
         for (const item of [...analysis.entities, ...analysis.concepts]) {
-          const selection = selectDomains(item.domains, noteTags);
+          const selection = selectDomains(item.domains, domainVocabulary);
           if (selection.rejected.length > 0) {
-            console.debug(`[domain-axis] ${file.path}: "${item.name}" — dropped ${selection.rejected.length} value(s) the note does not carry: ${selection.rejected.join(', ')}`);
+            console.debug(`[domain-axis] ${file.path}: "${item.name}" — dropped ${selection.rejected.length} value(s) the vocabulary does not carry: ${selection.rejected.join(', ')}`);
           }
           if (selection.kept.length > 0) item.domains = selection.kept;
           else delete item.domains;
