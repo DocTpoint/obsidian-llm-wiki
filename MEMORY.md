@@ -19,8 +19,10 @@ release chore `npm audit HIGH→0` (#501).
 
 **Next:** v1.27.x PATCH slot carries deferred items (alias-floor unification
 #537×#532, bounded type-repair fan-out #528, zh/ja candidate-gate measurement
-#521, #407 Stage 2 silent-failure sites, #542/#543 follow-ups). ROADMAP.md
-"v1.27.x PATCH" milestone is the live tracker.
+#521, #407 Stage 2 silent-failure sites, #542/#543 follow-ups, **#562/#558/#556
+ship-day bugs from @DocTpoint's triage**). ROADMAP.md "v1.27.x PATCH" milestone
+is the live tracker. PRs #559 (alias) / #564 (gate) / #557 (pnpm) approved,
+merge in progress.
 
 ---
 
@@ -248,6 +250,48 @@ Distilled from 75 session-level feedback entries. Full text in
   to patch the audit trail. Document the procedural miss in the audit
   note; do NOT rebase or amend. (`feedback_pr_merge_workflow`,
   `feedback_pr_review_vs_comment`)
+- **Architect-level contributor PRs do NOT need `--admin`.** `@DocTpoint`
+  PRs (and any future architect-level Write-role contributor) can be
+  merged via standard `gh pr merge <N> --squash --delete-branch` once
+  `--approve` lands — `--admin` is only required for own-PR self-approve
+  bypass. Habitually adding `--admin` to every merge creates branch
+  protection audit noise. (`feedback_architect_pr_merge_no_bypass`)
+
+### GraphQL stale-read & reply language
+
+- **`gh issue view --json` returns stale state after `gh issue edit --add-label`
+  or `--milestone`.** GraphQL EOF is intermittent; audit MUST use REST
+  (`gh api /repos/.../issues/N/labels` + `gh api /repos/.../issues/N` for
+  milestone). Repeat retries on a "stale-looking" edit usually just spam
+  GitHub's rate limit — first confirm with REST, then retry if needed.
+  (`feedback_gh_cli_graphql_eof_stale_reads`)
+- **Reply drafts MUST match the submitter's language.** English Issue →
+  English reply; Chinese Issue → Chinese reply. The report body can be
+  Chinese (maintainer-facing), but the `#### ✉️ 5. 回复草稿` boxes must
+  match the contributor's language. Drafting all 12 replies in Chinese
+  for an English-submitter pool is condescending to architect-level
+  contributors and breaks codebase convention. (`feedback_reply_language_match_submitter`)
+
+### Cross-release hidden coupling (v1.27.0 ship-day bugs)
+
+- **Path-changing PRs must sync-audit the `readme-links` guard.** v1.27.0
+  PR #511 demoted `tools/llm-wiki-cli/` → `tools/dev-instrument/`,
+  introducing new paths. v1.27.0 PR #560 added `](tools/dev-instrument/README.md)`
+  relative links to 11 READMEs, which v1.25.11 PATCH #375
+  (`src/__tests__/root/readme-links.test.ts`) forbids. CI was 11× red from
+  `bd0da25` until a maintainer-passby merge shipped #566 the same day.
+  **Rule:** when a PR moves/renames any repo path that appears in any
+  README, the PR must sync-update every README link to the new path AND
+  verify locally with `pnpm test src/__tests__/root/readme-links.test.ts`.
+  (`feedback_gh_cli_graphql_eof_stale_reads` -- related audit pattern)
+- **`pnpm.overrides` is deprecated; pnpm >= 11 silently drops it.** Issue
+  #556 / PR #557: the `pnpm.overrides` and `pnpm.onlyBuiltDependencies`
+  fields in `package.json` print a deprecation warning on pnpm 10.14 and
+  are not read by pnpm 11. Move both keys to `pnpm-workspace.yaml`, keep
+  the top-level `overrides` for npm-side pinning, drop the deprecated
+  `pnpm` block. Future `packageManager` upgrades will silently lose the
+  pin otherwise — same failure class as #501 but on the pnpm half.
+  (`feedback_lockfile_regeneration_procedure` -- related lockfile rule)
 
 ---
 
