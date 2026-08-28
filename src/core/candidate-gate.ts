@@ -348,15 +348,22 @@ export const COVERAGE_BELOW_THRESHOLD: ReadonlySet<string> = new Set(['named']);
 /** Why a candidate got no page: where the text put it, or what the model observed. */
 export type DropReason = Exclude<GateVerdict, 'prose'> | 'named';
 
-export interface DroppedCandidate {
+/**
+ * Parameterised on the reason so each gate's result says what that gate can
+ * actually emit: the position gate never reports `named`, the coverage
+ * threshold reports nothing else. The default keeps the shared shape for
+ * callers that handle both (the engine logs them through one line).
+ */
+export interface DroppedCandidate<R extends DropReason = DropReason> {
   name: string;
   kind: 'entity' | 'concept';
-  verdict: DropReason;
+  verdict: R;
 }
 
-export interface GateResult {
+export interface GateResult<R extends DropReason = DropReason> {
   entities: EntityInfo[];
   concepts: ConceptInfo[];
+<<<<<<< HEAD
   dropped: DroppedCandidate[];
   /**
    * Dropped names that stayed in the survivors' related_* lists because the
@@ -364,6 +371,9 @@ export interface GateResult {
    * for them in this ingest; the edge to the existing page is kept.
    */
   linkedAnyway: string[];
+=======
+  dropped: DroppedCandidate<R>[];
+>>>>>>> 0b28f63 (fix(domains): one fold-keyed union at every writer, and the boundary test the vault already has (#568 review))
   /** False when no profile exists for `language` — the input came back untouched. */
   applied: boolean;
 }
@@ -387,11 +397,18 @@ export function gateCandidates(
   analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
   sourceText: string,
   language: string | undefined | null,
+<<<<<<< HEAD
   isKnownPage?: (name: string) => boolean,
 ): GateResult {
   const profile = gateProfileFor(language);
   if (!profile) return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], linkedAnyway: [], applied: false };
   const dropped: DroppedCandidate[] = [];
+=======
+): GateResult<Exclude<GateVerdict, 'prose'>> {
+  const profile = gateProfileFor(language);
+  if (!profile) return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], applied: false };
+  const dropped: DroppedCandidate<Exclude<GateVerdict, 'prose'>>[] = [];
+>>>>>>> 0b28f63 (fix(domains): one fold-keyed union at every writer, and the boundary test the vault already has (#568 review))
   const keep = <T extends { name: string }>(items: T[], kind: DroppedCandidate['kind']): T[] =>
     items.filter(item => {
       const verdict = classifyCandidate(sourceText, item.name, profile);
@@ -416,12 +433,18 @@ export function gateCandidates(
 function pruneDroppedNames(
   entities: EntityInfo[],
   concepts: ConceptInfo[],
+<<<<<<< HEAD
   dropped: readonly DroppedCandidate[],
   isKnownPage?: (name: string) => boolean,
 ): { entities: EntityInfo[]; concepts: ConceptInfo[]; linkedAnyway: string[] } {
   const key = (n: string) => nfc(n).trim().toLowerCase();
   const linkedAnyway = dropped.filter(d => isKnownPage?.(d.name) === true).map(d => d.name);
   const gone = new Set(dropped.filter(d => !linkedAnyway.includes(d.name)).map(d => key(d.name)));
+=======
+  dropped: readonly DroppedCandidate<DropReason>[],
+): { entities: EntityInfo[]; concepts: ConceptInfo[] } {
+  const gone = new Set(dropped.map(d => nfc(d.name).trim().toLowerCase()));
+>>>>>>> 0b28f63 (fix(domains): one fold-keyed union at every writer, and the boundary test the vault already has (#568 review))
   const prune = (names: string[] | undefined): string[] | undefined =>
     names?.filter(n => !gone.has(key(n)));
   return {
@@ -452,9 +475,14 @@ function pruneDroppedNames(
  */
 export function applyCoverageThreshold(
   analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
+<<<<<<< HEAD
   isKnownPage?: (name: string) => boolean,
 ): GateResult {
   const dropped: DroppedCandidate[] = [];
+=======
+): GateResult<'named'> {
+  const dropped: DroppedCandidate<'named'>[] = [];
+>>>>>>> 0b28f63 (fix(domains): one fold-keyed union at every writer, and the boundary test the vault already has (#568 review))
   const keep = <T extends { name: string; coverage?: string }>(items: T[], kind: DroppedCandidate['kind']): T[] =>
     items.filter(item => {
       const cov = typeof item.coverage === 'string' ? item.coverage.trim().toLowerCase() : '';

@@ -3,6 +3,7 @@
 // Zero side effects, fully unit-testable
 
 import { EntityInfo, ConceptInfo, ContradictionInfo, SourceAnalysis, MentionWithProvenance } from '../types';
+import { unionDomains } from './domain-axis';
 
 export interface BatchAccumulation {
   entities: EntityInfo[];
@@ -94,7 +95,10 @@ function mergeMentionsFields<
   // domain axis stage 3 (#568): a later round that names the same item
   // again may carry its own domain subset — union it; `coverage` stays with the
   // first observation (the rounds see the same text).
-  const incomingDomains = incoming.domains?.length ? dedupStrings(existing.domains, incoming.domains) : undefined;
+  // Fold-keyed, not raw: `dedupStrings` is the right tool for mentions (two
+  // spellings of a quote are two quotes) and the wrong one for the domain
+  // axis, whose notion of "same value" is `selectDomains`'.
+  const incomingDomains = incoming.domains?.length ? unionDomains(existing.domains, incoming.domains) : undefined;
   const base: T = incomingDomains && incomingDomains.length !== (existing.domains?.length ?? 0)
     ? { ...existing, domains: incomingDomains }
     : existing;

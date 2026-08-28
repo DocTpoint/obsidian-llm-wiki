@@ -1,7 +1,11 @@
 import { VALID_ENTITY_TAGS, VALID_CONCEPT_TAGS, VALID_SOURCE_TAGS, LLMWikiSettings } from '../types';
 import { getActiveEntityTags, getActiveConceptTags, getActiveSourceTags } from './tag-vocab';
 import { filterRedundantAliases, resolveMinAliasLength } from './slug';
+<<<<<<< HEAD
 import { localDateStamp } from './format';
+=======
+import { unionDomains } from './domain-axis';
+>>>>>>> 0b28f63 (fix(domains): one fold-keyed union at every writer, and the boundary test the vault already has (#568 review))
 
 export interface FrontmatterData {
   reviewed?: boolean;
@@ -567,12 +571,12 @@ export function mergeFrontmatter(
 
   // domain axis stage 3 (#568): union like `sources:` — existing first,
   // then the incoming subset, first occurrence wins. Empty → no field.
-  const mergedDomains: string[] = Array.isArray(fm.domains)
-    ? fm.domains.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
-    : [];
-  for (const d of incomingDomains ?? []) {
-    if (d && !mergedDomains.includes(d)) mergedDomains.push(d);
-  }
+  // Fold-keyed through the axis' own helper, so a merge compares values the
+  // way `selectDomains` does.
+  const mergedDomains = unionDomains(
+    Array.isArray(fm.domains) ? fm.domains : undefined,
+    incomingDomains,
+  );
 
   // Always emit a `tags:` line (bare when empty) to preserve prior behavior.
   // Issue #356 follow-up: also pass through unknown top-level fields

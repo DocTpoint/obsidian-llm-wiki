@@ -81,6 +81,31 @@ describe('domain-axis — collectDomainVocabulary', () => {
     const app = fakeApp({ 'Notizen/A.md': ['', '  ', 'Thema/Schlaf'] });
     expect(collectDomainVocabulary(app, 'wiki')).toEqual(['Thema/Schlaf']);
   });
+
+  // An empty wikiFolder is the vault root (the `folderScopePrefix` reading):
+  // every file is a wiki page, so there is no note left to harvest and the
+  // vocabulary is empty — `buildDomainContext([])` then renders the prompt a
+  // vault without the layer gets. The hand-rolled prefix said the opposite:
+  // `'' + '/'` is `'/'`, which no vault-relative path starts with, so nothing
+  // was excluded and the wiki's own page tags came back as vocabulary.
+  it('treats an empty wikiFolder as the vault root — no notes, empty vocabulary', () => {
+    const app = fakeApp({
+      'Notizen/A.md': ['Thema/Schlaf'],
+      'entities/X.md': ['other'],
+    });
+    expect(collectDomainVocabulary(app, '')).toEqual([]);
+    expect(collectDomainVocabulary(app, '/')).toEqual([]);
+  });
+
+  // The same anchoring the boundary primitive exists for: a sibling folder
+  // sharing the name prefix is not inside the wiki.
+  it('does not exclude a sibling folder that merely shares the name prefix', () => {
+    const app = fakeApp({
+      'wiki-backup/X.md': ['Thema/Schlaf'],
+      'wiki/entities/Y.md': ['other'],
+    });
+    expect(collectDomainVocabulary(app, 'wiki')).toEqual(['Thema/Schlaf']);
+  });
 });
 
 describe('domain-axis — buildDomainContext', () => {

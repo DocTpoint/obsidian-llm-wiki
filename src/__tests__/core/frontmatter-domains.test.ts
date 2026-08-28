@@ -150,6 +150,18 @@ domains:
     expect(fm.domains).toEqual(['Sorte/Mineralstoff', 'Thema/Ernährung', 'Fach/Endokrinologie']);
   });
 
+  // The validator folds (NFC + trim + lowercase); a raw-equality merge here
+  // re-admitted what it had just folded away — one value, written twice.
+  it('folds spelling variants: a case or spacing variant is not a second value', () => {
+    const { frontmatter } = mergeFrontmatter(PAGE, 'sources/zink', undefined, [
+      'sorte/mineralstoff',
+      ' Thema/Ernährung ',
+      'thema/ernährung',
+    ]);
+    const fm = parseFrontmatter(frontmatter + '\n\nbody') ?? {};
+    expect(fm.domains).toEqual(['Sorte/Mineralstoff', 'Thema/Ernährung']);
+  });
+
   it('keeps the existing domains when nothing comes in', () => {
     const { frontmatter } = mergeFrontmatter(PAGE, 'sources/zink');
     expect(parseFrontmatter(frontmatter + '\n\nbody')?.domains).toEqual(['Sorte/Mineralstoff']);

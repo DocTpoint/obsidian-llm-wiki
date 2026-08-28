@@ -20,6 +20,7 @@
 
 import type { App } from 'obsidian';
 import type { CandidateCoverage } from '../types';
+import { isInFolderScope } from './folder-scope';
 
 /** The frontmatter key: one constant, one place. */
 export const DOMAINS_FIELD = 'domains';
@@ -32,16 +33,56 @@ function fold(s: string): string {
 }
 
 /**
+ * Union two domain lists the way `selectDomains` compares them: keyed on
+ * `fold` (NFC + trim + lowercase), first spelling wins, insertion order
+ * preserved, empty and non-string entries dropped.
+ *
+ * Every writer that merges `domains:` shares this, because the axis has one
+ * notion of "the same value" and it is the validator's. Raw string equality
+ * at a merge site re-admits exactly what `selectDomains` folds away: a page
+ * merged from two sources kept `Thema/Ernährung` and `thema/ernährung` side
+ * by side, one value written twice. Trimming both sides matters for the same
+ * reason — the existing side comes off a parsed file, where a stray space
+ * survives, while the incoming side is canonical only as long as every caller
+ * runs it through the validator first.
+ */
+export function unionDomains(
+  existing: readonly unknown[] | undefined,
+  incoming: readonly unknown[] | undefined,
+): string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const list of [existing, incoming]) {
+    for (const raw of list ?? []) {
+      if (typeof raw !== 'string') continue;
+      const v = raw.trim();
+      if (!v) continue;
+      const k = fold(v);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      merged.push(v);
+    }
+  }
+  return merged;
+}
+
+/**
  * The vault's domain vocabulary: every frontmatter tag of every markdown file
  * outside the wiki folder, first spelling wins, sorted for a stable prompt.
  * Reads the metadata cache only — cheap enough to call per ingested note, and
  * both hosts (Obsidian and the CLI shim) serve the same API.
  */
 export function collectDomainVocabulary(app: App, wikiFolder: string): string[] {
-  const prefix = wikiFolder.replace(/\/+$/, '') + '/';
+  // The boundary test is `isInFolderScope`, not a hand-rolled prefix: an empty
+  // `wikiFolder` is the vault root there, so every file is a wiki page and the
+  // vocabulary is empty — which `buildDomainContext` already renders as the
+  // no-layer prompt. Hand-rolled, `'' + '/'` was `'/'`, a prefix no
+  // vault-relative path carries, so the exclusion silently did nothing and the
+  // wiki's own page tags fed back in as vocabulary — the axis would then offer
+  // the model values that came from its own output.
   const seen = new Map<string, string>();
   for (const f of app.vault.getMarkdownFiles()) {
-    if (f.path.startsWith(prefix)) continue;
+    if (isInFolderScope(f.path, wikiFolder, false)) continue;
     const raw = (app.metadataCache.getFileCache(f)?.frontmatter as { tags?: unknown } | undefined)?.tags;
     if (!Array.isArray(raw)) continue;
     for (const t of raw) {

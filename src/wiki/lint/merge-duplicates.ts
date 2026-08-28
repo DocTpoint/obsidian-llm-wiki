@@ -10,6 +10,7 @@ import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { retargetLinksToPage } from '../../core/link-retarget';
 import { localDateStamp } from '../../core/format';
+import { unionDomains } from '../../core/domain-axis';
 
 export async function mergeDuplicatePages(
   ctx: EngineContext,
@@ -43,9 +44,12 @@ export async function mergeDuplicatePages(
 
   // domain axis stage 2 (#568): the domain axis is unioned like `sources:`
   // — survivor first, then the absorbed page, first occurrence wins.
-  const targetDomains = Array.isArray(targetFm?.domains) ? targetFm.domains : [];
-  const sourceDomains = Array.isArray(sourceFm?.domains) ? sourceFm.domains : [];
-  const mergedDomains = [...targetDomains, ...sourceDomains].filter((d, i, a) => d && a.indexOf(d) === i);
+  // Fold-keyed like `sources:` six lines above and like `selectDomains` —
+  // raw equality here kept two spellings of one value on the survivor.
+  const mergedDomains = unionDomains(
+    Array.isArray(targetFm?.domains) ? targetFm.domains : undefined,
+    Array.isArray(sourceFm?.domains) ? sourceFm.domains : undefined,
+  );
 
   const extractH1 = (content: string): string | null => {
     const bodyMatch = content.match(/^---[\s\S]*?\n---\n?([\s\S]*)/);

@@ -48,6 +48,17 @@ describe('mergeDuplicatePages — frontmatter passthrough and domains union', ()
     expect(fm?.domains).toEqual(['Sorte/Protein', 'Fachgebiet/Hämatologie', 'Thema/Eisen']);
   });
 
+  // Merging two pages is where the two spellings of one value meet, so this
+  // is the site the raw-equality dedup hurt most: the survivor kept both.
+  it('folds spelling variants across the two pages', async () => {
+    const { ctx, fake } = makeCtx({
+      [TARGET]: '---\ntype: entity\ntags: [substance]\ndomains:\n  - "Thema/Ernährung"\n---\n\n# Ferritin\n\nIron store.\n',
+      [SOURCE]: '---\ntype: entity\ntags: [substance]\ndomains:\n  - "thema/ernährung"\n  - "Thema/Eisen"\n---\n\n# Ferritin-2\n\nAlso the iron store.\n',
+    });
+    await mergeDuplicatePages(ctx, TARGET, SOURCE);
+    const fm = parseFrontmatter(fake.read(TARGET) ?? '');
+    expect(fm?.domains).toEqual(['Thema/Ernährung', 'Thema/Eisen']);
+  });
   it('leaves no domains field when neither page carries one', async () => {
     const { ctx, fake } = makeCtx({
       [TARGET]: '---\ntype: entity\ntags: [substance]\n---\n\n# Ferritin\n\nIron store.\n',
