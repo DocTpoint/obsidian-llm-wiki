@@ -181,10 +181,22 @@ export class SourceAnalyzer {
     // the generated `sources/<slug>` page (consumed there by
     // `fix-dead-link`'s slugify-normalized cross-page alias match).
     const noteFm = this.ctx.app.metadataCache
-      .getFileCache(file)?.frontmatter as { aliases?: unknown; language?: unknown } | undefined;
+      .getFileCache(file)?.frontmatter as { aliases?: unknown; language?: unknown; tags?: unknown } | undefined;
     const rawNoteAliases = noteFm?.aliases;
     const sourceNoteAliases: string[] = Array.isArray(rawNoteAliases)
       ? rawNoteAliases.filter((a): a is string => typeof a === 'string')
+      : [];
+    // domain axis stage 3 (#568): the note's own tags are the domain proposal
+    // for the note's own lemma. Extracted items get their `domains` subset
+    // from the model; the lemma candidate is added after extraction and never
+    // passes through that prompt, so without this it is the one page class
+    // born domainless. The note's tags describe the note's subject — which is
+    // exactly what the lemma page is — and they are in the harvested
+    // vocabulary by construction; the engine-side `selectDomains` validation
+    // still runs over them like over any model answer.
+    const rawNoteTags = noteFm?.tags;
+    const sourceNoteTags: string[] = Array.isArray(rawNoteTags)
+      ? rawNoteTags.filter((t): t is string => typeof t === 'string')
       : [];
     // Source note's frontmatter `language:` lets us skip the translation
     // instruction when the source is already in the wiki's language (e.g. a
@@ -766,7 +778,7 @@ export class SourceAnalyzer {
     // absent from both lists: the page a reader looks for first is the one
     // that does not get written. Runs after accumulation so it sees the final
     // lists, and fails safe — any doubt leaves the analysis untouched.
-    await this.ensureSourceLemma(analysis, file.basename, sourceNoteAliases);
+    await this.ensureSourceLemma(analysis, file.basename, sourceNoteAliases, sourceNoteTags);
 
     // Issue #527 — the vocabulary is a prompt hint and the schema enforces
     // nothing, so about one item in ten arrives with a type the active
@@ -802,6 +814,7 @@ export class SourceAnalyzer {
     analysis: SourceAnalysis,
     fileBasename: string,
     sourceNoteAliases: string[],
+    sourceNoteTags: string[],
   ): Promise<void> {
     const decision = decideSourceLemma({
       sourceTitle: fileBasename,
@@ -844,6 +857,9 @@ export class SourceAnalyzer {
       type: this.firstActiveTag(targetIsEntity) as 'other',
       summary,
       mentions_in_source: [],
+      // The note's tags are the lemma's domain proposal (see the read site);
+      // engine-side validation prunes them like any model answer.
+      ...(sourceNoteTags.length > 0 ? { domains: sourceNoteTags } : {}),
     };
     if (targetIsEntity === 'entity') {
       analysis.entities.push(candidate);
