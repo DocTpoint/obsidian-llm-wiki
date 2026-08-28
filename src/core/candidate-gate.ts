@@ -426,7 +426,13 @@ export function classifyCandidate(text: string, name: string, profile: GateLangu
 export const COVERAGE_BELOW_THRESHOLD: ReadonlySet<string> = new Set(['named']);
 
 /** Why a candidate got no page: where the text put it, or what the model observed. */
-export type DropReason = Exclude<GateVerdict, 'prose'> | 'named';
+export type DropReason =
+  | Exclude<GateVerdict, 'prose'>
+  | 'named'
+  // Outcome-table drops (S135): both gates below threshold, or a dissent name
+  // whose identity is ambiguous in the vault (an alias two pages claim).
+  | 'aside+named'
+  | 'ambiguous';
 
 /**
  * Parameterised on the reason so each gate's result says what that gate can
@@ -566,4 +572,106 @@ export function applyCoverageThreshold(
   const concepts = keep(analysis.concepts, 'concept');
   if (dropped.length === 0) return { entities: analysis.entities, concepts: analysis.concepts, dropped, linkedAnyway: [], applied: true };
   return { ...pruneDroppedNames(entities, concepts, dropped, isKnownPage), dropped, applied: true };
+}
+
+// ---------------------------------------------------------------------------
+// S135: the three-outcome table. The position gate (deterministic: where the
+// text puts the name) and the coverage observation (the model: how the text
+// treats it) measure different things, and their dissent is mixed content —
+// neither may hold a veto alone. Measured over 1,153 items across three
+// ingest runs: the full-page set of this table equals exactly the keep set of
+// the two serial gates above, so the table is a pure extension — it converts
+// about half of today's drops into stubs and demotes nothing.
+
+/** The two dissent cells. Agreement cells need no name: full page or nothing. */
+export type StubCell = 'prose+named' | 'aside+covered';
+
+export interface StubCandidate {
+  kind: 'entity' | 'concept';
+  cell: StubCell;
+  item: EntityInfo | ConceptInfo;
+}
+
+/**
+ * What the vault already says about a dissent name. Supplied by the caller
+ * (the gate is pure and has no vault): 'match' = exactly one page carries the
+ * name as title or curated alias — no stub, the name stays linkable and the
+ * existing page takes the edge; 'ambiguous' = two pages claim it — no stub
+ * and the name is pruned (a stub born onto a contested name would buy back
+ * the dedup cost this gate exists to save); 'none' = a stub is born.
+ */
+export type StubIdentity = 'none' | 'match' | 'ambiguous';
+
+export interface OutcomeTableResult extends GateResult {
+  /** Dissent names with no page yet: stub births, in analysis order. */
+  stubs: StubCandidate[];
+  /** Dissent names an existing page already answers: no page work, name kept. */
+  existing: Array<{ name: string; kind: 'entity' | 'concept'; cell: StubCell }>;
+}
+
+/**
+ * Route every candidate through the decision table instead of the two serial
+ * gates above:
+ *
+ *   hand-linked name            → full page   (the author's link outranks both gates)
+ *   prose  + covered            → full page
+ *   prose  + named              → stub        (dissent: the model under-read the text)
+ *   aside  + covered            → stub        (dissent: the position rule over-read it)
+ *   aside  + named              → nothing
+ *   absent                      → nothing
+ *
+ * A missing/unknown `coverage` value counts as covered, exactly as in
+ * applyCoverageThreshold. Stub and existing-match names are NOT pruned from
+ * the survivors' related_* lists — their pages exist (or will), so the links
+ * resolve; only the nothing-cells are pruned. Pure, same no-profile contract
+ * as gateCandidates (`applied: false`, input untouched).
+ */
+export function applyOutcomeTable(
+  analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
+  sourceText: string,
+  language: string | undefined | null,
+  resolveIdentity: (name: string) => StubIdentity,
+): OutcomeTableResult {
+  const profile = gateProfileFor(language);
+  if (!profile) {
+    return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], stubs: [], existing: [], applied: false };
+  }
+  const linked = linkedNames(sourceText);
+  const dropped: DroppedCandidate[] = [];
+  const stubs: StubCandidate[] = [];
+  const existing: OutcomeTableResult['existing'] = [];
+  const route = <T extends EntityInfo | ConceptInfo>(items: T[], kind: StubCandidate['kind']): T[] =>
+    items.filter(item => {
+      if (linked.has(nfc(item.name).trim().toLowerCase())) return true;
+      const position = classifyCandidate(sourceText, item.name, profile);
+      const cov = typeof item.coverage === 'string' ? item.coverage.trim().toLowerCase() : '';
+      const covered = !COVERAGE_BELOW_THRESHOLD.has(cov);
+      if (position === 'prose' && covered) return true;
+      if (position === 'absent') {
+        dropped.push({ name: item.name, kind, verdict: 'absent' });
+        return false;
+      }
+      if (position === 'aside' && !covered) {
+        dropped.push({ name: item.name, kind, verdict: 'aside+named' });
+        return false;
+      }
+      const cell: StubCell = position === 'prose' ? 'prose+named' : 'aside+covered';
+      const identity = resolveIdentity(item.name);
+      if (identity === 'match') {
+        existing.push({ name: item.name, kind, cell });
+        return false;
+      }
+      if (identity === 'ambiguous') {
+        dropped.push({ name: item.name, kind, verdict: 'ambiguous' });
+        return false;
+      }
+      stubs.push({ kind, cell, item });
+      return false;
+    });
+  const entities = route(analysis.entities, 'entity');
+  const concepts = route(analysis.concepts, 'concept');
+  if (dropped.length === 0) {
+    return { entities, concepts, dropped, stubs, existing, applied: true };
+  }
+  return { ...pruneDropped(entities, concepts, dropped), dropped, stubs, existing, applied: true };
 }

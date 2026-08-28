@@ -412,3 +412,98 @@ describe('applyCoverageThreshold with isKnownPage (#620 parity)', () => {
     expect(r.linkedAnyway).toEqual([]);
   });
 });
+
+// S135: the three-outcome table. Measured over 1,153 items across three runs:
+// its full-page set equals exactly the serial gates' keep set; dissent
+// (prose+named / aside+covered) births stubs instead of drops.
+import { applyOutcomeTable, type StubIdentity } from '../../core/candidate-gate';
+
+describe('applyOutcomeTable (S135)', () => {
+  const mk = (name: string, coverage?: string, related: string[] = []): EntityInfo =>
+    ({ name, type: 'other', summary: 's', mentions_in_source: [], related_entities: related, ...(coverage ? { coverage } : {}) } as unknown as EntityInfo);
+  const mkC = (name: string, coverage?: string, related: string[] = []): ConceptInfo =>
+    ({ name, type: 'term', summary: 's', mentions_in_source: [], related_concepts: related, ...(coverage ? { coverage } : {}) } as unknown as ConceptInfo);
+  const none = (): StubIdentity => 'none';
+
+  // TEXT (top of file): Ferritin/Entzündung prose · CRP/Malabsorption aside ·
+  // Eisenstoffwechsel absent.
+
+  it('agreement cells: prose+covered keeps, aside+named and absent drop', () => {
+    const r = applyOutcomeTable({
+      entities: [mk('Ferritin', 'discussed'), mk('CRP', 'named')],
+      concepts: [mkC('Eisenstoffwechsel', 'discussed')],
+    }, TEXT, 'de', none);
+    expect(r.applied).toBe(true);
+    expect(r.entities.map(e => e.name)).toEqual(['Ferritin']);
+    expect(r.concepts).toEqual([]);
+    expect(r.stubs).toEqual([]);
+    expect(r.dropped).toEqual([
+      { name: 'CRP', kind: 'entity', verdict: 'aside+named' },
+      { name: 'Eisenstoffwechsel', kind: 'concept', verdict: 'absent' },
+    ]);
+  });
+
+  it('dissent cells birth stubs: prose+named and aside+covered', () => {
+    const r = applyOutcomeTable({
+      entities: [mk('Ferritin', 'named'), mk('CRP', 'discussed')],
+      concepts: [],
+    }, TEXT, 'de', none);
+    expect(r.entities).toEqual([]);
+    expect(r.stubs.map(s => ({ name: s.item.name, cell: s.cell }))).toEqual([
+      { name: 'Ferritin', cell: 'prose+named' },
+      { name: 'CRP', cell: 'aside+covered' },
+    ]);
+    expect(r.dropped).toEqual([]);
+  });
+
+  it('a missing coverage value counts as covered (same contract as the threshold)', () => {
+    const r = applyOutcomeTable({ entities: [mk('Ferritin'), mk('CRP')], concepts: [] }, TEXT, 'de', none);
+    expect(r.entities.map(e => e.name)).toEqual(['Ferritin']);
+    expect(r.stubs.map(s => s.item.name)).toEqual(['CRP']);
+  });
+
+  it("the author's link outranks both gates", () => {
+    const text = 'Es steigt bei Entzündung ([[CRP]] erhöht) an.';
+    const r = applyOutcomeTable({ entities: [mk('CRP', 'named')], concepts: [] }, text, 'de', none);
+    expect(r.entities.map(e => e.name)).toEqual(['CRP']);
+    expect(r.stubs).toEqual([]);
+  });
+
+  it('a dissent name an existing page answers gets no stub and stays linkable', () => {
+    const r = applyOutcomeTable({
+      entities: [mk('Ferritin', 'discussed', ['CRP'])],
+      concepts: [mkC('CRP', 'discussed')],
+    }, TEXT, 'de', () => 'match');
+    expect(r.stubs).toEqual([]);
+    expect(r.existing).toEqual([{ name: 'CRP', kind: 'concept', cell: 'aside+covered' }]);
+    // NOT pruned: the existing page takes the edge.
+    expect(r.entities[0].related_entities).toEqual(['CRP']);
+  });
+
+  it('an ambiguous dissent name gets no stub and IS pruned', () => {
+    const r = applyOutcomeTable({
+      entities: [mk('Ferritin', 'discussed', ['CRP'])],
+      concepts: [mkC('CRP', 'discussed')],
+    }, TEXT, 'de', () => 'ambiguous');
+    expect(r.stubs).toEqual([]);
+    expect(r.dropped).toEqual([{ name: 'CRP', kind: 'concept', verdict: 'ambiguous' }]);
+    expect(r.entities[0].related_entities).toEqual([]);
+  });
+
+  it('stub names are not pruned from the survivors\' related_* lists', () => {
+    const r = applyOutcomeTable({
+      entities: [mk('Ferritin', 'discussed', ['CRP']), mk('CRP', 'discussed')],
+      concepts: [],
+    }, TEXT, 'de', none);
+    expect(r.stubs.map(s => s.item.name)).toEqual(['CRP']);
+    expect(r.entities[0].related_entities).toEqual(['CRP']);
+  });
+
+  it('no language profile: input untouched, applied false', () => {
+    const input = { entities: [mk('Ferritin', 'named')], concepts: [] };
+    const r = applyOutcomeTable(input, TEXT, 'sv', none);
+    expect(r.applied).toBe(false);
+    expect(r.entities).toBe(input.entities);
+    expect(r.stubs).toEqual([]);
+  });
+});
