@@ -244,17 +244,64 @@ describe('classifyCandidate — link markup is not a parenthesis', () => {
     expect(classifyCandidate(t, 'Mitochondrium')).toBe('prose');
   });
 
-  // The rule cuts both ways: markup changes nothing, so a parenthesis that
-  // merely CONTAINS a link is still a parenthesis.
-  it('leaves a real parenthesis an aside even when it holds a link', () => {
-    const t = 'Hormonelle Dysregulation (z. B. Leptin-Resistenz, [[Insulinresistenz]]) ist typisch.';
-    expect(classifyCandidate(t, 'Insulinresistenz')).toBe('aside');
+  // S135 inverts the S132 half-rule: the author's link outranks the bracket
+  // around it. The UNLINKED neighbour in the same parenthesis stays an aside.
+  it('reads a linked name as prose even inside a real parenthesis', () => {
+    const t = 'Hormonelle Dysregulation (Leptin-Resistenz und auch [[Insulinresistenz]]) ist typisch.';
+    expect(classifyCandidate(t, 'Insulinresistenz')).toBe('prose');
+    expect(classifyCandidate(t, 'Leptin-Resistenz')).toBe('aside');
   });
 
   // A citation in square brackets carries no `(url)` and stays an aside.
   it('leaves a bare bracketed citation an aside', () => {
     const t = 'Die Methodik folgt dem Standard [ATS Statement: Guidelines 2002].';
     expect(classifyCandidate(t, 'ATS Statement: Guidelines 2002')).toBe('aside');
+  });
+});
+
+// S135: three parenthesis rescues, measured together on 20 German notes and
+// two independent draws — 159 aside verdicts, 68 move to prose (32 exemplar,
+// 19 linked occurrence, 19 gloss), none the other way, every case reviewed.
+describe('classifyCandidate — exemplar lists, glosses and linked occurrences (S135)', () => {
+  it('exemplar marker: members of the group named before the parenthesis are prose', () => {
+    const t = 'Medikamentös sind Stimulanzien (Methylphenidat als First-Line in Deutschland, alternativ Amphetamine wie Lisdexamfetamin) die Therapie der Wahl.';
+    expect(classifyCandidate(t, 'Methylphenidat')).toBe('prose');
+    expect(classifyCandidate(t, 'Lisdexamfetamin')).toBe('prose');
+  });
+
+  it('exemplar marker: `z. B.` and `etc.`', () => {
+    const t1 = 'Für Patienten auf Antikoagulanzien (z. B. Warfarin) ist Vorsicht geboten.';
+    expect(classifyCandidate(t1, 'Warfarin')).toBe('prose');
+    const t2 = 'Non-Stimulanzien (Atomoxetin, Guanfacin etc.) kommen bei Kontraindikationen zum Einsatz.';
+    expect(classifyCandidate(t2, 'Atomoxetin')).toBe('prose');
+    expect(classifyCandidate(t2, 'Guanfacin')).toBe('prose');
+  });
+
+  it('a parenthesis without a marker stays an aside', () => {
+    const t = 'Es steigt bei Entzündung (CRP erhöht) deutlich an.';
+    expect(classifyCandidate(t, 'CRP')).toBe('aside');
+  });
+
+  it('gloss: a parenthesis holding nothing but the name introduces the term', () => {
+    const t1 = 'Die Glykolyse führt zur Übersäuerung (Azidose) des Gewebes.';
+    expect(classifyCandidate(t1, 'Azidose')).toBe('prose');
+    const t2 = 'Häufig genannt wird **Maca** (*Lepidium meyenii*) in Studien.';
+    expect(classifyCandidate(t2, 'Lepidium meyenii')).toBe('prose');
+  });
+
+  it('gloss needs full cover: a compound around the name is no gloss', () => {
+    const t = 'Die Entfernung geschädigter Zellen (p53-abhängig) verhindert Tumoren.';
+    expect(classifyCandidate(t, 'p53')).toBe('aside');
+  });
+
+  it('the gloss rule decides pages, not identity: a member gloss is prose too', () => {
+    const t = 'Grüntee-Polyphenole (EGCG) aktivieren Caspasen und modulieren die Bcl-2-Familie.';
+    expect(classifyCandidate(t, 'EGCG')).toBe('prose');
+  });
+
+  it('a profile without exemplar markers keeps the strict reading', () => {
+    const t = 'Pour les anticoagulants (Warfarin notamment) la prudence est requise.';
+    expect(classify(t, 'Warfarin', GATE_LANGUAGE_PROFILES.fr)).toBe('aside');
   });
 });
 
