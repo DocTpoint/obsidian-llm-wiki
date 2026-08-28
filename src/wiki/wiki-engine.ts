@@ -35,7 +35,8 @@ import type { SourceRejection } from '../core/source-requirements';
 import { formatRateLimitNotice } from '../core/rate-limit';
 import { extractSourceTags } from '../core/arrays';
 import { buildVaultResolver } from '../core/related-link-corrector';
-import { gateCandidates, applyCoverageThreshold } from '../core/candidate-gate';
+import { gateCandidates, applyCoverageThreshold, applyOutcomeTable, type StubCandidate } from '../core/candidate-gate';
+import { buildStubIdentityResolver, createDissentStubs, stubPath } from './page-factory/stub-page';
 import { selectDomains, collectActiveVocabulary } from '../core/domain-axis'; // domain axis stages 3-5 (#568)
 import { getSourceLanguage, isCrossLanguage } from '../core/source-language';
 import { cleanMarkdownResponse } from '../core/markdown';
@@ -1050,10 +1051,58 @@ export class WikiEngine {
       // and is not gated; a wiki language without a profile is reported, not
       // silently skipped — the user turned this on.
       const rawSource = opts?.contentOverride ?? await this.app.vault.read(file);
-      if (this.settings.skipMentionOnlyCandidates === true) {
-        const wikiLang = this.settings.wikiLanguage || 'en';
-        const sourceLang = getSourceLanguage(file, this.app);
-        const translated = sourceLang !== null && isCrossLanguage(sourceLang, wikiLang);
+      const wikiLang = this.settings.wikiLanguage || 'en';
+      const sourceLang = getSourceLanguage(file, this.app);
+      const translated = sourceLang !== null && isCrossLanguage(sourceLang, wikiLang);
+
+      // S135 outcome table: with `gateDissentStubs` on, the two gate halves
+      // stop running in series (each with a veto) and become one decision
+      // table — agreement keeps or drops as before, dissent births a stub
+      // from the extraction's own summary (no LLM call). Requires the #514
+      // opt-in, because the table needs the position verdict that setting
+      // opts into; cross-language notes are not gated, same as below. The
+      // full-page set is identical to the serial path's keep set (measured
+      // over 1,153 items, three runs) — the table only converts drops.
+      let stubPlan: StubCandidate[] = [];
+      let tableApplied = false;
+      if (
+        this.settings.gateDissentStubs === true &&
+        this.settings.skipMentionOnlyCandidates === true &&
+        !translated
+      ) {
+        const pages = await getExistingWikiPages(this.app, this.settings.wikiFolder);
+        const table = applyOutcomeTable(
+          analysis,
+          extractBody(rawSource),
+          wikiLang,
+          buildStubIdentityResolver(pages, this.settings.wikiFolder),
+        );
+        // `!table.applied` (no language profile) falls through to the serial
+        // path, which reports the missing profile itself.
+        if (table.applied) {
+          tableApplied = true;
+          const total = analysis.entities.length + analysis.concepts.length;
+          if (table.dropped.length > 0) {
+            const list = table.dropped.map(d => `${d.name} (${d.kind}, ${d.verdict})`).join('; ');
+            console.warn(`[candidate-gate] ${file.path}: dropped ${table.dropped.length} of ${total} candidates — ${list}`);
+            this.onProgress?.(`Candidate gate: ${table.dropped.length} dropped — ${list}`);
+          }
+          if (table.existing.length > 0) {
+            const list = table.existing.map(d => `${d.name} (${d.kind}, ${d.cell})`).join('; ');
+            console.debug(`[candidate-gate] ${file.path}: ${table.existing.length} dissent name(s) an existing page answers — ${list}`);
+          }
+          if (table.stubs.length > 0) {
+            const list = table.stubs.map(s => `${s.item.name} (${s.kind}, ${s.cell})`).join('; ');
+            console.warn(`[candidate-gate] ${file.path}: ${table.stubs.length} dissent stub(s) planned — ${list}`);
+            this.onProgress?.(`Candidate gate: ${table.stubs.length} stub(s) from dissent — ${list}`);
+          }
+          analysis.entities = table.entities;
+          analysis.concepts = table.concepts;
+          stubPlan = table.stubs;
+        }
+      }
+
+      if (!tableApplied && this.settings.skipMentionOnlyCandidates === true) {
         if (!translated) {
           // A dropped name the vault already has a page for keeps its edge:
           // the gate judges whether this note earns the page, not whether a
@@ -1088,33 +1137,36 @@ export class WikiEngine {
       // is validated against the vault's tag vocabulary: a value no note
       // carries is dropped (logged), not written. Runs regardless of the #521
       // opt-in — the deterministic gate is upstream's setting, this half is
-      // the local domain-axis design.
+      // the local domain-axis design. Under the outcome table the threshold
+      // has already been folded into the routing, so only the domain
+      // validation runs — over the survivors AND the planned stubs, whose
+      // frontmatter carries the same validated subset.
       {
-        // #620 parity: a dropped name the vault already has a page for keeps
-        // its edge in the survivors' related_* lists. #607: the author's own
-        // link markup ([[X]] / [X](X)) in the note outranks a `named` coverage
-        // verdict — hand-linked names carry stronger intent than the model's
-        // reading of how the text treats them. Both predicates are passed;
-        // either one keeps the candidate.
-        const coverageResolve = buildVaultResolver({ wikiFolder: this.settings.wikiFolder, pages: await this.getExistingWikiPages() });
-        const covered = applyCoverageThreshold(
-          analysis,
-          name => coverageResolve(name) !== undefined,
-          rawSource,
-        );
-        if (covered.dropped.length > 0) {
-          const list = covered.dropped.map(d => `${d.name} (${d.kind}, ${d.verdict})`).join('; ');
-          const kept = covered.linkedAnyway.length > 0 ? ` — linked anyway (existing page): ${covered.linkedAnyway.join('; ')}` : '';
-          console.warn(`[candidate-gate] ${file.path}: dropped ${covered.dropped.length} of ${analysis.entities.length + analysis.concepts.length} candidates — ${list}${kept}`);
-          this.onProgress?.(`Candidate gate: ${covered.dropped.length} dropped — ${list}${kept}`);
-          analysis.entities = covered.entities;
-          analysis.concepts = covered.concepts;
+        if (!tableApplied) {
+          // #620 parity: a dropped name the vault already has a page for keeps
+          // its edge in the survivors' related_* lists. Without the predicate
+          // behaviour is unchanged. (The author's own link markup is folded
+          // into applyCoverageThreshold's own sourceText path — see candidate-gate.ts.)
+          const coverageResolve = buildVaultResolver({ wikiFolder: this.settings.wikiFolder, pages: await this.getExistingWikiPages() });
+          const covered = applyCoverageThreshold(
+            analysis,
+            name => coverageResolve(name) !== undefined,
+            extractBody(rawSource),
+          );
+          if (covered.dropped.length > 0) {
+            const list = covered.dropped.map(d => `${d.name} (${d.kind}, ${d.verdict})`).join('; ');
+            const kept = covered.linkedAnyway.length > 0 ? ` — linked anyway (existing page): ${covered.linkedAnyway.join('; ')}` : '';
+            console.warn(`[candidate-gate] ${file.path}: dropped ${covered.dropped.length} of ${analysis.entities.length + analysis.concepts.length} candidates — ${list}${kept}`);
+            this.onProgress?.(`Candidate gate: ${covered.dropped.length} dropped — ${list}${kept}`);
+            analysis.entities = covered.entities;
+            analysis.concepts = covered.concepts;
+          }
         }
         // Stage 5 (#568): validation accepts exactly what the declared source
         // folders and the wiki's own pages carry — new values are born by
         // tagging a note or a page, not by editing a settings list.
         const domainVocabulary = collectActiveVocabulary(this.app, this.settings);
-        for (const item of [...analysis.entities, ...analysis.concepts]) {
+        for (const item of [...analysis.entities, ...analysis.concepts, ...stubPlan.map(s => s.item)]) {
           const selection = selectDomains(item.domains, domainVocabulary);
           if (selection.rejected.length > 0) {
             console.debug(`[domain-axis] ${file.path}: "${item.name}" — dropped ${selection.rejected.length} value(s) the vocabulary does not carry: ${selection.rejected.join(', ')}`);
@@ -1135,6 +1187,11 @@ export class WikiEngine {
       for (const concept of analysis.concepts) {
         plannedPaths.push(normalizePath(`${this.settings.wikiFolder}/concepts/${slugify(concept.name, preserveCase)}.md`));
       }
+      // S135: stub pages will exist too — planned like any page, so links
+      // the summary makes to their names land on the canonical path.
+      for (const stub of stubPlan) {
+        plannedPaths.push(stubPath({ wikiFolder: this.settings.wikiFolder, preserveCase, normalizePath }, stub));
+      }
 
       this.onProgress?.(
         getText(this.settings.language, 'ingestCreatingSummary')
@@ -1147,6 +1204,31 @@ export class WikiEngine {
       // before any page is written, so the summary page, entity/concept backlinks,
       // and related pages all reference the same canonical [[sources/<slug>]].
       const sourceSlug = resolveSourceSlug(file.path, { preserveCase });
+
+      // S135: birth the dissent stubs — deterministic writes, no LLM call,
+      // before any generation so every page produced this run can already
+      // link to them. A path that exists is a slug collision and is skipped,
+      // never overwritten (identity was resolved against titles + aliases).
+      if (stubPlan.length > 0) {
+        const stubResult = await createDissentStubs(
+          {
+            wikiFolder: this.settings.wikiFolder,
+            preserveCase,
+            normalizePath,
+            fileExists: (p) => this.app.vault.getAbstractFileByPath(p) !== null,
+            createOrUpdateFile: (p, c) => this.createOrUpdateFile(p, c),
+          },
+          stubPlan,
+          sourceSlug,
+        );
+        analysis.created_pages.push(...stubResult.created);
+        if (stubResult.skipped.length > 0) {
+          console.warn(`[candidate-gate] ${file.path}: ${stubResult.skipped.length} stub(s) skipped (slug already occupied) — ${stubResult.skipped.join('; ')}`);
+        }
+        if (stubResult.created.length > 0) {
+          console.debug(`[candidate-gate] ${file.path}: ${stubResult.created.length} dissent stub(s) written — ${stubResult.created.join('; ')}`);
+        }
+      }
 
       // Stage 2: Summary Page Generation (contentOverride flows through opts)
       const summaryStart = Date.now();

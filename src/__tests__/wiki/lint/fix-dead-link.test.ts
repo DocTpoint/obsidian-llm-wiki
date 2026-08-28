@@ -31,6 +31,16 @@ describe('fixDeadLink stub construction (#197 — honest placeholders)', () => {
       expect(out).toContain('generation_complete: false');
     });
 
+    it('emits stub: true — the marker that survives the write (S135)', () => {
+      const out = buildStubContent({
+        title: 'EntityX',
+        stubType: 'entity',
+        wikiFolder: 'wiki',
+        referringPageRel: 'entities/SomeSource',
+      });
+      expect(out).toContain('stub: true');
+    });
+
     it('body is the placeholder template, NOT LLM-generated content', () => {
       const out = buildStubContent({
         title: 'EntityX',

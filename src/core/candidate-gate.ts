@@ -631,6 +631,7 @@ export function applyOutcomeTable(
   sourceText: string,
   language: string | undefined | null,
   resolveIdentity: (name: string) => StubIdentity,
+  isKnownPage?: (name: string) => boolean,
 ): OutcomeTableResult {
   const profile = gateProfileFor(language);
   if (!profile) {
@@ -673,5 +674,5 @@ export function applyOutcomeTable(
   if (dropped.length === 0) {
     return { entities, concepts, dropped, stubs, existing, applied: true };
   }
-  return { ...pruneDropped(entities, concepts, dropped), dropped, stubs, existing, applied: true };
+  return { ...pruneDroppedNames(entities, concepts, dropped, isKnownPage), dropped, stubs, existing, applied: true };
 }

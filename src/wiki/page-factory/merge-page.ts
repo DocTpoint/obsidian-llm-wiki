@@ -48,6 +48,7 @@ import { collectActiveVocabulary } from '../../core/domain-axis';
 import { appendContradictedByMarker } from '../../core/contradicted-marker';
 import { buildContradictionRecord } from '../../core/contradiction-record';
 import { describeDemotion } from './contradiction-gates';
+import { isStubPage, stripStubMarker } from './stub-page';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
@@ -112,7 +113,8 @@ export async function mergePage(
     // its curated aliases; slug comparison on both sides, so "Silent
     // Inflammation.md" matches the page "Silent-Inflammation".
     const pageBasename = path.split('/').pop()?.replace(/\.md$/i, '') ?? '';
-    const existingAliases = parseFrontmatter(existingContent)?.aliases;
+    const existingFm = parseFrontmatter(existingContent);
+    const existingAliases = existingFm?.aliases;
     const sourceOwnsPage = isSourceOwnPageLemma({
       pageName: pageBasename,
       pageAliases: Array.isArray(existingAliases) ? existingAliases : undefined,
@@ -140,6 +142,15 @@ export async function mergePage(
         })
       : '';
 
+    // S135: a stub (dissent-born or Fix-Dead-Links, both carry `stub: true`)
+    // must never be skip-frozen — its whole contract is that the next source
+    // treating the subject fills it. The triage sees a thin placeholder body
+    // and can honestly judge a real source as "nothing new"; that judgement
+    // is right about the body and wrong about the page. Same narrow shape as
+    // the #312 override below: only `skip` is rerouted. A write that adds
+    // content promotes the page: the marker is stripped below.
+    const existingIsStub = isStubPage(existingFm);
+
     // 1. v1.24.0 #216 — classify-then-route triage.
     let shouldSkip = false;
     let complementaryBody: string | null = null;
@@ -158,10 +169,12 @@ export async function mergePage(
       // Deliberately narrow: only `skip` is overridden. `complementary`
       // already writes the new facts, and rerouting it would trade a targeted
       // append for a full rewrite without cause.
-      const strategy = triage.strategy === 'skip' && sourceOwnsPage ? 'merge' : triage.strategy;
+      const strategy = triage.strategy === 'skip' && (sourceOwnsPage || existingIsStub) ? 'merge' : triage.strategy;
       if (strategy !== triage.strategy) {
         console.debug(
-          `[mergePage] triage=skip overridden to merge — "${sourceFile.basename}" carries this page's own lemma (#312) for ${path}`,
+          sourceOwnsPage
+            ? `[mergePage] triage=skip overridden to merge — "${sourceFile.basename}" carries this page's own lemma (#312) for ${path}`
+            : `[mergePage] triage=skip overridden to merge — ${path} is a stub (generation_complete: false), skip would freeze it (S135)`,
         );
       }
 
@@ -249,9 +262,15 @@ export async function mergePage(
       const bodyToWrite = complementaryBody ?? existingBody;
       // Item-level contradictions reach this path (complementary write):
       // stamp the same frontmatter marker the rewrite path stamps below.
-      const fmToWrite = contradictedSourcePath
+      let fmToWrite = contradictedSourcePath
         ? appendContradictedByMarker(frontmatter, contradictedSourcePath)
         : frontmatter;
+      // S135 promotion: a complementary append put real content onto a stub.
+      // A pure skip cannot reach a stub (the override above reroutes it), so
+      // the marker survives only untouched writes elsewhere.
+      if (existingIsStub && complementaryBody !== null) {
+        fmToWrite = stripStubMarker(fmToWrite);
+      }
       await ctx.createOrUpdateFile(
         path,
         await assembleFinalContent(ctx, fmToWrite, bodyToWrite, info, sourceFile, existingBody),
@@ -330,9 +349,11 @@ export async function mergePage(
         // routine merge. Unknown-field preservation (PR A Step 2) keeps the
         // marker across subsequent re-touches; the helper dedupes by
         // sourcePath so idempotent re-runs are safe.
+        // S135 promotion: the body merge below filled the stub with a source
+        // that treats its subject — the marker comes off with the same write.
         contradictedSourcePath
-          ? appendContradictedByMarker(frontmatter, contradictedSourcePath)
-          : frontmatter,
+          ? appendContradictedByMarker(existingIsStub ? stripStubMarker(frontmatter) : frontmatter, contradictedSourcePath)
+          : existingIsStub ? stripStubMarker(frontmatter) : frontmatter,
         titledBody,
         info,
         sourceFile,
