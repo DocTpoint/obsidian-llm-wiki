@@ -348,6 +348,39 @@ describe('applyCoverageThreshold (domain axis stage 3, #568)', () => {
     expect(r.entities).toBe(entities);
     expect(r.dropped).toEqual([]);
   });
+
+  // S135: the author's link outranks the model's `named` — measured twice in
+  // one day ([[Reis]] in Arsen, [[Blei]] in Reis, both hand-linked, both
+  // dropped by the threshold before this rule).
+  describe('linked names survive the threshold', () => {
+    const text = [
+      'Hauptquellen sind Nahrungsmittel ([[Reis]] nimmt Arsen stark auf).',
+      'Spuren von [[Blei|Bleibelastung]] und die [[Notizen/HPA-Axis|Stressachse]] spielen mit.',
+      'Details im [ATS Statement](https://example.org/ats).',
+    ].join('\n');
+
+    it('keeps a `named` candidate whose name is a wikilink target, pipe alias, or markdown link text', () => {
+      const r = applyCoverageThreshold({
+        entities: [mk('Reis', 'named'), mk('Bleibelastung', 'named'), mk('ATS Statement', 'named')],
+        concepts: [mkC('HPA-Axis', 'named')],
+      }, text);
+      expect(r.entities.map(e => e.name)).toEqual(['Reis', 'Bleibelastung', 'ATS Statement']);
+      expect(r.concepts.map(c => c.name)).toEqual(['HPA-Axis']);
+      expect(r.dropped).toEqual([]);
+    });
+
+    it('still drops a `named` candidate the note never linked — and everything without sourceText', () => {
+      const r = applyCoverageThreshold({ entities: [mk('Arsen', 'named')], concepts: [] }, text);
+      expect(r.dropped.map(d => d.name)).toEqual(['Arsen']);
+      const r2 = applyCoverageThreshold({ entities: [mk('Reis', 'named')], concepts: [] });
+      expect(r2.dropped.map(d => d.name)).toEqual(['Reis']);
+    });
+
+    it('the link is an exact claim: a compound or inflected form does not inherit it', () => {
+      const r = applyCoverageThreshold({ entities: [mk('Reisprodukte', 'named')], concepts: [] }, text);
+      expect(r.dropped.map(d => d.name)).toEqual(['Reisprodukte']);
+    });
+  });
 });
 
 describe('applyCoverageThreshold with isKnownPage (#620 parity)', () => {

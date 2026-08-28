@@ -204,6 +204,31 @@ function needleOf(name: string, profile: GateLanguageProfile): RegExp | null {
 /** Link markup, whose brackets are syntax: `[[wikilink]]`, `![[embed]]`, `[text](url)`. */
 const LINK_RE = /!?\[\[[^\]\n]*\]\]|!?\[[^[\]\n]*\]\([^)\n]*\)/g;
 
+/**
+ * Every name the note's own link markup asserts: wikilink targets (folder
+ * prefix and `#anchor` stripped), pipe aliases, and markdown link texts —
+ * case-folded, NFC. Exact names, no inflection: a link is an exact claim.
+ */
+function linkedNames(text: string): ReadonlySet<string> {
+  const names = new Set<string>();
+  const add = (s: string) => { const n = nfc(s).trim().toLowerCase(); if (n) names.add(n); };
+  const t = nfc(text);
+  const re = new RegExp(LINK_RE.source, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t)) !== null) {
+    const wiki = /^!?\[\[([^\]]*)\]\]$/.exec(m[0]);
+    if (wiki) {
+      const [target, alias] = wiki[1].split('|');
+      add((target ?? '').split('#')[0].split('/').pop() ?? '');
+      if (alias) add(alias);
+      continue;
+    }
+    const md = /^!?\[([^\]]*)\]/.exec(m[0]);
+    if (md) add(md[1]);
+  }
+  return names;
+}
+
 function linkSpans(text: string): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
   const re = new RegExp(LINK_RE.source, 'g');
@@ -510,16 +535,30 @@ function pruneDroppedNames<R extends DropReason>(
  *
  * `isKnownPage` mirrors gateCandidates (#620): a dropped name the vault
  * already has a page for keeps its edge in the survivors' related_* lists.
+ *
+ * With `sourceText` given (the raw note body), a candidate whose exact name
+ * the note's own link markup carries — wikilink target, pipe alias, or
+ * markdown link text — survives a `named` verdict (#607): the author linking
+ * a name is a stronger statement about relevance than the model's reading of
+ * how the text treats it.
  */
 export function applyCoverageThreshold(
   analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
   isKnownPage?: (name: string) => boolean,
+  sourceText?: string,
 ): GateResult<'named'> {
+  const linked = sourceText === undefined ? null : linkedNames(sourceText);
   const dropped: DroppedCandidate<'named'>[] = [];
   const keep = <T extends { name: string; coverage?: string }>(items: T[], kind: DroppedCandidate['kind']): T[] =>
     items.filter(item => {
       const cov = typeof item.coverage === 'string' ? item.coverage.trim().toLowerCase() : '';
       if (!COVERAGE_BELOW_THRESHOLD.has(cov)) return true;
+      // Author's link outranks coverage (#607): `[[Reis]]` in Arsen, `[[Blei]]`
+      // in Reis were both hand-linked and both dropped as `named` without this.
+      if (linked?.has(nfc(item.name).trim().toLowerCase())) return true;
+      // Vault-page parity (#620): a dropped name the vault already has a page
+      // for keeps its edge in the survivors' related_* lists.
+      if (isKnownPage?.(item.name) === true) return true;
       dropped.push({ name: item.name, kind, verdict: 'named' });
       return false;
     });

@@ -1091,10 +1091,17 @@ export class WikiEngine {
       // the local domain-axis design.
       {
         // #620 parity: a dropped name the vault already has a page for keeps
-        // its edge in the survivors' related_* lists — the coverage gate must
-        // not prune what the deterministic gate was taught to keep.
+        // its edge in the survivors' related_* lists. #607: the author's own
+        // link markup ([[X]] / [X](X)) in the note outranks a `named` coverage
+        // verdict — hand-linked names carry stronger intent than the model's
+        // reading of how the text treats them. Both predicates are passed;
+        // either one keeps the candidate.
         const coverageResolve = buildVaultResolver({ wikiFolder: this.settings.wikiFolder, pages: await this.getExistingWikiPages() });
-        const covered = applyCoverageThreshold(analysis, name => coverageResolve(name) !== undefined);
+        const covered = applyCoverageThreshold(
+          analysis,
+          name => coverageResolve(name) !== undefined,
+          rawSource,
+        );
         if (covered.dropped.length > 0) {
           const list = covered.dropped.map(d => `${d.name} (${d.kind}, ${d.verdict})`).join('; ');
           const kept = covered.linkedAnyway.length > 0 ? ` — linked anyway (existing page): ${covered.linkedAnyway.join('; ')}` : '';
