@@ -1,4 +1,5 @@
 import { VALID_ENTITY_TAGS, VALID_CONCEPT_TAGS, VALID_SOURCE_TAGS, LLMWikiSettings } from '../types';
+import { fold } from './domain-axis';
 
 export function getActiveEntityTags(settings: LLMWikiSettings): string[] {
   const custom = (settings.customEntityTags ?? '').trim();
@@ -26,13 +27,25 @@ export function getActiveConceptTags(settings: LLMWikiSettings): string[] {
  * `EntityInfo['type']` enum, so the extracted type is always a member. With a
  * custom vocabulary it is not, and writing it into `tags:` anyway would put a
  * value there that `runRetagViolations` exists to remove.
+ *
+ * When the domain vocabulary is active (non-empty harvest), THAT is the test —
+ * the settings type lists are the second vocabulary this series retires, and
+ * checking against them here let the merge writers re-admit exactly what
+ * `enforceFrontmatterConstraints` strips (S139: `phenomenon` back on two pages
+ * one ingest after the cleanup, via the related-page merge).
  */
 export function incomingTypeTag(
   settings: LLMWikiSettings,
   kind: 'entity' | 'concept',
-  type: string | undefined
+  type: string | undefined,
+  domainVocabulary?: readonly string[]
 ): string[] | undefined {
   if (!type) return undefined;
+  if (domainVocabulary && domainVocabulary.length > 0) {
+    const k = fold(type);
+    const match = domainVocabulary.find(v => fold(v) === k);
+    return match ? [match] : undefined;
+  }
   const active = kind === 'entity' ? getActiveEntityTags(settings) : getActiveConceptTags(settings);
   return active.includes(type) ? [type] : undefined;
 }

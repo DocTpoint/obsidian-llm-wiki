@@ -47,6 +47,9 @@ function makeCtx(opts: {
           return written.get(file.path) ?? '';
         },
       },
+      // Empty harvest → incomingTypeTag falls back to the settings lists,
+      // so the pre-S139 expectations below keep describing the same behavior.
+      metadataCache: { getFileCache: () => null },
     } as RelatedPageContext['app'],
     settings: {
       wikiFolder: 'wiki',
