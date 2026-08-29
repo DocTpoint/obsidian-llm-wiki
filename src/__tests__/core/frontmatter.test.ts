@@ -1104,13 +1104,21 @@ describe('enforceFrontmatterConstraints: domainVocabulary strip (Tag-Achse S138)
     '# X',
   ].join('\n');
 
-  it('strips a nested tag the domain vocabulary does not carry', () => {
+  it('strips any tag the domain vocabulary does not carry, flat ones included', () => {
     const out = enforceFrontmatterConstraints(content, 'entity', undefined, {
       domainVocabulary: ['Sorte/Arzneimittel'],
     });
     expect(out).toContain('Sorte/Arzneimittel');
     expect(out).not.toContain('Thema/Kardiologie');
-    // flat tags keep the retain semantics — the fallback is an abstention signal
+    // the flat type is the training taxonomy leaking through, not an abstention marker
+    expect(out).not.toContain('other');
+  });
+
+  it('keeps a flat tag the declared folders actually carry', () => {
+    const out = enforceFrontmatterConstraints(content, 'entity', undefined, {
+      domainVocabulary: ['Sorte/Arzneimittel', 'other'],
+    });
+    expect(out).toContain('Sorte/Arzneimittel');
     expect(out).toContain('other');
   });
 

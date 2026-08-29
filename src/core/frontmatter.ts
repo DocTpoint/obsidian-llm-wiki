@@ -610,13 +610,16 @@ export interface EnforceFrontmatterOptions extends FrontmatterDateOptions {
   pagePath?: string;
   /**
    * The active domain vocabulary (source-folder harvest ∪ wiki nested tags).
-   * When given, a nested (`Group/Value`) tag the vocabulary does not carry is
-   * STRIPPED instead of retained — the retain path let values the validator
-   * had rejected survive onto pages (P2: `Thema/Kardiologie`; P4: 4 cases),
-   * and with the wiki harvest feeding the vocabulary such a leak would
-   * legitimize itself on the next collection. Flat tags keep the retain
-   * semantics: the flat type is the abstention fallback, and prior-foreign
-   * flat types are the #527/#528 intake concern, not a vocabulary one.
+   * When given, ANY tag the vocabulary does not carry is STRIPPED instead of
+   * retained — the retain path let values the validator had rejected survive
+   * onto pages (P2: `Thema/Kardiologie`; P4: 4 cases), and with the wiki
+   * harvest feeding the vocabulary such a leak would legitimize itself on the
+   * next collection. Flat tags briefly kept the retain semantics as an
+   * abstention fallback; measured against a live vault that fallback is not
+   * an abstention marker but the training taxonomy leaking through
+   * (`theory`/`method`/`term` on 52 of 128 pages, one page carrying two), so
+   * flat tags now face the same test — a flat value the declared folders
+   * actually carry stays offerable and stays on the page.
    * Omitted by callers outside the domain axis; nothing changes for them.
    */
   domainVocabulary?: readonly string[];
@@ -756,21 +759,21 @@ export function enforceFrontmatterConstraints(
       ? new Set(options.domainVocabulary.map(fold))
       : undefined;
     const outOfVocab: string[] = [];
-    const strippedNested: string[] = [];
+    const strippedTags: string[] = [];
     for (const tag of collectedTags) {
       if (!tag || tag === pageType) continue;
       if (dedupedTags.includes(tag)) continue;
-      if (domainAllowed && tag.includes('/') && !domainAllowed.has(fold(tag))) {
-        strippedNested.push(tag);
+      if (domainAllowed && !domainAllowed.has(fold(tag))) {
+        strippedTags.push(tag);
         continue;
       }
       dedupedTags.push(tag);
-      if (!validSubtypes.includes(tag)) outOfVocab.push(tag);
+      if (!domainAllowed && !validSubtypes.includes(tag)) outOfVocab.push(tag);
     }
-    if (strippedNested.length > 0) {
+    if (strippedTags.length > 0) {
       console.debug(
-        `[enforceFrontmatterConstraints] ${pageType} page stripped ${strippedNested.length} nested tag(s) the domain vocabulary does not carry:`,
-        strippedNested
+        `[enforceFrontmatterConstraints] ${pageType} page stripped ${strippedTags.length} tag(s) the active vocabulary does not carry:`,
+        strippedTags
       );
     }
     if (outOfVocab.length > 0) {
