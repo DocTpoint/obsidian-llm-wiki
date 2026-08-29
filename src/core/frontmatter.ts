@@ -514,25 +514,6 @@ export function serializeFrontmatter(
   return lines.join('\n');
 }
 
-/**
- * Union the tags a page already carries with the ones the incoming source
- * proposes, first occurrence wins. `sources:` next to it is a union already;
- * `tags:` was not, so on every merge after the first the incoming term was
- * computed and dropped and the stored tag stayed a function of which source
- * arrived first. Omitting `incoming` keeps the previous behaviour byte for
- * byte, so a caller that has no incoming tags is unaffected.
- */
-function unionTags(existing: unknown, incoming?: string[]): string[] {
-  // The existing values are carried verbatim — the parser types them loosely,
-  // and filtering here would silently drop a tag shape this function is not
-  // the right place to judge.
-  const merged: string[] = Array.isArray(existing) ? [...(existing as string[])] : [];
-  for (const tag of incoming ?? []) {
-    if (tag && !merged.includes(tag)) merged.push(tag);
-  }
-  return merged;
-}
-
 export function mergeFrontmatter(
   existingContent: string,
   newSourcePath: string,
@@ -569,14 +550,11 @@ export function mergeFrontmatter(
   const created = fm.created || localDateStamp();
   const updated = localDateStamp();
 
-  // domain axis stage 3 (#568): union like `sources:` — existing first,
-  // then the incoming subset, first occurrence wins. Empty → no field.
-  // Fold-keyed through the axis' own helper, so a merge compares values the
-  // way `selectDomains` does.
-  const mergedDomains = unionDomains(
-    Array.isArray(fm.domains) ? fm.domains : undefined,
-    incomingDomains,
-  );
+  // local patch (Tag-Achse Stufe 4, S137): one field — the validated
+  // belonging values merge into `tags:` next to the identity value instead of
+  // feeding a separate `domains:` field. Existing `domains:` on a page is
+  // legacy and stays untouched (never extended, never stripped here).
+  const mergedTagsIncoming = [...(incomingTags ?? []), ...(incomingDomains ?? [])];
 
   // Always emit a `tags:` line (bare when empty) to preserve prior behavior.
   // Issue #356 follow-up: also pass through unknown top-level fields
@@ -592,11 +570,13 @@ export function mergeFrontmatter(
       created,
       updated,
       sources: mergedSources,
-      tags: unionTags(fm.tags, incomingTags),
-      // domain axis stage 2 (#568): canonical now, so it must be carried
-      // explicitly — the passthrough no longer does it. Stage 3: unioned with
-      // the incoming page's subset above.
-      domains: mergedDomains.length > 0 ? mergedDomains : undefined,
+      // Fold-keyed union (Stufe 4): the belonging values were folded by the
+      // validator, so the merge must compare the same way — raw equality
+      // re-admitted case variants (the `#569` review class, B1–B3).
+      tags: unionDomains(Array.isArray(fm.tags) ? fm.tags : undefined, mergedTagsIncoming),
+      // local patch (Tag-Achse Stufe 4): legacy field, carried as-is when the
+      // page already has it — the passthrough no longer does it.
+      domains: Array.isArray(fm.domains) && fm.domains.length > 0 ? fm.domains : undefined,
       reviewed: fm.reviewed,
       aliases: Array.isArray(fm.aliases) ? fm.aliases : undefined,
     },

@@ -160,3 +160,23 @@ export function selectDomains(chosen: unknown, vocabulary: readonly string[]): D
   }
   return { kept, rejected };
 }
+
+/**
+ * Tag-Achse Stufe 4 (S137): the belonging offer is the union of what the
+ * notes carry (harvested) and the curated nested values of the active custom
+ * vocabulary. The settings list is where new values are born before any note
+ * carries them; only nested (`Gruppe/Wert`) entries join — the flat base
+ * types are identity answers, not belonging values. Fold-deduped, harvested
+ * spelling wins.
+ */
+export function extendVocabulary(harvested: string[], settingsTags: readonly string[]): string[] {
+  const seen = new Map<string, string>();
+  for (const v of harvested) seen.set(fold(v), v);
+  for (const t of settingsTags) {
+    const v = t.trim();
+    if (!v || !v.includes('/')) continue;
+    const k = fold(v);
+    if (!seen.has(k)) seen.set(k, v);
+  }
+  return [...seen.values()].sort((a, b) => fold(a) < fold(b) ? -1 : fold(a) > fold(b) ? 1 : 0);
+}

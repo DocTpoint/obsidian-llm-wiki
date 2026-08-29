@@ -68,11 +68,13 @@ describe('WikiEngine.ingestSource — coverage threshold and domain subset (doma
     const gateMsg = h.progressMessages.find(m => m.startsWith('Candidate gate:'));
     expect(gateMsg).toContain('Kupfer (entity, named)');
 
-    // Zink: two of three chosen values are note tags (one in the wrong case) — the
-    // note's spelling is written, the invented one is not.
+    // Stufe 4: the validated subset joins the identity value in `tags:` —
+    // the note's spelling is written, the invented value is not, and no
+    // `domains:` field is born anywhere.
     const zink = parseFrontmatter(pageOf(h, '/entities/zink.md') ?? '') ?? {};
-    expect(zink.domains).toEqual(['Sorte/Mineralstoff', 'Thema/Ernährung']);
-    // Zinkmangel chose [] — no field. Immunsystem omitted the field — no field.
+    expect(zink.tags).toEqual(expect.arrayContaining(['Sorte/Mineralstoff', 'Thema/Ernährung']));
+    expect(zink.domains).toBeUndefined();
+    // Zinkmangel chose [] — no belonging values. Immunsystem omitted the field.
     expect(pageOf(h, '/zinkmangel.md') ?? '').not.toMatch(/^domains:/m);
     expect(pageOf(h, '/immunsystem.md') ?? '').not.toMatch(/^domains:/m);
     // The dropped name left the survivors' related lists, so no link is manufactured.
@@ -105,7 +107,9 @@ Alte Beschreibung.
     });
     await h.engine.ingestSource(noteFile());
     const zink = parseFrontmatter(h.files.get('wiki/entities/Zink.md') ?? '') ?? {};
-    expect(zink.domains).toEqual(['Thema/Bestehend', 'Sorte/Mineralstoff', 'Thema/Ernährung']);
+    // Stufe 4: the subset unions into `tags:`; the legacy `domains:` stays as it was.
+    expect(zink.tags).toEqual(['other', 'Sorte/Mineralstoff', 'Thema/Ernährung']);
+    expect(zink.domains).toEqual(['Thema/Bestehend']);
   });
 
   it('leaves pages untouched when the note has no tags — even if the model invents domains', async () => {

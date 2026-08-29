@@ -24,7 +24,7 @@ import { TEXTS } from '../texts';
 import { renderTemplate } from '../core/template-renderer';
 import { slugify } from '../core/slug';
 import { resolveSourceSlug } from '../core/source-slug';
-import { parseFrontmatter, upsertFrontmatterField, mergeFrontmatterArrayField, replaceFrontmatterArrayField, extractBody } from '../core/frontmatter';
+import { parseFrontmatter, upsertFrontmatterField, mergeFrontmatterArrayField, extractBody } from '../core/frontmatter';
 import { setGenerationComplete } from '../core/incomplete-page-cleaner';
 import { convertPdfToMarkdown, UnsupportedProviderError, EncryptedPdfError } from '../core/pdf-converter';
 import { MineruPdfError, MINERU_PHASE_KEY } from '../core/mineru-converter';
@@ -36,7 +36,8 @@ import { formatRateLimitNotice } from '../core/rate-limit';
 import { extractSourceTags } from '../core/arrays';
 import { buildVaultResolver } from '../core/related-link-corrector';
 import { gateCandidates, applyCoverageThreshold } from '../core/candidate-gate';
-import { selectDomains, collectDomainVocabulary, DOMAINS_FIELD } from '../core/domain-axis'; // domain axis stage 3 (#568)
+import { selectDomains, collectDomainVocabulary, extendVocabulary } from '../core/domain-axis'; // domain axis stage 3+4 (#568)
+import { getActiveEntityTags, getActiveConceptTags } from '../core/tag-vocab';
 import { getSourceLanguage, isCrossLanguage } from '../core/source-language';
 import { cleanMarkdownResponse } from '../core/markdown';
 import { injectMentionsSection } from '../core/mentions-injector';
@@ -1103,7 +1104,13 @@ export class WikiEngine {
           analysis.entities = covered.entities;
           analysis.concepts = covered.concepts;
         }
-        const domainVocabulary = collectDomainVocabulary(this.app, this.settings.wikiFolder);
+        // Stage 4 (#568): validation accepts what the notes carry plus the
+        // curated nested values of the active custom vocabulary — the settings
+        // list is where new values are born before any note has them.
+        const domainVocabulary = extendVocabulary(
+          collectDomainVocabulary(this.app, this.settings.wikiFolder),
+          [...getActiveEntityTags(this.settings), ...getActiveConceptTags(this.settings)],
+        );
         for (const item of [...analysis.entities, ...analysis.concepts]) {
           const selection = selectDomains(item.domains, domainVocabulary);
           if (selection.rejected.length > 0) {
@@ -1593,15 +1600,10 @@ export class WikiEngine {
       },
     );
 
-    // domain axis stage 2 (#568): the source page is a 1:1 projection of
-    // its note, so it carries every note tag in `domains:` — replaced, not
-    // merged, on every ingest, because the note is the truth and there is
-    // nothing to decide here. `tags:` stays the plugin's format axis (#90/#114).
-    // A note without tags leaves no field: absence is not a signal.
-    const noteDomains = extractSourceTags(content);
-    if (noteDomains.length > 0) {
-      finalContent = replaceFrontmatterArrayField(finalContent, DOMAINS_FIELD, noteDomains);
-    }
+    // Stage 4 (#568): the source page no longer mirrors the note's tags into
+    // a `domains:` field — one field, and the note itself carries the tags
+    // one click away; the mirror only duplicated every tag-pane hit.
+    // `tags:` stays the plugin's format axis (#90/#114).
 
     await this.createOrUpdateFile(path, finalContent);
     return path;

@@ -33,8 +33,7 @@ import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { canonicalizeSectionHeaders, stripUnknownSections } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
-import { parseFrontmatter, enforceFrontmatterConstraints, replaceFrontmatterArrayField } from '../../core/frontmatter';
-import { DOMAINS_FIELD } from '../../core/domain-axis'; // domain axis stage 3 (#568)
+import { parseFrontmatter, enforceFrontmatterConstraints, mergeFrontmatterArrayField } from '../../core/frontmatter';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
@@ -301,11 +300,12 @@ export async function createNewPage(
     const sourcedContent = sourceSlug
       ? appendSourceSlugToFrontmatter(mentionsInjectedContent, sourceSlug)
       : mentionsInjectedContent;
-    // Domain axis stage 3: the extraction's domain subset for this page
-    // (already validated against the note's tags in the engine). A new
-    // page has nothing to union with, so replace = set; no subset, no field.
+    // Stage 4 (#568): one field — the extraction's validated belonging
+    // subset joins the identity value in `tags:` instead of feeding a
+    // separate `domains:` field. The template put the type there; this
+    // appends the `Thema/…`/`Fach/…` values next to it.
     const domainedContent = info.domains?.length
-      ? replaceFrontmatterArrayField(sourcedContent, DOMAINS_FIELD, info.domains)
+      ? mergeFrontmatterArrayField(sourcedContent, 'tags', info.domains)
       : sourcedContent;
     await ctx.createOrUpdateFile(path, domainedContent);
     return path;

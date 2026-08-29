@@ -58,12 +58,12 @@ tags:
 Iron store.
 `;
 
-describe('WikiEngine.createSummaryPage — domains: from the note (domain axis stage 2, #568)', () => {
-  it('writes every note tag into domains:, regardless of the plugin tag vocabulary', async () => {
+describe('WikiEngine.createSummaryPage — no domains mirror (Tag-Achse Stufe 4, S137)', () => {
+  it('writes no domains field — the note itself carries the tags, the mirror only doubled tag-pane hits', async () => {
     const h = harnessFor(NOTE_WITH_TAGS);
     const path = await h.engine.createSummaryPage(sourceFile(), makeAnalysis(), []);
     const fm = parseFrontmatter(h.files.get(path) ?? '') ?? {};
-    expect(fm.domains).toEqual(['Sorte/Protein', 'Fachgebiet/Hämatologie', 'Thema/Eisen']);
+    expect(fm.domains).toBeUndefined();
   });
 
   it('leaves no domains field when the note has no tags', async () => {
@@ -72,13 +72,12 @@ describe('WikiEngine.createSummaryPage — domains: from the note (domain axis s
     expect(h.files.get(path) ?? '').not.toContain('domains');
   });
 
-  it('replaces stale domains on re-ingest — the note is the truth, not the old page', async () => {
+  it('does not resurrect a stale legacy domains field on re-ingest', async () => {
     const h = harnessFor(NOTE_WITH_TAGS, {
       'wiki/sources/Ferritin.md': '---\ntype: source\ntags: [note]\ndomains:\n  - "Thema/Veraltet"\n---\n\n# Ferritin\n',
     });
     const path = await h.engine.createSummaryPage(sourceFile(), makeAnalysis(), []);
     const fm = parseFrontmatter(h.files.get(path) ?? '') ?? {};
-    expect(fm.domains).toEqual(['Sorte/Protein', 'Fachgebiet/Hämatologie', 'Thema/Eisen']);
-    expect(h.files.get(path) ?? '').not.toContain('Veraltet');
+    expect(fm.domains).toBeUndefined();
   });
 });

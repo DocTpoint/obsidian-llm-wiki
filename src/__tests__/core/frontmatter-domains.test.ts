@@ -131,23 +131,27 @@ tags: [substance]
   });
 });
 
-// domain axis stage 3 (#568): mergeFrontmatter unions the incoming page's
-// domain subset like `sources:` — existing first, first occurrence wins.
-describe('mergeFrontmatter — incoming domains (domain axis stage 3, #568)', () => {
+// Tag-Achse Stufe 4 (S137): one field — mergeFrontmatter unions the incoming
+// belonging subset into `tags:` next to the identity value; an existing
+// `domains:` is legacy and stays exactly as it was, never extended.
+describe('mergeFrontmatter — incoming belonging values land in tags (Tag-Achse Stufe 4)', () => {
   const PAGE = `---
 type: entity
 created: 2026-01-01
-domains:
+tags:
   - "Sorte/Mineralstoff"
+domains:
+  - "Fachgebiet/Hämatologie"
 ---
 
 # Zink
 `;
 
-  it('unions incoming domains after the existing ones, deduplicated', () => {
+  it('unions incoming values after the existing tags, deduplicated, and leaves domains untouched', () => {
     const { frontmatter } = mergeFrontmatter(PAGE, 'sources/zink', undefined, ['Thema/Ernährung', 'Sorte/Mineralstoff', 'Fach/Endokrinologie']);
     const fm = parseFrontmatter(frontmatter + '\n\nbody') ?? {};
-    expect(fm.domains).toEqual(['Sorte/Mineralstoff', 'Thema/Ernährung', 'Fach/Endokrinologie']);
+    expect(fm.tags).toEqual(['Sorte/Mineralstoff', 'Thema/Ernährung', 'Fach/Endokrinologie']);
+    expect(fm.domains).toEqual(['Fachgebiet/Hämatologie']);
   });
 
   // The validator folds (NFC + trim + lowercase); a raw-equality merge here
@@ -159,21 +163,21 @@ domains:
       'thema/ernährung',
     ]);
     const fm = parseFrontmatter(frontmatter + '\n\nbody') ?? {};
-    expect(fm.domains).toEqual(['Sorte/Mineralstoff', 'Thema/Ernährung']);
+    expect(fm.tags).toEqual(['Sorte/Mineralstoff', 'Thema/Ernährung']);
   });
 
-  it('keeps the existing domains when nothing comes in', () => {
+  it('keeps the existing tags and domains when nothing comes in', () => {
     const { frontmatter } = mergeFrontmatter(PAGE, 'sources/zink');
-    expect(parseFrontmatter(frontmatter + '\n\nbody')?.domains).toEqual(['Sorte/Mineralstoff']);
+    expect(parseFrontmatter(frontmatter + '\n\nbody')?.tags).toEqual(['Sorte/Mineralstoff']);
+    expect(parseFrontmatter(frontmatter + '\n\nbody')?.domains).toEqual(['Fachgebiet/Hämatologie']);
     const { frontmatter: fm2 } = mergeFrontmatter(PAGE, 'sources/zink', undefined, []);
-    expect(parseFrontmatter(fm2 + '\n\nbody')?.domains).toEqual(['Sorte/Mineralstoff']);
+    expect(parseFrontmatter(fm2 + '\n\nbody')?.tags).toEqual(['Sorte/Mineralstoff']);
   });
 
-  it('creates the field on a page that had none, and leaves none when neither side has values', () => {
+  it('never creates a domains field, and a page without one stays without one', () => {
     const bare = '---\ntype: entity\ncreated: 2026-01-01\n---\n\n# Zink\n';
     const { frontmatter } = mergeFrontmatter(bare, 'sources/zink', undefined, ['Thema/Ernährung']);
-    expect(parseFrontmatter(frontmatter + '\n\nbody')?.domains).toEqual(['Thema/Ernährung']);
-    const { frontmatter: none } = mergeFrontmatter(bare, 'sources/zink', undefined, []);
-    expect(none).not.toContain('domains');
+    expect(parseFrontmatter(frontmatter + '\n\nbody')?.tags).toEqual(['Thema/Ernährung']);
+    expect(frontmatter).not.toContain('domains');
   });
 });
