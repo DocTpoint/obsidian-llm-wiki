@@ -94,8 +94,15 @@ export function parseFrontmatter(content: string): FrontmatterData | null {
   for (const field of ARRAY_FIELDS) {
     const val = result[field];
     if (typeof val === 'string') {
-      result[field] = [val];
-    } else if (!Array.isArray(val)) {
+      // A bare `tags:` key (the emitEmptyTags shape) reads as the empty
+      // string; coercing it to [''] handed every downstream array writer a
+      // phantom entry that yamlStringify then persisted as `- ""`.
+      result[field] = val.trim() ? [val] : [];
+    } else if (Array.isArray(val)) {
+      result[field] = (val as unknown[]).filter(
+        v => !(typeof v === 'string' && v.trim() === '')
+      );
+    } else {
       delete result[field];
     }
   }

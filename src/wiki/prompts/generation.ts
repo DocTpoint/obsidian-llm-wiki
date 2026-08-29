@@ -5,7 +5,7 @@ export const GENERATION_PROMPTS = {
 
 **Entity Information:**
 - Name: {{entity_name}}
-- Type: {{entity_type}}
+- Tag: {{entity_type}} (a tags: value — the frontmatter type: below stays "entity")
 - Summary: {{entity_summary}}
 - Related entities: {{related_entities}}
 - Related concepts: {{related_concepts}}
@@ -43,7 +43,7 @@ type: entity  # MUST be exactly "entity" - do not change this value
 created: {{date}}
 updated: {{date}}
 sources: ["[[{{source_file}}]]"]
-tags: [{{entity_type}}]  # Use entity_type (e.g., product, person, organization) as a tag
+tags: [{{entity_type}}]  # Copy the Tag value from Entity Information verbatim
 aliases: ["Alternative name or translation"]  # REQUIRED: at least 1 alias, must NOT be empty
 ---
 
@@ -63,7 +63,7 @@ aliases: ["Alternative name or translation"]  # REQUIRED: at least 1 alias, must
 
 **Concept Information:**
 - Name: {{concept_name}}
-- Type: {{concept_type}}
+- Tag: {{concept_type}} (a tags: value — the frontmatter type: below stays "concept")
 - Summary: {{concept_summary}}
 - Related concepts: {{related_concepts}}
 - Related entities: {{related_entities}}
@@ -101,7 +101,7 @@ type: concept  # MUST be exactly "concept" - do not change this value
 created: {{date}}
 updated: {{date}}
 sources: ["[[{{source_file}}]]"]
-tags: [{{concept_type}}]  # Use concept_type (e.g., theory, method, field) as a tag
+tags: [{{concept_type}}]  # Copy the Tag value from Concept Information verbatim
 aliases: ["Alternative name or translation"]  # REQUIRED: at least 1 alias, must NOT be empty
 ---
 
