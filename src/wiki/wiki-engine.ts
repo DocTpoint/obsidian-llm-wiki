@@ -36,8 +36,7 @@ import { formatRateLimitNotice } from '../core/rate-limit';
 import { extractSourceTags } from '../core/arrays';
 import { buildVaultResolver } from '../core/related-link-corrector';
 import { gateCandidates, applyCoverageThreshold } from '../core/candidate-gate';
-import { selectDomains, collectDomainVocabulary, extendVocabulary } from '../core/domain-axis'; // domain axis stage 3+4 (#568)
-import { getActiveEntityTags, getActiveConceptTags } from '../core/tag-vocab';
+import { selectDomains, collectActiveVocabulary } from '../core/domain-axis'; // domain axis stages 3-5 (#568)
 import { getSourceLanguage, isCrossLanguage } from '../core/source-language';
 import { cleanMarkdownResponse } from '../core/markdown';
 import { injectMentionsSection } from '../core/mentions-injector';
@@ -1104,13 +1103,10 @@ export class WikiEngine {
           analysis.entities = covered.entities;
           analysis.concepts = covered.concepts;
         }
-        // Stage 4 (#568): validation accepts what the notes carry plus the
-        // curated nested values of the active custom vocabulary — the settings
-        // list is where new values are born before any note has them.
-        const domainVocabulary = extendVocabulary(
-          collectDomainVocabulary(this.app, this.settings.wikiFolder),
-          [...getActiveEntityTags(this.settings), ...getActiveConceptTags(this.settings)],
-        );
+        // Stage 5 (#568): validation accepts exactly what the declared source
+        // folders and the wiki's own pages carry — new values are born by
+        // tagging a note or a page, not by editing a settings list.
+        const domainVocabulary = collectActiveVocabulary(this.app, this.settings);
         for (const item of [...analysis.entities, ...analysis.concepts]) {
           const selection = selectDomains(item.domains, domainVocabulary);
           if (selection.rejected.length > 0) {

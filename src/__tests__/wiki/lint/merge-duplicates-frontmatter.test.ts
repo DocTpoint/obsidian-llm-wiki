@@ -1,7 +1,8 @@
-// domain axis stage 2 (#568): `mergeDuplicatePages` was the one frontmatter
-// writer without the #356 passthrough — a duplicate merge dropped every user-owned
-// field of the surviving page. It now passes them through and unions `domains:`
-// the way it unions `sources:`.
+// `mergeDuplicatePages` was the one frontmatter writer without the #356
+// passthrough — a duplicate merge dropped every user-owned field of the
+// surviving page. It now passes them through; a user-authored `domains:` is
+// an unknown key like any other (stage 5, #568): the survivor's copy rides
+// the passthrough, the absorbed page's copy goes down with the page.
 
 import { describe, it, expect } from 'vitest';
 import { mergeDuplicatePages } from '../../../wiki/lint/merge-duplicates';
@@ -38,27 +39,16 @@ describe('mergeDuplicatePages — frontmatter passthrough and domains union', ()
     expect(written).toContain('parent_org: Acme');
   });
 
-  it('unions domains, survivor first, first occurrence wins', async () => {
+  it("keeps the survivor's user-authored domains: verbatim and drops the absorbed page's", async () => {
     const { ctx, fake } = makeCtx({
-      [TARGET]: '---\ntype: entity\ntags: [substance]\ndomains:\n  - "Sorte/Protein"\n  - "Fachgebiet/Hämatologie"\n---\n\n# Ferritin\n\nIron store.\n',
-      [SOURCE]: '---\ntype: entity\ntags: [substance]\ndomains:\n  - "Fachgebiet/Hämatologie"\n  - "Thema/Eisen"\n---\n\n# Ferritin-2\n\nAlso the iron store.\n',
+      [TARGET]: '---\ntype: entity\ntags: [substance]\ndomains:\n  - "Sorte/Protein"\n---\n\n# Ferritin\n\nIron store.\n',
+      [SOURCE]: '---\ntype: entity\ntags: [substance]\ndomains:\n  - "Thema/Eisen"\n---\n\n# Ferritin-2\n\nAlso the iron store.\n',
     });
     await mergeDuplicatePages(ctx, TARGET, SOURCE);
     const fm = parseFrontmatter(fake.read(TARGET) ?? '');
-    expect(fm?.domains).toEqual(['Sorte/Protein', 'Fachgebiet/Hämatologie', 'Thema/Eisen']);
+    expect(fm?.domains).toEqual(['Sorte/Protein']);
   });
 
-  // Merging two pages is where the two spellings of one value meet, so this
-  // is the site the raw-equality dedup hurt most: the survivor kept both.
-  it('folds spelling variants across the two pages', async () => {
-    const { ctx, fake } = makeCtx({
-      [TARGET]: '---\ntype: entity\ntags: [substance]\ndomains:\n  - "Thema/Ernährung"\n---\n\n# Ferritin\n\nIron store.\n',
-      [SOURCE]: '---\ntype: entity\ntags: [substance]\ndomains:\n  - "thema/ernährung"\n  - "Thema/Eisen"\n---\n\n# Ferritin-2\n\nAlso the iron store.\n',
-    });
-    await mergeDuplicatePages(ctx, TARGET, SOURCE);
-    const fm = parseFrontmatter(fake.read(TARGET) ?? '');
-    expect(fm?.domains).toEqual(['Thema/Ernährung', 'Thema/Eisen']);
-  });
   it('leaves no domains field when neither page carries one', async () => {
     const { ctx, fake } = makeCtx({
       [TARGET]: '---\ntype: entity\ntags: [substance]\n---\n\n# Ferritin\n\nIron store.\n',

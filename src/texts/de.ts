@@ -405,7 +405,7 @@ export const DE_TEXTS = {
     autoWatchName: 'Ordner beobachten',
     autoWatchDesc: 'Neue oder geänderte .md-Dateien in den beobachteten Ordnern automatisch erkennen und benachrichtigen oder automatisch aufnehmen',
     watchedFoldersName: 'Beobachtete Ordner',
-    watchedFoldersDesc: 'Ordner, die auf neue Inhalte überwacht werden. Klicke auf "Ordner hinzufügen", um aus deinem Vault auszuwählen.',
+    watchedFoldersDesc: 'Deine deklarierten Quellordner. Ihre Tags bilden das Domain-Tag-Vokabular beim Ingest, und — mit aktivierter Überwachung — werden sie auf neue Inhalte überwacht. Klicke auf "Ordner hinzufügen", um aus deinem Vault auszuwählen.',
     addWatchedFolderButton: 'Ordner hinzufügen',
     removeWatchedFolderButton: 'Entfernen',
     webClipperPresetName: 'Clippings beobachten (Web Clipper)',

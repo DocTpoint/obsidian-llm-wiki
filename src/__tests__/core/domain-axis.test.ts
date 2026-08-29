@@ -3,7 +3,7 @@
 // deterministic fold for the measured failure mode (bare value spelling).
 
 import { describe, it, expect } from 'vitest';
-import { buildDomainContext, collectDomainVocabulary, selectDomains, DOMAINS_FIELD, COVERAGE_VALUES } from '../../core/domain-axis';
+import { buildDomainContext, collectDomainVocabulary, collectWikiVocabulary, collectActiveVocabulary, selectDomains, COVERAGE_VALUES } from '../../core/domain-axis';
 import type { App } from 'obsidian';
 
 const VOCAB = ['Fach/Hämatologie', 'Sorte/Protein', 'Thema/Diagnostik', 'Thema/Mikrobiom'];
@@ -26,6 +26,19 @@ describe('domain-axis — selectDomains', () => {
     const r = selectDomains(['Mikrobiom', 'diagnostik'], VOCAB);
     expect(r.kept).toEqual(['Thema/Mikrobiom', 'Thema/Diagnostik']);
     expect(r.rejected).toEqual([]);
+  });
+
+  it('repairs a wrong group prefix when the value part is unique — the measured 13-of-15 class', () => {
+    const r = selectDomains(['Sorte/Diagnostik', 'Fach/Mikrobiom'], VOCAB);
+    expect(r.kept).toEqual(['Thema/Diagnostik', 'Thema/Mikrobiom']);
+    expect(r.rejected).toEqual([]);
+  });
+
+  it('rejects a wrong-group value whose value part two vocabulary entries share', () => {
+    const vocab = ['Sorte/Erkrankung', 'Thema/Erkrankung'];
+    const r = selectDomains(['Fach/Erkrankung'], vocab);
+    expect(r.kept).toEqual([]);
+    expect(r.rejected).toEqual(['Fach/Erkrankung']);
   });
 
   it('rejects a bare value that two vocabulary entries share — no guessing', () => {
@@ -67,44 +80,105 @@ describe('domain-axis — collectDomainVocabulary', () => {
     } as unknown as App;
   }
 
-  it('collects distinct note tags, excludes the wiki folder, sorted, first spelling wins', () => {
+  it('collects distinct tags from watched folders only, sorted, first spelling wins', () => {
     const app = fakeApp({
       'Notizen/A.md': ['Thema/Mikrobiom', 'Sorte/Erkrankung'],
       'Notizen/B.md': ['thema/mikrobiom', 'Fach/Kardiologie'],
+      'Frontier/X.md': ['Kardiologie'],
       'wiki/entities/X.md': ['other'],
       'Notizen/leer.md': undefined,
     });
-    expect(collectDomainVocabulary(app, 'wiki')).toEqual(['Fach/Kardiologie', 'Sorte/Erkrankung', 'Thema/Mikrobiom']);
+    expect(collectDomainVocabulary(app, ['Notizen'])).toEqual(['Fach/Kardiologie', 'Sorte/Erkrankung', 'Thema/Mikrobiom']);
   });
 
   it('ignores non-string and empty tag entries', () => {
     const app = fakeApp({ 'Notizen/A.md': ['', '  ', 'Thema/Schlaf'] });
-    expect(collectDomainVocabulary(app, 'wiki')).toEqual(['Thema/Schlaf']);
+    expect(collectDomainVocabulary(app, ['Notizen'])).toEqual(['Thema/Schlaf']);
   });
 
-  // An empty wikiFolder is the vault root (the `folderScopePrefix` reading):
-  // every file is a wiki page, so there is no note left to harvest and the
-  // vocabulary is empty — `buildDomainContext([])` then renders the prompt a
-  // vault without the layer gets. The hand-rolled prefix said the opposite:
-  // `'' + '/'` is `'/'`, which no vault-relative path starts with, so nothing
-  // was excluded and the wiki's own page tags came back as vocabulary.
-  it('treats an empty wikiFolder as the vault root — no notes, empty vocabulary', () => {
+  it('unions multiple watched folders', () => {
     const app = fakeApp({
       'Notizen/A.md': ['Thema/Schlaf'],
-      'entities/X.md': ['other'],
+      'Clippings/B.md': ['Thema/Mikrobiom'],
+      'Sonst/C.md': ['Thema/Fremd'],
     });
-    expect(collectDomainVocabulary(app, '')).toEqual([]);
-    expect(collectDomainVocabulary(app, '/')).toEqual([]);
+    expect(collectDomainVocabulary(app, ['Notizen', 'Clippings'])).toEqual(['Thema/Mikrobiom', 'Thema/Schlaf']);
+  });
+
+  // No declared source folder means no vocabulary — not the vault root. A
+  // blank entry is dropped before it reaches `isInFolderScope`, where the
+  // empty string would mean the vault root and sweep the wiki's own pages in.
+  it('is empty without watched folders, and a blank entry is not the vault root', () => {
+    const app = fakeApp({
+      'Notizen/A.md': ['Thema/Schlaf'],
+      'wiki/entities/X.md': ['other'],
+    });
+    expect(collectDomainVocabulary(app, [])).toEqual([]);
+    expect(collectDomainVocabulary(app, ['', '  '])).toEqual([]);
   });
 
   // The same anchoring the boundary primitive exists for: a sibling folder
-  // sharing the name prefix is not inside the wiki.
-  it('does not exclude a sibling folder that merely shares the name prefix', () => {
+  // sharing the name prefix is not inside the watched folder.
+  it('does not include a sibling folder that merely shares the name prefix', () => {
     const app = fakeApp({
-      'wiki-backup/X.md': ['Thema/Schlaf'],
-      'wiki/entities/Y.md': ['other'],
+      'Notizen/A.md': ['Thema/Schlaf'],
+      'Notizen-Archiv/X.md': ['Thema/Fremd'],
     });
-    expect(collectDomainVocabulary(app, 'wiki')).toEqual(['Thema/Schlaf']);
+    expect(collectDomainVocabulary(app, ['Notizen'])).toEqual(['Thema/Schlaf']);
+  });
+});
+
+describe('domain-axis — collectWikiVocabulary / collectActiveVocabulary (S138)', () => {
+  function fakeApp(files: Record<string, string[] | undefined>): App {
+    return {
+      vault: { getMarkdownFiles: () => Object.keys(files).map(path => ({ path })) },
+      metadataCache: {
+        getFileCache: (f: { path: string }) => {
+          const tags = files[f.path];
+          return tags === undefined ? null : { frontmatter: { tags } };
+        },
+      },
+    } as unknown as App;
+  }
+
+  // The flat extraction types the plugin writes as identity fallback are an
+  // abstention signal — harvesting them would turn the abstention marker
+  // itself into an offerable value (the S132 rule inversion by the back door).
+  it('harvests only nested tags from wiki pages — the flat fallback types stay abstention', () => {
+    const app = fakeApp({
+      'wiki/entities/X.md': ['other', 'Sorte/Vitalparameter'],
+      'wiki/concepts/Y.md': ['phenomenon'],
+      'Notizen/A.md': ['Thema/Schlaf'],
+    });
+    expect(collectWikiVocabulary(app, 'wiki')).toEqual(['Sorte/Vitalparameter']);
+  });
+
+  // Source pages are auto-generated and their frontmatter lands without the
+  // constraints pass — the summary model must not be able to mint vocabulary.
+  it('does not harvest sources/ pages', () => {
+    const app = fakeApp({
+      'wiki/entities/X.md': ['Sorte/Vitalparameter'],
+      'wiki/sources/S.md': ['Thema/Erfunden'],
+    });
+    expect(collectWikiVocabulary(app, 'wiki')).toEqual(['Sorte/Vitalparameter']);
+  });
+
+  it('unions folder harvest and wiki nested tags, folder spelling wins, sorted', () => {
+    const app = fakeApp({
+      'Notizen/A.md': ['Thema/Schlaf'],
+      'wiki/entities/X.md': ['thema/schlaf', 'Sorte/Vitalparameter'],
+    });
+    expect(collectActiveVocabulary(app, { watchedFolders: ['Notizen'], wikiFolder: 'wiki' }))
+      .toEqual(['Sorte/Vitalparameter', 'Thema/Schlaf']);
+  });
+
+  it('without watched folders the wiki side still carries manual corrections', () => {
+    const app = fakeApp({
+      'Notizen/A.md': ['Thema/Schlaf'],
+      'wiki/entities/X.md': ['Sorte/Vitalparameter'],
+    });
+    expect(collectActiveVocabulary(app, { watchedFolders: [], wikiFolder: 'wiki' }))
+      .toEqual(['Sorte/Vitalparameter']);
   });
 });
 
@@ -124,8 +198,7 @@ describe('domain-axis — buildDomainContext', () => {
 });
 
 describe('domain-axis — constants', () => {
-  it('names the frontmatter key once and the three coverage values', () => {
-    expect(DOMAINS_FIELD).toBe('domains');
+  it('names the three coverage values', () => {
     expect([...COVERAGE_VALUES].sort()).toEqual(['defined', 'discussed', 'named']);
   });
 });

@@ -55,7 +55,7 @@ describe('WikiEngine.ingestSource — coverage threshold and domain subset (doma
     const h = createWikiEngineHarness({
       files: { [NOTE_PATH]: NOTE },
       llmResponses: [EXTRACTION],
-      settings: { wikiLanguage: 'de' },
+      settings: { wikiLanguage: 'de', watchedFolders: ['Notizen'] },
     });
     await h.engine.ingestSource(noteFile());
 
@@ -103,7 +103,7 @@ Alte Beschreibung.
     const h = createWikiEngineHarness({
       files: { [NOTE_PATH]: NOTE, 'wiki/entities/Zink.md': existing },
       llmResponses: [EXTRACTION],
-      settings: { wikiLanguage: 'de', slugCase: 'preserve' },
+      settings: { wikiLanguage: 'de', slugCase: 'preserve', watchedFolders: ['Notizen'] },
     });
     await h.engine.ingestSource(noteFile());
     const zink = parseFrontmatter(h.files.get('wiki/entities/Zink.md') ?? '') ?? {};
@@ -116,7 +116,7 @@ Alte Beschreibung.
     const h = createWikiEngineHarness({
       files: { [NOTE_PATH]: NOTE.replace(/^---[\s\S]*?---\n\n/, '') },
       llmResponses: [EXTRACTION],
-      settings: { wikiLanguage: 'de' },
+      settings: { wikiLanguage: 'de', watchedFolders: ['Notizen'] },
     });
     await h.engine.ingestSource(noteFile());
     expect(pageOf(h, '/entities/zink.md') ?? '').not.toMatch(/^domains:/m);
@@ -126,7 +126,7 @@ Alte Beschreibung.
     const h = createWikiEngineHarness({
       files: { [NOTE_PATH]: NOTE },
       llmResponses: [EXTRACTION],
-      settings: { wikiLanguage: 'zh' },
+      settings: { wikiLanguage: 'zh', watchedFolders: ['Notizen'] },
     });
     await h.engine.ingestSource(noteFile());
     expect(h.writtenPaths.map(p => p.toLowerCase()).some(p => p.endsWith('/kupfer.md'))).toBe(false);

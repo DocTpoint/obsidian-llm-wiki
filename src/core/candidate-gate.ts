@@ -363,17 +363,14 @@ export interface DroppedCandidate<R extends DropReason = DropReason> {
 export interface GateResult<R extends DropReason = DropReason> {
   entities: EntityInfo[];
   concepts: ConceptInfo[];
-<<<<<<< HEAD
-  dropped: DroppedCandidate[];
+  dropped: DroppedCandidate<R>[];
   /**
    * Dropped names that stayed in the survivors' related_* lists because the
    * vault already has a page for them (`isKnownPage`). No page is written
    * for them in this ingest; the edge to the existing page is kept.
+   * Present on both gates so the caller can log it the same way (#620).
    */
   linkedAnyway: string[];
-=======
-  dropped: DroppedCandidate<R>[];
->>>>>>> 0b28f63 (fix(domains): one fold-keyed union at every writer, and the boundary test the vault already has (#568 review))
   /** False when no profile exists for `language` — the input came back untouched. */
   applied: boolean;
 }
@@ -388,27 +385,19 @@ export interface GateResult<R extends DropReason = DropReason> {
  * `isKnownPage` answers whether a name already resolves to a wiki page
  * (title or alias). The gate decides whether THIS note earns a page for a
  * name; it cannot decide that a link to a page another note already earned
- * is dead. Without the predicate every dropped name is pruned, which on a
- * measured vault emptied the related sections of pages whose named
- * neighbours existed — a passing mention of an existing page is exactly the
- * edge the graph is for.
+ * is dead (#620). Without the predicate every dropped name is pruned, which
+ * on a measured vault emptied the related sections of pages whose named
+ * neighbours existed.
  */
 export function gateCandidates(
   analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
   sourceText: string,
   language: string | undefined | null,
-<<<<<<< HEAD
   isKnownPage?: (name: string) => boolean,
-): GateResult {
-  const profile = gateProfileFor(language);
-  if (!profile) return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], linkedAnyway: [], applied: false };
-  const dropped: DroppedCandidate[] = [];
-=======
 ): GateResult<Exclude<GateVerdict, 'prose'>> {
   const profile = gateProfileFor(language);
-  if (!profile) return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], applied: false };
+  if (!profile) return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], linkedAnyway: [], applied: false };
   const dropped: DroppedCandidate<Exclude<GateVerdict, 'prose'>>[] = [];
->>>>>>> 0b28f63 (fix(domains): one fold-keyed union at every writer, and the boundary test the vault already has (#568 review))
   const keep = <T extends { name: string }>(items: T[], kind: DroppedCandidate['kind']): T[] =>
     items.filter(item => {
       const verdict = classifyCandidate(sourceText, item.name, profile);
@@ -430,21 +419,15 @@ export function gateCandidates(
  * already earned is dead (#620). Shared by the deterministic gate and the
  * coverage threshold so both halves of the gate answer "known" the same way.
  */
-function pruneDroppedNames(
+function pruneDroppedNames<R extends DropReason>(
   entities: EntityInfo[],
   concepts: ConceptInfo[],
-<<<<<<< HEAD
-  dropped: readonly DroppedCandidate[],
+  dropped: readonly DroppedCandidate<R>[],
   isKnownPage?: (name: string) => boolean,
 ): { entities: EntityInfo[]; concepts: ConceptInfo[]; linkedAnyway: string[] } {
   const key = (n: string) => nfc(n).trim().toLowerCase();
   const linkedAnyway = dropped.filter(d => isKnownPage?.(d.name) === true).map(d => d.name);
   const gone = new Set(dropped.filter(d => !linkedAnyway.includes(d.name)).map(d => key(d.name)));
-=======
-  dropped: readonly DroppedCandidate<DropReason>[],
-): { entities: EntityInfo[]; concepts: ConceptInfo[] } {
-  const gone = new Set(dropped.map(d => nfc(d.name).trim().toLowerCase()));
->>>>>>> 0b28f63 (fix(domains): one fold-keyed union at every writer, and the boundary test the vault already has (#568 review))
   const prune = (names: string[] | undefined): string[] | undefined =>
     names?.filter(n => !gone.has(key(n)));
   return {
@@ -475,14 +458,9 @@ function pruneDroppedNames(
  */
 export function applyCoverageThreshold(
   analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
-<<<<<<< HEAD
   isKnownPage?: (name: string) => boolean,
-): GateResult {
-  const dropped: DroppedCandidate[] = [];
-=======
 ): GateResult<'named'> {
   const dropped: DroppedCandidate<'named'>[] = [];
->>>>>>> 0b28f63 (fix(domains): one fold-keyed union at every writer, and the boundary test the vault already has (#568 review))
   const keep = <T extends { name: string; coverage?: string }>(items: T[], kind: DroppedCandidate['kind']): T[] =>
     items.filter(item => {
       const cov = typeof item.coverage === 'string' ? item.coverage.trim().toLowerCase() : '';

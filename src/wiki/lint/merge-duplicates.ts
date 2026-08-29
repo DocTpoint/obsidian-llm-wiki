@@ -10,7 +10,7 @@ import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { retargetLinksToPage } from '../../core/link-retarget';
 import { localDateStamp } from '../../core/format';
-import { unionDomains } from '../../core/domain-axis';
+import { unionDomains, collectActiveVocabulary } from '../../core/domain-axis';
 
 export async function mergeDuplicatePages(
   ctx: EngineContext,
@@ -41,15 +41,6 @@ export async function mergeDuplicatePages(
 
   const targetAliases = Array.isArray(targetFm?.aliases) ? targetFm.aliases : [];
   const sourceAliases = Array.isArray(sourceFm?.aliases) ? sourceFm.aliases : [];
-
-  // domain axis stage 2 (#568): the domain axis is unioned like `sources:`
-  // — survivor first, then the absorbed page, first occurrence wins.
-  // Fold-keyed like `sources:` six lines above and like `selectDomains` —
-  // raw equality here kept two spellings of one value on the survivor.
-  const mergedDomains = unionDomains(
-    Array.isArray(targetFm?.domains) ? targetFm.domains : undefined,
-    Array.isArray(sourceFm?.domains) ? sourceFm.domains : undefined,
-  );
 
   const extractH1 = (content: string): string | null => {
     const bodyMatch = content.match(/^---[\s\S]*?\n---\n?([\s\S]*)/);
@@ -164,7 +155,6 @@ export async function mergeDuplicatePages(
       updated: today,
       sources: mergedSourcesList,
       tags: Array.isArray(targetFm?.tags) ? targetFm.tags : [],
-      domains: mergedDomains.length > 0 ? mergedDomains : undefined,
       reviewed: targetFm?.reviewed,
       aliases: dedupedAliases,
     },
@@ -187,6 +177,7 @@ export async function mergeDuplicatePages(
   const enforced = enforceFrontmatterConstraints(newContent, pageType, ctx.settings, {
     preserveCreated: targetFm?.created,
     pagePath: targetPath,
+    domainVocabulary: collectActiveVocabulary(ctx.app, ctx.settings), // local patch (Tag-Achse S138)
   });
   await ctx.createOrUpdateFile(targetPath, enforced);
 

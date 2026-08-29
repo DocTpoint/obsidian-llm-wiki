@@ -1093,3 +1093,37 @@ describe('enforceFrontmatterConstraints — aliases that repeat the page filenam
     expect(out).toMatch(/aliases:\n  - "CD44"\n/);
   });
 });
+
+describe('enforceFrontmatterConstraints: domainVocabulary strip (Tag-Achse S138)', () => {
+  const content = [
+    '---',
+    'type: entity',
+    'tags: [Sorte/Arzneimittel, Thema/Kardiologie, other]',
+    '---',
+    '',
+    '# X',
+  ].join('\n');
+
+  it('strips a nested tag the domain vocabulary does not carry', () => {
+    const out = enforceFrontmatterConstraints(content, 'entity', undefined, {
+      domainVocabulary: ['Sorte/Arzneimittel'],
+    });
+    expect(out).toContain('Sorte/Arzneimittel');
+    expect(out).not.toContain('Thema/Kardiologie');
+    // flat tags keep the retain semantics — the fallback is an abstention signal
+    expect(out).toContain('other');
+  });
+
+  it('keeps a carried nested tag under fold (case/NFC-insensitive)', () => {
+    const out = enforceFrontmatterConstraints(content, 'entity', undefined, {
+      domainVocabulary: ['sorte/arzneimittel', 'thema/kardiologie'],
+    });
+    expect(out).toContain('Sorte/Arzneimittel');
+    expect(out).toContain('Thema/Kardiologie');
+  });
+
+  it('changes nothing when the option is omitted (retain semantics)', () => {
+    const out = enforceFrontmatterConstraints(content, 'entity');
+    expect(out).toContain('Thema/Kardiologie');
+  });
+});

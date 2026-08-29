@@ -45,7 +45,7 @@ export const INGESTION_PROMPTS = {
       "related_entities": ["Related entity names from this source"],
       "related_concepts": ["Related concept names from this source"],
       "coverage": "defined|discussed|named",
-      "domains": ["Subset of the source's domain tags that describe this item itself; [] when none"]
+      "domains": ["Subset of the vault's domain-tag vocabulary that describes this item itself; [] when none"]
     }
   ],
   "concepts": [
@@ -59,7 +59,7 @@ export const INGESTION_PROMPTS = {
       "related_concepts": ["Related concept names from this source"],
       "related_entities": ["Related entity names from this source"],
       "coverage": "defined|discussed|named",
-      "domains": ["Subset of the source's domain tags that describe this item itself; [] when none"]
+      "domains": ["Subset of the vault's domain-tag vocabulary that describes this item itself; [] when none"]
     }
   ],
   "contradictions": [

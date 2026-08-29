@@ -1,11 +1,8 @@
 import { VALID_ENTITY_TAGS, VALID_CONCEPT_TAGS, VALID_SOURCE_TAGS, LLMWikiSettings } from '../types';
 import { getActiveEntityTags, getActiveConceptTags, getActiveSourceTags } from './tag-vocab';
 import { filterRedundantAliases, resolveMinAliasLength } from './slug';
-<<<<<<< HEAD
 import { localDateStamp } from './format';
-=======
-import { unionDomains } from './domain-axis';
->>>>>>> 0b28f63 (fix(domains): one fold-keyed union at every writer, and the boundary test the vault already has (#568 review))
+import { unionDomains, fold } from './domain-axis';
 
 export interface FrontmatterData {
   reviewed?: boolean;
@@ -15,14 +12,6 @@ export interface FrontmatterData {
   sources?: string[];
   tags?: string[];
   aliases?: string[];
-  /**
-   * domain axis stage 2 (#568): the domain axis. A source page carries every
-   * tag of its note; entity/concept pages carry a model-chosen subset (stage 3).
-   * Canonical on purpose — a passthrough field cannot be unioned by the array
-   * helpers (they re-emit the old lines), and the constraints pass drops block
-   * items under unknown keys. Absence is not a signal (opt-in layer).
-   */
-  domains?: string[];
   [key: string]: unknown;
 }
 
@@ -245,7 +234,6 @@ export function upsertFrontmatterField(content: string, key: string, value: stri
  */
 export const CANONICAL_FRONTMATTER_KEYS = new Set([
   'type', 'created', 'updated', 'sources', 'tags', 'reviewed', 'aliases',
-  'domains', // domain axis stage 2 (#568)
 ]);
 
 /**
@@ -496,9 +484,6 @@ export function serializeFrontmatter(
 
   // domain axis stage 2 (#568): block style only — the domain values are
   // nested (`Gruppe/Wert`) and the inline-tag regex in fix-runners never reads them.
-  if (Array.isArray(fm.domains) && fm.domains.length > 0) {
-    lines.push(`domains:${yamlStringify(fm.domains)}`);
-  }
 
   if (fm.reviewed) lines.push('reviewed: true');
 
@@ -550,10 +535,9 @@ export function mergeFrontmatter(
   const created = fm.created || localDateStamp();
   const updated = localDateStamp();
 
-  // local patch (Tag-Achse Stufe 4, S137): one field — the validated
-  // belonging values merge into `tags:` next to the identity value instead of
-  // feeding a separate `domains:` field. Existing `domains:` on a page is
-  // legacy and stays untouched (never extended, never stripped here).
+  // Stage 4 (#568): one field — the validated belonging values merge into
+  // `tags:` next to the identity value. A user-authored `domains:` field, like
+  // any unknown key, rides the #356 passthrough untouched.
   const mergedTagsIncoming = [...(incomingTags ?? []), ...(incomingDomains ?? [])];
 
   // Always emit a `tags:` line (bare when empty) to preserve prior behavior.
@@ -574,9 +558,6 @@ export function mergeFrontmatter(
       // validator, so the merge must compare the same way — raw equality
       // re-admitted case variants (the `#569` review class, B1–B3).
       tags: unionDomains(Array.isArray(fm.tags) ? fm.tags : undefined, mergedTagsIncoming),
-      // local patch (Tag-Achse Stufe 4): legacy field, carried as-is when the
-      // page already has it — the passthrough no longer does it.
-      domains: Array.isArray(fm.domains) && fm.domains.length > 0 ? fm.domains : undefined,
       reviewed: fm.reviewed,
       aliases: Array.isArray(fm.aliases) ? fm.aliases : undefined,
     },
@@ -627,6 +608,18 @@ export interface EnforceFrontmatterOptions extends FrontmatterDateOptions {
    * that do not know the path; nothing changes for them.
    */
   pagePath?: string;
+  /**
+   * The active domain vocabulary (source-folder harvest ∪ wiki nested tags).
+   * When given, a nested (`Group/Value`) tag the vocabulary does not carry is
+   * STRIPPED instead of retained — the retain path let values the validator
+   * had rejected survive onto pages (P2: `Thema/Kardiologie`; P4: 4 cases),
+   * and with the wiki harvest feeding the vocabulary such a leak would
+   * legitimize itself on the next collection. Flat tags keep the retain
+   * semantics: the flat type is the abstention fallback, and prior-foreign
+   * flat types are the #527/#528 intake concern, not a vocabulary one.
+   * Omitted by callers outside the domain axis; nothing changes for them.
+   */
+  domainVocabulary?: readonly string[];
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -728,7 +721,7 @@ export function enforceFrontmatterConstraints(
   // every line and skips every `- ` item, so a block-form list under an unknown
   // key came back as its header alone. `sources:` is canonical and is re-emitted
   // from the parsed array below (see #438 B); `extractPassthroughLines` already
-  // treats it as known. (`domains:` likewise — domain axis stage 2, #568.)
+  // treats it as known.
   const passthroughLines = extractPassthroughLines(content);
 
   // Preserve existing provenance (block OR flow form) across the rewrite.
@@ -748,12 +741,6 @@ export function enforceFrontmatterConstraints(
     ? rawSources.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
     : undefined;
 
-  // domain axis stage 2 (#568): same shape as `sources` above — the block
-  // items were dropped by the list-item skip in the walk, so re-emit the parsed array.
-  const rawDomains = parseFrontmatter(content)?.domains;
-  const preservedDomains = Array.isArray(rawDomains)
-    ? rawDomains.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
-    : undefined;
 
   const hasTags = foundTags || collectedTags.length > 0;
   const dedupedTags: string[] = [];
@@ -765,12 +752,26 @@ export function enforceFrontmatterConstraints(
         : pageType === 'source'
           ? (settings ? getActiveSourceTags(settings) : VALID_SOURCE_TAGS)
           : [];
+    const domainAllowed = options?.domainVocabulary
+      ? new Set(options.domainVocabulary.map(fold))
+      : undefined;
     const outOfVocab: string[] = [];
+    const strippedNested: string[] = [];
     for (const tag of collectedTags) {
       if (!tag || tag === pageType) continue;
       if (dedupedTags.includes(tag)) continue;
+      if (domainAllowed && tag.includes('/') && !domainAllowed.has(fold(tag))) {
+        strippedNested.push(tag);
+        continue;
+      }
       dedupedTags.push(tag);
       if (!validSubtypes.includes(tag)) outOfVocab.push(tag);
+    }
+    if (strippedNested.length > 0) {
+      console.debug(
+        `[enforceFrontmatterConstraints] ${pageType} page stripped ${strippedNested.length} nested tag(s) the domain vocabulary does not carry:`,
+        strippedNested
+      );
     }
     if (outOfVocab.length > 0) {
       console.debug(
@@ -793,7 +794,6 @@ export function enforceFrontmatterConstraints(
       updated: today,
       sources: Array.isArray(preservedSources) && preservedSources.length > 0 ? preservedSources : undefined,
       tags: dedupedTags,
-      domains: preservedDomains && preservedDomains.length > 0 ? preservedDomains : undefined,
       aliases: (foundAliases || aliases.length > 0) ? aliases : undefined,
     },
     { passthroughLines, tagStyle: 'inline', emitEmptyTags: hasTags }

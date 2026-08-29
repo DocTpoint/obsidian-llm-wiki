@@ -34,6 +34,7 @@ import { cleanMarkdownResponse } from '../../core/markdown';
 import { canonicalizeSectionHeaders, stripUnknownSections } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
 import { parseFrontmatter, enforceFrontmatterConstraints, mergeFrontmatterArrayField } from '../../core/frontmatter';
+import { collectActiveVocabulary } from '../../core/domain-axis'; // local patch (Tag-Achse S138)
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
@@ -224,7 +225,12 @@ export async function createNewPage(
     // in the model's reply says about the past is invented by construction.
     // The path is passed so an alias that merely repeats the page's own filename
     // is dropped — same rule as `appendAliases`, other writer of the field.
-    const enforcedContent = enforceFrontmatterConstraints(cleanedContent, pageType, ctx.settings, { pagePath: path });
+    const enforcedContent = enforceFrontmatterConstraints(cleanedContent, pageType, ctx.settings, {
+      pagePath: path,
+      // S138: the birth path writes only vocabulary-carried nested values —
+      // retained leaks would legitimize themselves via the wiki harvest.
+      domainVocabulary: collectActiveVocabulary(ctx.app as never, ctx.settings),
+    });
     const labels = getSectionLabels(ctx.settings);
     // Re-assert the known section labels before the link corrector runs, so a
     // garbled `## Verwandte …` header still resolves its section for prefix

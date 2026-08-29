@@ -7,6 +7,7 @@ import {
   getGranularityFixLimits,
 } from '../system-prompts';
 import { enforceFrontmatterConstraints, parseFrontmatter } from '../../core/frontmatter';
+import { collectActiveVocabulary } from '../../core/domain-axis'; // local patch (Tag-Achse S138)
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { resolveModelForTask } from '../../core/model-resolver';
 import {
@@ -100,6 +101,7 @@ export async function fillEmptyPage(
   const enforced = enforceFrontmatterConstraints(withDates, pageTypeSingular, ctx.settings, {
     preserveCreated: parseFrontmatter(content)?.created,
     pagePath,
+    domainVocabulary: collectActiveVocabulary(ctx.app, ctx.settings), // local patch (Tag-Achse S138)
   });
 
   await ctx.createOrUpdateFile(pagePath, enforced);

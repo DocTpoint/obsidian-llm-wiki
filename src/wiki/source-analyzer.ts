@@ -18,7 +18,7 @@ import { isCrossLanguage, normalizeSourceLanguage, getWikiLanguageName } from '.
 import { renderTemplate } from '../core/template-renderer';
 import { matchExtractedToExisting } from '../core/index-search';
 import { coerceToArray } from '../core/arrays';
-import { buildDomainContext, collectDomainVocabulary, extendVocabulary } from '../core/domain-axis'; // domain axis stage 3+4 (#568)
+import { buildDomainContext, collectActiveVocabulary } from '../core/domain-axis'; // domain axis stages 3-5 (#568)
 import { isBlankSource } from '../core/frontmatter';
 import { MAX_TOKENS_BATCH, TOKENS_PER_ITEM_BUDGET, TOKENS_LEMMA_CLASSIFY, TOKENS_TYPE_REPAIR, SOURCE_ANALYZER_RETRY_MULTIPLIER } from '../constants';
 import { getExistingWikiPages } from './lint/get-existing-pages';
@@ -299,10 +299,9 @@ export class SourceAnalyzer {
     const templateUntouched = renderTemplate(PROMPTS.analyzeSource, {
       content,
       source_path: file.path,
-      domain_context: buildDomainContext(extendVocabulary(
-        collectDomainVocabulary(this.ctx.app, this.ctx.settings.wikiFolder),
-        [...getActiveEntityTags(this.ctx.settings), ...getActiveConceptTags(this.ctx.settings)],
-      )),
+      domain_context: buildDomainContext(
+        collectActiveVocabulary(this.ctx.app, this.ctx.settings),
+      ),
     });
     const batchMarker = '{{batch_context}}';
     const markerIdx = templateUntouched.indexOf(batchMarker);

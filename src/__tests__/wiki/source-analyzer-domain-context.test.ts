@@ -22,6 +22,7 @@ async function requestFor(body: string): Promise<{ prompt: string; cacheBreakpoi
   const { ctx } = createMockContext({
     vaultFiles: { [SOURCE_PATH]: body },
     llmResponses: [EXTRACTION_RESPONSE],
+    settings: { watchedFolders: ['sources'] },
   });
   const spy = vi.spyOn(ctx.getClient()!, 'createMessage');
   const analyzer = new SourceAnalyzer(ctx);

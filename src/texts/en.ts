@@ -423,7 +423,7 @@ export const EN_TEXTS = {
     autoWatchName: 'Watch Folders',
     autoWatchDesc: 'Automatically detect new or changed .md files in the watched folders and notify or auto-ingest',
     watchedFoldersName: 'Watched Folders',
-    watchedFoldersDesc: 'Folders to watch for new content. Click "Add Folder" to select from your vault.',
+    watchedFoldersDesc: 'Your declared source folders. Their tags form the domain-tag vocabulary offered at ingestion, and — with auto-watch on — they are watched for new content. Click "Add Folder" to select from your vault.',
     addWatchedFolderButton: 'Add Folder',
     removeWatchedFolderButton: 'Remove',
     webClipperPresetName: 'Watch Clippings (Web Clipper)',
