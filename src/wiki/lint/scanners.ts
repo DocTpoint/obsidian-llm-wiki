@@ -1,7 +1,8 @@
 // Lint scanner functions — extracted from lint-controller.ts for testability.
 // These have no Obsidian API dependencies and can be unit tested directly.
 
-import { parseFrontmatter } from '../../core/frontmatter';
+import { parseFrontmatter, extractBody } from '../../core/frontmatter';
+import { hashBody } from '../../core/source-requirements';
 import { getActiveEntityTags, getActiveConceptTags, getActiveSourceTags } from '../../core/tag-vocab';
 import { normalizeQuote, isQuoteGrounded } from './utils';
 import { LLMWikiSettings } from '../../types';
@@ -467,3 +468,92 @@ export function scanTagViolations(
 // makes the algorithm unit-testable without an Obsidian dependency.
 
 export { scanHubLinkDensity, type HubLinkDensityIssue, type HubLinkDensityOptions } from '../../core/hub-link-distinctiveness';
+
+// ── Source drift scanner (Issue #220 Tier 0, read half) ──────────────────────
+
+export interface SourceDriftIssue {
+  /** Wiki source page whose stored fingerprint no longer matches. */
+  sourcePage: string;
+  /** Origin note (first listed, normalized) whose current body was compared. */
+  note: string;
+  storedHash: string;
+  currentHash: string;
+}
+
+/**
+ * Detect source drift: a `sources/` page stores the `contentHash` of the note
+ * body it was built from (#164). When the note is edited afterwards, nothing
+ * re-reads that hash — the wiki silently keeps summarizing a body that no
+ * longer exists (Issue #220, Tier 0). This scanner is the read half: recompute
+ * the fingerprint of each origin note and flag mismatches.
+ *
+ * Report-only by design — a re-ingest is additive, so acting on drift
+ * automatically would duplicate content rather than revise it. Conservative on
+ * multi-source pages: the stored hash belongs to whichever note was written
+ * last, so a page is only flagged when NO listed, readable note matches it.
+ * Pages without a `contentHash` (pre-#164) and notes that cannot be read are
+ * skipped — absence of evidence is not drift.
+ */
+export function scanSourceDrift(
+  pageMap: Map<string, ScannerPage>,
+  noteContents: Map<string, string>,
+  wikiFolder: string,
+): SourceDriftIssue[] {
+  const issues: SourceDriftIssue[] = [];
+  const sourcesPrefix = `${wikiFolder}/sources/`;
+
+  for (const [path, page] of pageMap) {
+    if (!path.startsWith(sourcesPrefix)) continue;
+    const fm = parseFrontmatter(page.content);
+    if (!fm) continue;
+    const storedHash = (fm as Record<string, unknown>).contentHash;
+    if (typeof storedHash !== 'string' || !storedHash) continue;
+
+    // Canonical source pages carry a scalar `source_file:` wikilink
+    // (generation.ts template); a `sources:` list only appears on pages
+    // written through the entity/concept path. Read the scalar first and
+    // fall back to the list — reading only `sources:` would make the
+    // scanner blind on every canonical page (found by probing a real
+    // vault: 35/35 source pages carried source_file, none sources:).
+    const rawRefs: string[] = [];
+    const sourceFile = (fm as Record<string, unknown>).source_file;
+    if (typeof sourceFile === 'string') rawRefs.push(sourceFile);
+    if (Array.isArray(fm.sources)) rawRefs.push(...fm.sources.map(s => String(s)));
+
+    const notePaths = rawRefs
+      .map(s => {
+        const trimmed = s.trim();
+        return trimmed.startsWith('[[') && trimmed.endsWith(']]')
+          ? trimmed.slice(2, -2).trim()
+          : trimmed;
+      })
+      .filter(p => p.length > 0);
+    if (notePaths.length === 0) continue;
+
+    let anyReadable = false;
+    let anyMatch = false;
+    let firstMismatch: { note: string; currentHash: string } | null = null;
+    for (const notePath of notePaths) {
+      const noteContent = noteContents.get(notePath);
+      if (noteContent === undefined) continue;
+      anyReadable = true;
+      const currentHash = hashBody(extractBody(noteContent));
+      if (currentHash === storedHash) {
+        anyMatch = true;
+        break;
+      }
+      if (!firstMismatch) firstMismatch = { note: notePath, currentHash };
+    }
+
+    if (anyReadable && !anyMatch && firstMismatch) {
+      issues.push({
+        sourcePage: path,
+        note: firstMismatch.note,
+        storedHash,
+        currentHash: firstMismatch.currentHash,
+      });
+    }
+  }
+
+  return issues;
+}
