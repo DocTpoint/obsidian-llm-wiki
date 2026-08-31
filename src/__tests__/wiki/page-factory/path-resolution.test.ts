@@ -291,8 +291,11 @@ describe('resolvePagePath — LLM semantic dedup fallback', () => {
   });
 });
 
-describe('resolvePagePath — the opposite type is a different designator (#472)', () => {
-  it('creates in its own folder when only the opposite folder holds the name', async () => {
+describe('resolvePagePath — a cross-folder designator goes to the semantic call (#472 both ways)', () => {
+  // No client: nothing can decide the cross-folder question, so the page is
+  // created in its own folder. The twin is the visible failure; a merge across
+  // the folder without a decision would be the silent one.
+  it('creates in its own folder when only the opposite folder holds the name and no client can decide', async () => {
     const ctx = makeCtx({
       files: {
         'wiki/concepts/Cross.md': '# concept exists',
@@ -300,5 +303,94 @@ describe('resolvePagePath — the opposite type is a different designator (#472)
     });
     const result = await resolvePagePath(ctx, 'Cross', 'entity', 'desc');
     expect(result.path).toBe('wiki/entities/Cross.md');
+  });
+
+  const twinVault = {
+    files: {
+      'wiki/concepts/Stress.md': '---\ntitle: Stress\n---\n\n# the concept page',
+    },
+    mockVault: {
+      getMarkdownFiles: () => [{ path: 'wiki/concepts/Stress.md', basename: 'Stress' }],
+    },
+  };
+
+  it('shows the opposite-folder page to the model and merges into it on a confirmed match', async () => {
+    let prompt = '';
+    const ctx = makeCtx({
+      ...twinVault,
+      client: {
+        createMessage: async (args: unknown) => {
+          prompt = (args as { messages: Array<{ content: string }> }).messages[0].content;
+          return JSON.stringify({ match: true, path: 'wiki/concepts/Stress.md' });
+        },
+      },
+    });
+    const result = await resolvePagePath(ctx, 'Stress', 'entity', 'chronic load reaction');
+    expect(result.path).toBe('wiki/concepts/Stress.md');
+    expect(prompt).toContain('wiki/concepts/Stress.md');
+  });
+
+  it('creates the page in its own folder when the model says the referents differ', async () => {
+    const ctx = makeCtx({
+      ...twinVault,
+      client: { createMessage: async () => JSON.stringify({ match: false }) },
+    });
+    const result = await resolvePagePath(ctx, 'Stress', 'entity', 'mechanical stress on materials');
+    expect(result.path).toBe('wiki/entities/Stress.md');
+  });
+
+  // The measured twins include pairs born seconds apart from one note: the
+  // second item resolved before the page index listed the first item's page.
+  // The direct file probe is the backstop for exactly that window.
+  it('reaches the semantic call even when the page index does not list the opposite page yet', async () => {
+    const ctx = makeCtx({
+      files: { 'wiki/concepts/Stress.md': '---\ntitle: Stress\n---\n\n# just written' },
+      // mockVault default: getMarkdownFiles() returns [] — the index lags.
+      client: {
+        createMessage: async () => JSON.stringify({ match: true, path: 'wiki/concepts/Stress.md' }),
+      },
+    });
+    const result = await resolvePagePath(ctx, 'Stress', 'entity', 'chronic load reaction');
+    expect(result.path).toBe('wiki/concepts/Stress.md');
+  });
+
+  // #472's damaging case: the designator lives in BOTH folders with different
+  // meanings. The deterministic same-type match must not stand unquestioned —
+  // the model sees both sides and may move the item across the folder.
+  const khkVault = {
+    files: {
+      'wiki/concepts/Koronare-Herzkrankheit.md': '---\naliases:\n  - KHK\n---\nheart disease',
+      'wiki/entities/Ketohexokinase.md': '---\naliases:\n  - KHK\n---\nthe enzyme',
+    },
+    mockVault: {
+      getMarkdownFiles: () => [
+        { path: 'wiki/concepts/Koronare-Herzkrankheit.md', basename: 'Koronare-Herzkrankheit' },
+        { path: 'wiki/entities/Ketohexokinase.md', basename: 'Ketohexokinase' },
+      ],
+    },
+  };
+
+  it('routes a same-type alias merge to the model when the opposite folder also claims the designator', async () => {
+    let prompt = '';
+    const ctx = makeCtx({
+      ...khkVault,
+      client: {
+        createMessage: async (args: unknown) => {
+          prompt = (args as { messages: Array<{ content: string }> }).messages[0].content;
+          return JSON.stringify({ match: true, path: 'wiki/entities/Ketohexokinase.md' });
+        },
+      },
+    });
+    const result = await resolvePagePath(ctx, 'KHK', 'concept', 'fructose-metabolizing enzyme');
+    expect(result.path).toBe('wiki/entities/Ketohexokinase.md');
+    // Both claimants lead the rendered list.
+    expect(prompt).toContain('wiki/concepts/Koronare-Herzkrankheit.md');
+    expect(prompt).toContain('wiki/entities/Ketohexokinase.md');
+  });
+
+  it('keeps the deterministic same-type target when no client can decide the both-folders case', async () => {
+    const ctx = makeCtx({ ...khkVault, client: null });
+    const result = await resolvePagePath(ctx, 'KHK', 'concept', 'fructose-metabolizing enzyme');
+    expect(result.path).toBe('wiki/concepts/Koronare-Herzkrankheit.md');
   });
 });

@@ -46,6 +46,16 @@ export interface ConflictResolution {
    * resolves the same way on every page order.
    */
   candidates?: PageRef[];
+  /**
+   * Issue #472 both ways: opposite-folder pages whose title or alias carries
+   * this designator, ranked. They never decide — the folder can be wrong in
+   * either direction (a mis-typed extraction next to a same-referent page, or
+   * two genuinely different designators sharing letters), so the caller routes
+   * the resolution through the semantic dedup call with these pages in the
+   * candidate list instead of merging or creating deterministically. Set on
+   * any action when non-empty.
+   */
+  crossFolderCandidates?: PageRef[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -111,19 +121,33 @@ export class ConflictResolver {
    */
   resolve(check: ConflictCheck): ConflictResolution {
     const folder = folderOf(check.pageType);
+    const oppositeFolder = folderOf(check.pageType === 'entity' ? 'concept' : 'entity');
     const sameTypePages = this.allPages.filter(p => p.path.includes(`/${folder}/`));
     const checkKey = check.slug.toLowerCase();
+
+    // Issue #472 both ways: pages in the opposite folder that carry the
+    // designator as title or alias. Detected here, decided nowhere — the
+    // resolution below attaches them so the caller can put the question to the
+    // semantic dedup call instead of trusting the extraction's typing.
+    const crossMatches = rankByTagOverlap(
+      this.allPages
+        .filter(p => p.path.includes(`/${oppositeFolder}/`))
+        .filter(p => slugMatchKeys(p).has(checkKey)),
+      check.tags,
+    );
+    const withCross = (r: ConflictResolution): ConflictResolution =>
+      crossMatches.length > 0 ? { ...r, crossFolderCandidates: crossMatches } : r;
 
     // 1. Same-type match: exact path match or slug/alias match
     const exactPath = `${this.wikiFolder}/${folder}/${check.slug}.md`;
     let match = sameTypePages.find(p => p.path === exactPath);
     if (match) {
-      return {
+      return withCross({
         action: 'merge',
         targetPath: match.path,
         confidence: 'high',
         reason: `Same-type exact path match: ${exactPath}`,
-      };
+      });
     }
     // Issue #446: a short designator is a title or an alias on more than one
     // page often enough to matter (23 of them in a 2838-page vault). `find`
@@ -133,31 +157,31 @@ export class ConflictResolver {
     const slugMatches = sameTypePages.filter(p => slugMatchKeys(p).has(checkKey));
     if (slugMatches.length === 1) {
       const only = slugMatches[0];
-      return {
+      return withCross({
         action: 'merge',
         targetPath: only.path,
         confidence: 'high',
         reason: `Same-type slug/alias match: title=${only.title} slug=${check.slug}`,
-      };
+      });
     }
     if (slugMatches.length > 1) {
       const ranked = rankByTagOverlap(slugMatches, check.tags);
-      return {
+      return withCross({
         action: 'disambiguate',
         targetPath: ranked[0].path,
         candidates: ranked,
         confidence: 'low',
         reason: `Ambiguous designator: ${ranked.length} same-type pages match slug=${check.slug} (${ranked.map(p => p.title).join(', ')})`,
-      };
+      });
     }
 
     // 2. No match — create new
-    return {
+    return withCross({
       action: 'create',
       targetPath: `${this.wikiFolder}/${folder}/${check.slug}.md`,
       confidence: 'high',
       reason: 'No conflict found',
-    };
+    });
   }
 
   // ── Interactive query helpers (for future use) ──────────────────

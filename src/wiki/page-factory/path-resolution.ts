@@ -7,10 +7,14 @@
 //
 // Behavior (v1.24.1 Phase 2 refactor — preserved verbatim):
 //   - resolvePagePath: exact-slug fast path → ConflictResolver (same-type
-//     slug/alias match) → LLM semantic dedup fallback. Issue #472: matching is
-//     scoped to the item's own type throughout — a designator is `(letters,
-//     type)`, so the same letters in the opposite folder denote a different
-//     thing and are never consulted.
+//     slug/alias match) → LLM semantic dedup fallback. Issue #472 both ways:
+//     the opposite folder never decides deterministically — in neither
+//     direction. A cross-folder slug/alias hit routes the resolution through
+//     the semantic dedup call with that page in the candidate list: merging on
+//     it blindly mistakes a shared designator for a shared referent (the KHK
+//     case), ignoring it blindly mints a twin page whenever the extraction
+//     types the same referent differently across notes (measured: 18 twin
+//     pairs in one 83-note batch, every one the same referent).
 //   - buildPagesListForPrompt: filters out sources/ by default (#234) and
 //     polluted basenames (L2); caps at MAX_PAGES=50 with entity/concept
 //     bias based on includePaths; emits a "(truncated)" suffix when the cap
@@ -147,13 +151,39 @@ export async function resolvePagePath(
     const resolver = new ConflictResolver(ctx.settings.wikiFolder, allPages);
     const cr = resolver.resolve({ name, slug, pageType, tags });
 
+    // Issue #472 both ways: opposite-folder pages carrying the designator.
+    // The resolver reports slug/alias claims from the page index; the direct
+    // file probe backstops it for a page created moments ago in this same run
+    // that the index may not list yet — the measured twins include pairs born
+    // seconds apart from one note.
+    const oppositeFolder = pageType === 'entity' ? WIKI_SUBFOLDERS.concepts : WIKI_SUBFOLDERS.entities;
+    const oppositeSlugPath = `${ctx.settings.wikiFolder}/${oppositeFolder}/${slug}.md`;
+    const crossCandidates: DedupCandidatePage[] = [...(cr.crossFolderCandidates ?? [])];
+    if (
+      !crossCandidates.some(p => p.path === oppositeSlugPath) &&
+      (await ctx.tryReadFile(oppositeSlugPath)) !== null
+    ) {
+      crossCandidates.push({ path: oppositeSlugPath, title: name });
+    }
+
     if (cr.action === 'merge') {
-      // f9a680e's cross-page gate, fed for the first time: `allPages` is
-      // already in scope, so the name is only appended when no OTHER page's
-      // basename or alias claims it — a duplicated claim would silently merge
-      // every future occurrence of the name into whichever page matches first.
-      await appendAliases(ctx, cr.targetPath, [name], aliasClaimsFromPages(allPages, cr.targetPath));
-      return { path: cr.targetPath };
+      if (crossCandidates.length === 0) {
+        // f9a680e's cross-page gate, fed for the first time: `allPages` is
+        // already in scope, so the name is only appended when no OTHER page's
+        // basename or alias claims it — a duplicated claim would silently merge
+        // every future occurrence of the name into whichever page matches first.
+        await appendAliases(ctx, cr.targetPath, [name], aliasClaimsFromPages(allPages, cr.targetPath));
+        return { path: cr.targetPath };
+      }
+      // The designator lives in BOTH folders (#472's damaging case): the
+      // deterministic same-type match may be about something else entirely, so
+      // the question goes to the semantic call with both sides seeded. On
+      // no-decision the same-type target stands — that is the pre-existing
+      // behaviour, kept so a failure never crosses the folder on its own.
+      fallbackPath = cr.targetPath;
+      console.debug(
+        `Entity resolution: "${name}" matches ${cr.targetPath} but ${crossCandidates[0].path} also carries the designator — routing to semantic dedup`,
+      );
     }
 
     // Issue #446: more than one same-type page carries this designator. The
@@ -168,8 +198,27 @@ export async function resolvePagePath(
       console.debug(`Entity resolution: ${cr.reason}`);
     }
 
-    const sameTypePages = allPages
-      .filter(p => p.path.includes(`/${folder}/`))
+    // Pages that demonstrably carry the designator lead the rendered list:
+    // the same-type merge target when a cross-folder claim forced it here,
+    // the ranked ambiguous candidates, then the cross-folder claims. For a
+    // create-with-cross-claim the fallback stays `slugPath`: only a positive
+    // match from the model crosses the folder, a failure to decide creates the
+    // page in its own folder where the miss is at least visible as a twin.
+    const seeded: DedupCandidatePage[] = [
+      ...(cr.action === 'merge' ? allPages.filter(p => p.path === cr.targetPath) : []),
+      ...ambiguous,
+      ...crossCandidates,
+    ].filter((p, i, arr) => arr.findIndex(q => q.path === p.path) === i);
+
+    // Both wiki folders feed the window (#472 both ways): the folder is the
+    // extraction's guess, not a property of the referent, so a near-name twin
+    // in the opposite folder must be able to reach the model too.
+    const wikiPages = allPages
+      .filter(
+        p =>
+          p.path.includes(`/${WIKI_SUBFOLDERS.entities}/`) ||
+          p.path.includes(`/${WIKI_SUBFOLDERS.concepts}/`),
+      )
       .filter(p => {
         // Purge polluted entries from LLM input (L2)
         const bn = p.title || '';
@@ -186,14 +235,12 @@ export async function resolvePagePath(
     // Same-type slug/alias match is handled above by ConflictResolver.
     // Remaining path: LLM-based semantic dedup for pages that don't match by slug/alias.
 
-    if (sameTypePages.length === 0) return { path: slugPath };
+    if (wikiPages.length === 0 && seeded.length === 0) return { path: fallbackPath };
 
-    const selected = selectDedupCandidates(name, summary, sameTypePages);
+    const selected = selectDedupCandidates(name, summary, wikiPages);
     // The pages that actually carry the designator lead the list; the lexical
     // pre-filter supplies the rest as context.
-    const pagesList = (ambiguous.length > 0
-      ? [...ambiguous, ...selected.filter(p => !ambiguous.some(c => c.path === p.path))]
-      : selected)
+    const pagesList = [...seeded, ...selected.filter(p => !seeded.some(c => c.path === p.path))]
       .map(p => {
         const aliasBlock = p.aliases?.length
           ? `\n  aliases: ${p.aliases.join(', ')}`
