@@ -292,6 +292,12 @@ export type SchemaSuggestionLLM = z.infer<typeof SchemaSuggestionLLMSchema>;
 export const PathResolutionLLMSchema = z.object({
   match: z.boolean().optional(),
   path: z.string().nullable().optional(),
+  // #472 both ways: on a cross-folder match the call also re-decides the
+  // entity/concept classification against the Classification Rules — the
+  // matched page's folder is the first ingest's draw, not a fact about the
+  // referent. Optional: only consumed when cross-folder candidates were
+  // seeded and the matched page's classification is not yet confirmed.
+  classification: z.enum(['entity', 'concept']).optional(),
 }).passthrough();
 export type PathResolutionLLM = z.infer<typeof PathResolutionLLMSchema>;
 

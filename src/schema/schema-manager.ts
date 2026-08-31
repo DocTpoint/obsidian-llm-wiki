@@ -125,7 +125,12 @@ const TASK_SECTIONS: Record<SchemaTask, string[]> = {
   concept: ['Concept Page Template', 'Naming Conventions', 'Classification Rules', 'Mentions Format', 'Content Rules'],
   related: ['Naming Conventions', 'Classification Rules'],
   conversation: ['Wiki Structure', 'Entity Page Template', 'Concept Page Template', 'Naming Conventions', 'Classification Rules'],
-  index: ['Wiki Structure'],
+  // 'index' has a single caller: the semantic dedup in
+  // page-factory/path-resolution.ts. Classification Rules ride along because
+  // that call now re-decides the entity/concept classification on a
+  // cross-folder match — the user's own definitions are the ruler for that
+  // decision, and this is the only way they reach it.
+  index: ['Wiki Structure', 'Classification Rules'],
   lint: ['Maintenance Policies'],
   merge: ['Entity Page Template', 'Concept Page Template', 'Naming Conventions', 'Classification Rules', 'Multi-Source Merge Rules', 'Date Fields'],
   full: ['Wiki Structure', 'Entity Page Template', 'Concept Page Template', 'Naming Conventions', 'Classification Rules', 'Maintenance Policies'],

@@ -32,6 +32,7 @@ import { normalizeLLMPath } from '../../core/prompt-builders';
 import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { appendAliases, aliasClaimsFromPages, type AliasesContext } from './aliases';
+import { parseFrontmatter } from '../../core/frontmatter';
 import { PathResolutionLLMSchema } from '../../llm-sdk/output-schemas';
 import { callLlm } from '../../core/llm-dispatch';
 
@@ -97,9 +98,11 @@ export interface PathResolutionContext extends AliasesContext {
  * Determine the actual file path for a new entity/concept, using slug-based
  * matching first and falling back to LLM semantic resolution.
  *
- * Issue #472: the opposite folder is never consulted. A page there carrying
- * the same letters is a different designator, so it can neither be a merge
- * target nor a reason to withhold this one.
+ * Issue #472 both ways: the opposite folder never decides deterministically.
+ * A cross-folder slug/alias claim routes the resolution through the semantic
+ * dedup call, which decides identity — and, on a confirmed cross-folder
+ * match, re-decides the entity/concept classification against the vault's
+ * Classification Rules (see `applyClassificationDecision`).
  */
 export async function resolvePagePath(
   ctx: PathResolutionContext,
@@ -305,16 +308,28 @@ export async function resolvePagePath(
       return { path: fallbackPath };
     }
 
-    const result = parsed.value as { match?: boolean; path?: string | null };
+    const result = parsed.value as {
+      match?: boolean;
+      path?: string | null;
+      classification?: string;
+    };
 
     if (result.match && result.path) {
       const normalizedPath = normalizeLLMPath(result.path, ctx.settings.wikiFolder);
       console.debug(`Entity resolution: "${name}" matched existing page "${normalizedPath}"`);
+      // On a cross-folder-routed match the reply also re-decided the
+      // entity/concept classification; act on it (possibly moving the page)
+      // before the alias append, which must target the final address.
+      let finalPath = normalizedPath;
+      if (crossCandidates.length > 0) {
+        finalPath = await applyClassificationDecision(ctx, normalizedPath, result.classification);
+      }
       // Append the new name as an alias to the existing page to prevent future
       // duplicates — through the same cross-page gate as the deterministic
-      // merge above (`allPages` is still in scope here).
-      await appendAliases(ctx, normalizedPath, [name], aliasClaimsFromPages(allPages, normalizedPath));
-      return { path: normalizedPath };
+      // merge above (`allPages` is still in scope here; the claims are
+      // computed against the pre-move address, the one `allPages` lists).
+      await appendAliases(ctx, finalPath, [name], aliasClaimsFromPages(allPages, normalizedPath));
+      return { path: finalPath };
     }
   } catch (error) {
     console.debug(`Entity resolution for "${name}" failed, using ${fallbackPath}:`, error);
@@ -325,4 +340,127 @@ export async function resolvePagePath(
   // name that is already an alias twice, so it resolves to the top-ranked
   // candidate instead. For every other call `fallbackPath` is `slugPath`.
   return { path: fallbackPath };
+}
+
+/**
+ * #472 both ways, second half: a cross-folder match re-decides the
+ * entity/concept classification once. The matched page's folder is the first
+ * ingest's draw — made from whatever context that call happened to have, on a
+ * page that may have been born from a passing mention — not a fact about the
+ * referent. The dedup call answers the classification question against the
+ * vault's Classification Rules (delivered via the 'index' schema context)
+ * with both summaries in view.
+ *
+ * Ratchet: the answer is written back as `type_confirmed: true`, so the
+ * question is asked at most once per page and the page cannot ping-pong
+ * between the folders on later draws. A page already confirmed keeps its
+ * address unconditionally.
+ *
+ * The move goes through `app.fileManager.renameFile`, which rewrites inbound
+ * links (Obsidian in production; a CLI host must provide the same contract).
+ * Deliberately NOT moved — and marked instead: when the decided folder
+ * differs but the target address is occupied (an existing twin: healing that
+ * is a merge, not a move) or the host offers no link-safe rename, the page
+ * gets `type_conflict: <classification>` in its frontmatter. The conflict is
+ * then a greppable artifact for a lint or a later pass, not a log line that
+ * scrolled away — and `type_confirmed` stays absent, so the question is
+ * re-asked once the obstacle is gone.
+ */
+async function applyClassificationDecision(
+  ctx: PathResolutionContext,
+  pagePath: string,
+  classification: string | undefined,
+): Promise<string> {
+  const content = await ctx.tryReadFile(pagePath);
+  if (!content) return pagePath;
+  // parseFrontmatter coerces only `reviewed` to a boolean; every other value
+  // stays a string, so the ratchet must accept both spellings.
+  const fm = parseFrontmatter(content);
+  if (fm && (fm.type_confirmed === true || fm.type_confirmed === 'true')) return pagePath;
+  if (classification !== 'entity' && classification !== 'concept') return pagePath;
+
+  const decidedFolder =
+    classification === 'entity' ? WIKI_SUBFOLDERS.entities : WIKI_SUBFOLDERS.concepts;
+  const currentFolder = pagePath.includes(`/${WIKI_SUBFOLDERS.entities}/`)
+    ? WIKI_SUBFOLDERS.entities
+    : WIKI_SUBFOLDERS.concepts;
+
+  if (decidedFolder === currentFolder) {
+    await writeTypeDecision(ctx, pagePath, content, { type: classification, confirmed: true });
+    return pagePath;
+  }
+
+  const newPath = pagePath.replace(`/${currentFolder}/`, `/${decidedFolder}/`);
+  if ((await ctx.tryReadFile(newPath)) !== null) {
+    console.debug(
+      `Entity resolution: "${pagePath}" is classified as ${classification} but ${newPath} already exists — marking the conflict, leaving both for a merge pass`,
+    );
+    await writeTypeDecision(ctx, pagePath, content, { conflict: classification });
+    return pagePath;
+  }
+
+  const app = ctx.app as {
+    vault?: { getAbstractFileByPath?: (p: string) => unknown };
+    fileManager?: { renameFile?: (file: unknown, newPath: string) => Promise<void> };
+  };
+  const file = app.vault?.getAbstractFileByPath?.(pagePath);
+  const rename = app.fileManager?.renameFile;
+  if (!file || !rename) {
+    console.debug(
+      `Entity resolution: "${pagePath}" is classified as ${classification} but the host offers no link-safe rename — marking the conflict, leaving the page in place`,
+    );
+    await writeTypeDecision(ctx, pagePath, content, { conflict: classification });
+    return pagePath;
+  }
+
+  await rename.call(app.fileManager, file, newPath);
+  const moved = await ctx.tryReadFile(newPath);
+  if (moved === null) {
+    console.error(
+      `Entity resolution: rename of "${pagePath}" to "${newPath}" reported success but the target is unreadable — resolving to the original path`,
+    );
+    return pagePath;
+  }
+  await writeTypeDecision(ctx, newPath, moved, { type: classification, confirmed: true });
+  console.debug(
+    `Entity resolution: moved "${pagePath}" → "${newPath}" per classification decision`,
+  );
+  return newPath;
+}
+
+/**
+ * Line-based frontmatter update in the appendAliases style: only the named
+ * lines change, everything else in the file is untouched. No-op on a page
+ * without frontmatter delimiters (corrupt file).
+ */
+async function writeTypeDecision(
+  ctx: PathResolutionContext,
+  pagePath: string,
+  content: string,
+  decision: { type?: 'entity' | 'concept'; confirmed?: boolean; conflict?: 'entity' | 'concept' },
+): Promise<void> {
+  const lines = content.split('\n');
+  if (lines[0]?.trim() !== '---') return;
+  const end = lines.indexOf('---', 1);
+  if (end === -1) return;
+
+  const upserts: Array<[RegExp, string]> = [];
+  if (decision.type) upserts.push([/^type:/, `type: ${decision.type}`]);
+  if (decision.confirmed) upserts.push([/^type_confirmed:/, 'type_confirmed: true']);
+  if (decision.conflict) upserts.push([/^type_conflict:/, `type_conflict: ${decision.conflict}`]);
+
+  const toInsert: string[] = [];
+  for (const [pattern, line] of upserts) {
+    let found = false;
+    for (let i = 1; i < end; i++) {
+      if (pattern.test(lines[i])) {
+        lines[i] = line;
+        found = true;
+        break;
+      }
+    }
+    if (!found) toInsert.push(line);
+  }
+  lines.splice(end, 0, ...toInsert);
+  await ctx.createOrUpdateFile(pagePath, lines.join('\n'));
 }

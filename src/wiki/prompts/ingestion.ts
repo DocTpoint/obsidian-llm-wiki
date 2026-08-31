@@ -129,8 +129,10 @@ export const INGESTION_PROMPTS = {
 
 The list can hold pages from both the entities/ and the concepts/ folder. The folder does not decide identity: a page in the other folder is a match when it denotes the same thing (the folder reflects an earlier classification, which may differ for the same referent). But sharing a name is not identity either — an abbreviation can stand for two different things; match only when the summaries describe the same referent. Never match a page about a related, broader, narrower, or component thing — a relationship is not sameness.
 
+When you output a match, also output "classification": whether the referent itself is an entity or a concept under the Classification Rules in the system prompt. Judge this from the definitions alone — not from the folder the matched page currently sits in, which records an earlier call's guess.
+
 **Output JSON:**
-- If it matches an existing page, output: {"match": true, "path": "{{wikiFolder}}/entities/existing-slug.md"}
+- If it matches an existing page, output: {"match": true, "path": "{{wikiFolder}}/entities/existing-slug.md", "classification": "entity" or "concept"}
 - If no match exists, output: {"match": false, "path": null}
 
 Do NOT create a new name — only match against the existing pages listed above.`,
