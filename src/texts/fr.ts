@@ -891,6 +891,10 @@ export const FR_TEXTS = {
     multiFileStatusCompleted: 'Terminé',
     multiFileStatusFailed: 'Échoué',
     multiFileCancelAria: 'Annuler ce fichier',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: 'Importé',
+    multiFileRowDrifted: 'Note modifiée depuis l’import',
     startupCheckNoticeLevelName: 'Afficher le résultat des correctifs rapides',
     startupCheckNoticeLevelDesc: 'Les QuickFixes s\'exécutent toujours au démarrage du plugin (note Welcome, structure des dossiers, normalisation des sources, pages incomplètes, en-tête du journal). Choisis d\'afficher ou non la notice récapitulative après le démarrage. Le mode silencieux n\'écrit que dans la console développeur et le panneau Historique des opérations.',
     startupCheckNoticeVisible: 'Visible (afficher la notice)',

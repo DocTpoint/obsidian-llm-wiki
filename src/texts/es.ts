@@ -888,6 +888,10 @@ export const ES_TEXTS = {
     multiFileStatusCompleted: 'Completado',
     multiFileStatusFailed: 'Fallido',
     multiFileCancelAria: 'Cancelar este archivo',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: 'Ingerido',
+    multiFileRowDrifted: 'Nota modificada desde la ingesta',
     startupCheckNoticeLevelName: 'Mostrar resultado de arreglos rápidos',
     startupCheckNoticeLevelDesc: 'Los QuickFixes siempre se ejecutan al iniciar el plugin (nota Welcome, estructura de carpetas, normalización de fuentes, páginas incompletas, encabezado del registro). Elige si mostrar el aviso resumen tras el inicio. El modo silencioso solo registra en la consola del desarrollador y en el panel Historial de operaciones.',
     startupCheckNoticeVisible: 'Visible (mostrar aviso)',

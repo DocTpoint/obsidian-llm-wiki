@@ -10,7 +10,8 @@
 // passes their contents in — which also lets it skip reading the note when
 // the page is absent.
 
-import { parseFrontmatter, originNoteRefs } from './frontmatter';
+import { parseFrontmatter, extractBody, originNoteRefs } from './frontmatter';
+import { hashBody } from './source-requirements';
 
 /**
  * What a candidate note's `sources/` page says about it.
@@ -44,4 +45,33 @@ export function pageBelongsToNote(pageContent: string, notePath: string): boolea
   const origins = originNoteRefs(fm);
   if (origins.length === 0) return true;
   return origins.includes(notePath);
+}
+
+/**
+ * Whether the note has been edited since the page was built from it.
+ *
+ * The comparison is the one `scanSourceDrift` (#577) makes: the page stores a
+ * `contentHash` of the note body it was written from (#164), so recomputing
+ * that fingerprint answers the question without an LLM call.
+ *
+ * Undecidable in two cases, both answered `false` rather than guessed:
+ *
+ *   - No stored hash (pre-#164 pages). Absence of evidence is not drift.
+ *   - More than one recorded origin. A page carries ONE hash, belonging to
+ *     whichever note wrote it last, so a mismatch on a multi-source page
+ *     cannot be told apart from "a different origin wrote it last". Claiming
+ *     drift there would mark most origins of every merged page — a marker
+ *     that fires on pages nobody touched is worse than no marker.
+ *
+ * The narrower per-note question is why this is not `scanSourceDrift` itself:
+ * that scanner asks whether a PAGE is stale (flagging only when no listed
+ * note matches), which is decidable where this is not.
+ */
+export function noteHasDrifted(pageContent: string, noteContent: string): boolean {
+  const fm = parseFrontmatter(pageContent);
+  if (!fm) return false;
+  if (originNoteRefs(fm).length > 1) return false;
+  const stored = fm.contentHash;
+  if (typeof stored !== 'string' || !stored) return false;
+  return hashBody(extractBody(noteContent)) !== stored;
 }

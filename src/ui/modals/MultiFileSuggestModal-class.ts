@@ -16,14 +16,16 @@
 // Extracted from the original `src/ui/modals.ts` god file (PR split).
 // No behavior change — pure code movement.
 
-import { App, Modal } from 'obsidian';
-import type { TFile } from 'obsidian';
+import { App, Modal, TFile } from 'obsidian';
 import type { LLMWikiSettings } from '../../types';
 import { getText } from '../../core/i18n';
 import { buildFolderTree, type TreeNode } from '../../core/build-folder-tree';
 import type { IngestQueue } from '../../core/ingest-queue';
 import { COMPATIBLE_SOURCE_EXTENSIONS } from '../../constants';
 import { isExcludedFromSourcePicker } from '../../core/folder-scope';
+import { slugify } from '../../core/slug';
+import { pageBelongsToNote, noteHasDrifted, type IngestDiskState } from '../../core/ingest-state';
+import { resolveRowState, type RowState } from './multi-file-row-state';
 
 export class MultiFileSuggestModal extends Modal {
   /** The shared ingest queue. Modal reads + subscribes; never owns
@@ -62,10 +64,38 @@ export class MultiFileSuggestModal extends Modal {
    * buildLeftPane produces the Obsidian-file-explorer-style
    * nested <details> UI. The left pane DOM is built ONCE per
    * onOpen; subsequent updates are in-place via
-   * `updateLeftPaneSelections` so user-collapsed folders stay
+   * `refreshRowStates` so user-collapsed folders stay
    * collapsed.
    */
   private treeRoots: TreeNode[] = [];
+  /**
+   * Flat candidate list behind `treeRoots`, kept so the disk scan can
+   * walk it without re-flattening the tree.
+   */
+  private candidates: TFile[] = [];
+  /**
+   * The user's selection, by path. #598: this used to live in the DOM
+   * and be reassigned from queue membership on every queue mutation,
+   * which silently discarded any selection made while a batch ran. The
+   * checkbox now renders this set and means only "I picked this".
+   *
+   * Holding it here (rather than in the DOM) also survives the search
+   * filter, which rebuilds the left pane from scratch.
+   */
+  private selected: Set<string> = new Set();
+  /**
+   * What each candidate's `sources/` page says about it, filled by
+   * `scanDiskStates` after the pane is up. Empty until then — a row with
+   * no entry renders as never ingested, which is what the picker showed
+   * unconditionally before.
+   */
+  private diskStates: Map<string, IngestDiskState> = new Map();
+  /**
+   * Generation counter for the disk scan. Bumped on every scan start and
+   * on close, so a scan that outlives its modal drops its result instead
+   * of painting a dead DOM.
+   */
+  private diskScanToken = 0;
 
   constructor(
     app: App,
@@ -102,6 +132,7 @@ export class MultiFileSuggestModal extends Modal {
       .filter(f => !isExcludedFromSourcePicker(f.path, this.wikiFolder, this.app.vault.configDir))
       .filter(f => compatibleExts.includes(f.extension.toLowerCase()))
       .sort((a, b) => a.path.localeCompare(b.path));
+    this.candidates = available;
     this.treeRoots = buildFolderTree(available);
 
     contentEl.createEl('h3', { text: getText(this.settings.language, 'multiFileModalTitle') });
@@ -156,7 +187,15 @@ export class MultiFileSuggestModal extends Modal {
       const checkedFiles = this.collectCheckedFiles();
       if (checkedFiles.length === 0) return;
       const newIds = this.ingestQueue.enqueue(checkedFiles);
-      if (newIds.length > 0 && this.onStartIngest) {
+      // Nothing new was created (everything picked is already in
+      // flight): leave the marks alone, the user's intent is unspent.
+      if (newIds.length === 0) return;
+      // The marks are committed — the queue pane now carries them.
+      // Leaving them ticked would re-submit the same set on the next
+      // click, which was invisible while the checkbox WAS the queue.
+      this.selected.clear();
+      this.refreshRowStates();
+      if (this.onStartIngest) {
         // Pass both the newly-issued ids and the corresponding
         // files. The worker uses the ids to publish start/
         // complete transitions on each job — without ids, it
@@ -170,17 +209,21 @@ export class MultiFileSuggestModal extends Modal {
     });
 
     // Build the left pane once. Subsequent changes to the queue
-    // are reflected by updateLeftPaneSelections() in place.
+    // are reflected by refreshRowStates() in place.
     this.buildLeftPane();
     // Subscribe AFTER the initial build so we don't double-render
     // on the first notify.
     this.unsubscribeQueue = this.ingestQueue.subscribe(() => {
       this.renderRightPane();
-      this.updateLeftPaneSelections();
+      this.refreshRowStates();
       this.updateCounter();
     });
     this.renderRightPane();
     this.updateCounter();
+    // Read the vault for what is already ingested. Async and after the
+    // first paint: the pane must not wait on IO, and every row is
+    // already in its correct pre-scan state.
+    void this.scanDiskStates();
   }
 
   onClose(): void {
@@ -196,6 +239,8 @@ export class MultiFileSuggestModal extends Modal {
       this.unsubscribeQueue();
       this.unsubscribeQueue = null;
     }
+    // Invalidate any scan still in flight (see `diskScanToken`).
+    this.diskScanToken += 1;
   }
 
   private buildLeftPane(): void {
@@ -236,7 +281,7 @@ export class MultiFileSuggestModal extends Modal {
     // completed. Called on every build (initial onOpen AND search
     // input change) so the visual stays consistent with the
     // store regardless of how the modal was last left.
-    this.updateLeftPaneSelections();
+    this.refreshRowStates();
   }
 
   /**
@@ -314,7 +359,14 @@ export class MultiFileSuggestModal extends Modal {
       const checkboxes = parent.querySelectorAll<HTMLInputElement>(
         ':scope > .llm-wiki-multi-file-folder-list input[type="checkbox"][data-file-path]'
       );
-      checkboxes.forEach(cb => { cb.checked = true; });
+      checkboxes.forEach(cb => {
+        // Skip rows locked by a completed job — assigning `.checked`
+        // bypasses `disabled`, so without this the bulk button could
+        // mark a row the user cannot unmark.
+        if (cb.disabled) return;
+        cb.checked = true;
+        if (cb.dataset.filePath) this.setSelected(cb.dataset.filePath, true);
+      });
     });
 
     // Direct-child files
@@ -334,13 +386,14 @@ export class MultiFileSuggestModal extends Modal {
 
   /**
    * Render a single file row. The checkbox carries a data attribute
-   * so `updateLeftPaneSelections` can find it without re-walking
+   * so `refreshRowStates` can find it without re-walking
    * the tree structure.
    */
   private renderFileRow(file: TFile, container: HTMLElement): void {
     const row = container.createDiv({ cls: 'llm-wiki-multi-file-row' });
     const checkbox = row.createEl('input', { type: 'checkbox' });
     checkbox.dataset.filePath = file.path;
+    checkbox.addEventListener('change', () => this.setSelected(file.path, checkbox.checked));
     // v1.23.0 Phase 5.1.5 stage 4: ticking a checkbox does NOT
     // enqueue. The user has to explicitly click "Add to queue" to
     // commit the selection. This matches the v1 git-style
@@ -358,16 +411,20 @@ export class MultiFileSuggestModal extends Modal {
     // Whole row toggles the checkbox (skip the checkbox itself).
     row.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).tagName !== 'INPUT') {
+        // Assigning `.checked` bypasses `disabled` and fires no
+        // `change` event, so the guard and the bookkeeping are both
+        // ours to do here.
+        if (checkbox.disabled) return;
         checkbox.checked = !checkbox.checked;
+        this.setSelected(file.path, checkbox.checked);
       }
     });
   }
 
   /**
-   * Update every checkbox in the left pane to reflect the current
-   * queue snapshot. Walks the live DOM via a single
-   * `querySelectorAll` and toggles `checked` + `disabled` based on
-   * the queue.
+   * Repaint every left-pane row from the three things that describe it:
+   * the user's selection, this session's queue, and what the vault says.
+   * Walks the live DOM via a single `querySelectorAll`.
    *
    * Why we don't re-render the whole tree: rebuilding the tree
    * would close every <details> the user had expanded, which was
@@ -377,11 +434,11 @@ export class MultiFileSuggestModal extends Modal {
    * Performance: O(N) in the number of file rows (~thousands max).
    * Acceptable — this fires on every queue mutation.
    */
-  private updateLeftPaneSelections(): void {
+  private refreshRowStates(): void {
     const queue = this.ingestQueue.getSnapshot();
-    const inQueuePaths = new Set(
+    const queuedPaths = new Set(
       queue
-        .filter(j => j.status === 'pending' || j.status === 'running' || j.status === 'completed')
+        .filter(j => j.status === 'pending' || j.status === 'running')
         .map(j => j.file.path)
     );
     const completedPaths = new Set(
@@ -391,20 +448,107 @@ export class MultiFileSuggestModal extends Modal {
     rows.forEach(checkbox => {
       const path = checkbox.dataset.filePath;
       if (!path) return;
-      const isQueued = inQueuePaths.has(path);
-      const isCompleted = completedPaths.has(path);
-      checkbox.checked = isQueued;
-      // Grey out completed rows: the user shouldn't be able to
-      // re-toggle them; the in-batch dedup would also drop the
-      // add but the user feedback ("I checked it but it didn't
-      // add") would be confusing. The visual 'Ingested' tag is
-      // the cue.
-      checkbox.disabled = isCompleted;
+      // The decision itself lives in multi-file-row-state.ts, where it
+      // can be tested — the Modal base class cannot be instantiated
+      // outside Obsidian, so anything decided in here is verified by
+      // reading only, which is how #598 stayed unnoticed.
+      const state = resolveRowState({
+        selected: this.selected.has(path),
+        queued: queuedPaths.has(path),
+        completed: completedPaths.has(path),
+        disk: this.diskStates.get(path) ?? 'none',
+      });
+      checkbox.checked = state.checked;
+      checkbox.disabled = state.disabled;
       const row = checkbox.closest<HTMLElement>('.llm-wiki-multi-file-row');
-      if (row) {
-        row.classList.toggle('llm-wiki-multi-file-row-ingested', isCompleted);
+      if (!row) return;
+      for (const [cls, on] of Object.entries(state.classes)) {
+        row.classList.toggle(cls, on);
       }
+      this.renderDiskLabel(row, state.labelKey);
     });
+  }
+
+  /**
+   * Put (or remove) the disk-state label on one row. Idempotent — the
+   * row keeps at most one label element across repaints.
+   *
+   * `llm-wiki-multi-file-ingested-tag` was already in styles.css, and
+   * the old comment in `refreshRowStates` called it "the visual
+   * 'Ingested' tag" — but no code ever rendered it, so the greyed row
+   * was the only cue there had ever been. This is the element that rule
+   * was written for.
+   */
+  private renderDiskLabel(row: HTMLElement, labelKey: RowState['labelKey']): void {
+    const existing = row.querySelector<HTMLElement>('.llm-wiki-multi-file-ingested-tag');
+    if (labelKey === null) {
+      if (existing) existing.remove();
+      return;
+    }
+    const el = existing ?? row.createSpan({ cls: 'llm-wiki-multi-file-ingested-tag' });
+    el.setText(getText(this.settings.language, labelKey));
+  }
+
+  /**
+   * Ask the vault which candidates already have a `sources/` page, and
+   * whether their note has changed since. Runs once per `onOpen`.
+   *
+   * Direction matters: this resolves note → slug → page, the same way
+   * `isAlreadyIngested` does, rather than indexing the `sources/` folder
+   * and inverting it. An inverted index cannot attribute a page with no
+   * recorded origin to any note, and would disagree with the skip check
+   * on exactly those pages — see `pageBelongsToNote`.
+   *
+   * Cost is bounded by the number of `sources/` pages, not by the vault:
+   * a candidate whose page is absent costs one path lookup and no read,
+   * and pages are read once even when several notes slug-collide.
+   */
+  private async scanDiskStates(): Promise<void> {
+    const token = ++this.diskScanToken;
+    const preserveCase = this.settings.slugCase === 'preserve';
+    const states = new Map<string, IngestDiskState>();
+    const pageCache = new Map<string, string | null>();
+
+    for (const file of this.candidates) {
+      // The modal was closed, or a newer scan started: drop this one.
+      if (token !== this.diskScanToken) return;
+      const pagePath = `${this.wikiFolder}/sources/${slugify(file.basename, preserveCase)}.md`;
+      let pageContent = pageCache.get(pagePath);
+      if (pageContent === undefined) {
+        pageContent = await this.readOrNull(pagePath);
+        pageCache.set(pagePath, pageContent);
+      }
+      if (pageContent === null) continue;
+      if (!pageBelongsToNote(pageContent, file.path)) continue;
+      const noteContent = await this.readOrNull(file.path);
+      const drifted = noteContent !== null && noteHasDrifted(pageContent, noteContent);
+      states.set(file.path, drifted ? 'drifted' : 'ingested');
+    }
+
+    if (token !== this.diskScanToken) return;
+    this.diskStates = states;
+    this.refreshRowStates();
+  }
+
+  /**
+   * Read a vault file by path, or null when it is absent, is a folder,
+   * or cannot be read. `cachedRead` rather than `read`: this feeds a
+   * display hint, not a write decision.
+   */
+  private async readOrNull(path: string): Promise<string | null> {
+    const abstract = this.app.vault.getAbstractFileByPath(path);
+    if (!(abstract instanceof TFile)) return null;
+    try {
+      return await this.app.vault.cachedRead(abstract);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Record (or clear) the user's mark on one row. */
+  private setSelected(path: string, on: boolean): void {
+    if (on) this.selected.add(path);
+    else this.selected.delete(path);
   }
 
   /**
@@ -508,21 +652,18 @@ export class MultiFileSuggestModal extends Modal {
   // ── "Add to queue" button support ───────────────────────────
 
   /**
-   * Collect every file whose left-pane checkbox is currently
-   * checked. Used by the "Add to queue" button to translate DOM
-   * state into file references. Walks the treeRoots list (not the
-   * DOM) for the TFile references.
+   * Collect every file the user has marked. Reads `selected` rather
+   * than the DOM: the search filter rebuilds the left pane, so a
+   * DOM-only selection lost every mark outside the current query.
+   * Sorted by path to keep the ingest order the tree order.
    */
   private collectCheckedFiles(): TFile[] {
     const result: TFile[] = [];
-    const checkboxes = this.leftEl.querySelectorAll<HTMLInputElement>('input[type="checkbox"][data-file-path]');
-    checkboxes.forEach(cb => {
-      if (!cb.checked) return;
-      const path = cb.dataset.filePath;
-      if (!path) return;
+    const paths = [...this.selected].sort((a, b) => a.localeCompare(b));
+    for (const path of paths) {
       const file = this.findFileByPath(path);
       if (file) result.push(file);
-    });
+    }
     return result;
   }
 
