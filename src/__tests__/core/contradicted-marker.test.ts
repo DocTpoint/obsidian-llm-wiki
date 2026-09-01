@@ -5,7 +5,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   appendContradictedByMarker,
-  appendContradictionNotes,
   CONTRADICTIONS_KEY,
 } from '../../core/contradicted-marker';
 
@@ -92,25 +91,3 @@ Body.
 });
 
 
-describe('appendContradictionNotes', () => {
-  const item = { content: 'Dose is 10mg', target_section: '## Dosage', reason: 'page states 5mg' };
-
-  it('returns the body unchanged for an empty item list', () => {
-    expect(appendContradictionNotes('# Page\n\nBody.', [], 'note')).toBe('# Page\n\nBody.');
-  });
-
-  it('appends an attributed conflict block with the manager heading', () => {
-    const out = appendContradictionNotes('# Page\n\nBody.', [item], 'my-note');
-    expect(out).toContain('## ⚠️ Potential Contradiction');
-    expect(out).toContain('**Source claim** (from my-note): Dose is 10mg');
-    expect(out).toContain('**Conflicts with** (## Dosage): page states 5mg');
-    expect(out.startsWith('# Page\n\nBody.')).toBe(true);
-  });
-
-  it('renders one block per item under a single heading', () => {
-    const out = appendContradictionNotes('B', [item, { content: 'X', target_section: '## A' }], 'n');
-    expect(out.match(/## ⚠️ Potential Contradiction/g)?.length).toBe(1);
-    expect(out.match(/\*\*Source claim\*\*/g)?.length).toBe(2);
-    expect(out).toContain('**Conflicts with**: ## A');
-  });
-});
