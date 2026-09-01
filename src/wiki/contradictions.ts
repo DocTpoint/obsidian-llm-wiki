@@ -1,7 +1,6 @@
 // Contradiction detection, tracking, and resolution — extracted from WikiEngine.
 
 import { EngineContext, ContradictionInfo } from '../types';
-import { slugify } from '../core/slug';
 import { parseFrontmatter } from '../core/frontmatter';
 import { cleanMarkdownResponse } from '../core/markdown';
 import { renderTemplate } from '../core/template-renderer';
@@ -15,26 +14,59 @@ import {
   buildSystemPrompt,
 } from './system-prompts';
 import { isInFolderScope } from '../core/folder-scope';
+import { getExistingWikiPages } from './lint/get-existing-pages';
+import { appendContradictedByMarker } from '../core/contradicted-marker';
+import {
+  buildContradictionRecord,
+  resolveContradictionTarget,
+  ResolvedContradictionTarget,
+} from '../core/contradiction-record';
 
 export class ContradictionManager {
   constructor(private ctx: EngineContext) {}
 
-  async noteContradiction(contradiction: ContradictionInfo): Promise<void> {
-    const pagePath = contradiction.source_page.replace(
-      /\[\[(.+)\]\]/,
-      `${this.ctx.settings.wikiFolder}/$1.md`
+  async noteContradiction(
+    contradiction: ContradictionInfo,
+    sourceNotePath: string
+  ): Promise<void> {
+    // `source_page` is unvalidated model output. Resolve it against the
+    // real page index; what does not resolve is discarded and reported,
+    // never written — string surgery on the raw value once turned a
+    // bracket-less value into a write path into a user's note.
+    const pages = await getExistingWikiPages(
+      this.ctx.app,
+      this.ctx.settings.wikiFolder
     );
+    const target = resolveContradictionTarget(
+      contradiction.source_page,
+      pages,
+      this.ctx.settings.wikiFolder
+    );
+    if (!target) {
+      console.warn(
+        `Contradiction discarded — source_page did not resolve to an existing wiki page: "${contradiction.source_page}"`
+      );
+      return;
+    }
 
-    const existingContent = await this.ctx.tryReadFile(pagePath);
-    if (!existingContent) return;
-
-    const contradictionNote = `\n\n## ⚠️ Potential Contradiction\n\n**Source claim**: ${contradiction.claim}\n\n**Existing view**: ${contradiction.contradicted_by}\n\n**Resolution suggestion**: ${contradiction.resolution}\n\n---\n*Flagged: ${new Date().toISOString().split('T')[0]}*`;
-
-    await this.ctx.createOrUpdateFile(pagePath, existingContent + contradictionNote);
-    await this.trackContradiction(contradiction);
+    // The affected page carries the marker (the index); the prose lives
+    // in the record file. No body block: it is unknown to the section
+    // schema and falls to stripUnknownSections on the next rewrite.
+    const existingContent = await this.ctx.tryReadFile(target.path);
+    if (existingContent) {
+      const stamped = appendContradictedByMarker(existingContent, sourceNotePath);
+      if (stamped !== existingContent) {
+        await this.ctx.createOrUpdateFile(target.path, stamped);
+      }
+    }
+    await this.trackContradiction(contradiction, target, sourceNotePath);
   }
 
-  private async trackContradiction(contradiction: ContradictionInfo): Promise<void> {
+  private async trackContradiction(
+    contradiction: ContradictionInfo,
+    target: ResolvedContradictionTarget,
+    sourceNotePath: string
+  ): Promise<void> {
     const contradictionsDir = `${this.ctx.settings.wikiFolder}/contradictions`;
     try {
       await this.ctx.app.vault.createFolder(contradictionsDir);
@@ -43,41 +75,25 @@ export class ContradictionManager {
     }
 
     const date = new Date().toISOString().split('T')[0];
-    const claimSlug = slugify(contradiction.claim.substring(0, 50));
-    const filePath = `${contradictionsDir}/${claimSlug}-${date}.md`;
+    const record = buildContradictionRecord(
+      {
+        claim: contradiction.claim,
+        existingView: contradiction.contradicted_by,
+        resolution: contradiction.resolution,
+        pageRelPath: target.relPath,
+        sourceNotePath,
+        date,
+      },
+      getSectionLabels(this.ctx.settings)
+    );
+    const filePath = `${contradictionsDir}/${record.fileName}`;
 
     if (await this.ctx.tryReadFile(filePath)) {
       console.debug('Contradiction already tracked:', filePath);
       return;
     }
 
-    const pageRelPath = contradiction.source_page.replace(/\[\[(.+)\]\]/, '$1');
-    const labels = getSectionLabels(this.ctx.settings);
-    const content = `---
-status: detected
-detected: ${date}
-source_page: "[[${pageRelPath}]]"
----
-
-# Contradiction: ${contradiction.claim.substring(0, 60)}
-
-## ${labels.new_claim}
-${contradiction.claim}
-
-## ${labels.existing_knowledge}
-${contradiction.contradicted_by}
-
-## ${labels.resolution_suggestion}
-${contradiction.resolution}
-
-## ${labels.source_page}
-${contradiction.source_page}
-
----
-*Auto-detected on ${date}*
-`;
-
-    await this.ctx.createOrUpdateFile(filePath, content);
+    await this.ctx.createOrUpdateFile(filePath, record.content);
     console.debug('Contradiction tracked:', filePath);
   }
 
