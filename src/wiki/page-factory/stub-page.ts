@@ -31,6 +31,7 @@
 import type { EntityInfo, ConceptInfo } from '../../types';
 import type { StubCandidate, StubIdentity } from '../../core/candidate-gate';
 import { slugify } from '../../core/slug';
+import { selectDomains } from '../../core/domain-axis';
 
 interface ExistingPageLike {
   path: string;
@@ -114,13 +115,23 @@ export function buildDissentStubContent(params: {
   stubType: 'entity' | 'concept';
   sourceSlug: string;
   cell: string;
+  /** Harvested tag vocabulary. When present, the identity value faces it like
+   *  every other writer's tags do (S139); when absent, legacy behavior. */
+  vocabulary?: readonly string[];
 }): string {
-  const { item, stubType, sourceSlug, cell } = params;
+  const { item, stubType, sourceSlug, cell, vocabulary } = params;
   const today = new Date().toISOString().split('T')[0];
   // Tag-Achse Stufe 4 (S137): one field — the identity value (the extraction
   // type) and the validated belonging values share `tags:`; no `domains:`.
-  const identity = item.type || (stubType === 'entity' ? 'other' : 'term');
-  const tagValues = [identity, ...(item.domains ?? []).filter(d => d !== identity)];
+  // S142: the identity fallback leaked the settings typelist (`person`,
+  // `theory`) into `tags:` — the same drift the S139 strips closed at
+  // create/merge/fill. With a vocabulary the identity faces the harvest:
+  // a value it does not carry is dropped, and an empty result stays empty —
+  // a visible gap beats a wrong value (the fill path rewrites tags anyway).
+  const identity = vocabulary
+    ? (item.type ? selectDomains([item.type], vocabulary).kept[0] ?? '' : '')
+    : item.type || (stubType === 'entity' ? 'other' : 'term');
+  const tagValues = [...(identity ? [identity] : []), ...(item.domains ?? []).filter(d => d !== identity)];
   const tag = tagValues.join(', ');
   const quote = item.mentions_with_provenance?.[0]?.quote ?? item.mentions_in_source?.[0];
   const summary = (item.summary ?? '').trim();
@@ -134,6 +145,8 @@ export interface StubBirthDeps {
   normalizePath: (p: string) => string;
   fileExists: (path: string) => boolean;
   createOrUpdateFile: (path: string, content: string) => Promise<void>;
+  /** Harvested tag vocabulary for the stub's identity tag (see buildDissentStubContent). */
+  vocabulary?: readonly string[];
 }
 
 export interface StubBirthResult {
@@ -175,6 +188,7 @@ export async function createDissentStubs(
       stubType: stub.kind,
       sourceSlug,
       cell: stub.cell,
+      vocabulary: deps.vocabulary,
     }));
     created.push(path);
   }

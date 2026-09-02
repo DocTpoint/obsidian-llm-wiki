@@ -1217,6 +1217,9 @@ export class WikiEngine {
             normalizePath,
             fileExists: (p) => this.app.vault.getAbstractFileByPath(p) !== null,
             createOrUpdateFile: (p, c) => this.createOrUpdateFile(p, c),
+            // S142: the stub's identity tag faces the harvest like every
+            // other writer's tags (the domains were validated above).
+            vocabulary: collectActiveVocabulary(this.app, this.settings),
           },
           stubPlan,
           sourceSlug,

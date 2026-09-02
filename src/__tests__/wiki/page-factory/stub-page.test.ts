@@ -16,7 +16,7 @@ import {
   stripStubMarker,
 } from '../../../wiki/page-factory/stub-page';
 import { parseFrontmatter } from '../../../core/frontmatter';
-import type { EntityInfo } from '../../../types';
+import type { EntityInfo, ConceptInfo } from '../../../types';
 import type { StubCandidate } from '../../../core/candidate-gate';
 
 const PAGES = [
@@ -176,5 +176,44 @@ describe('createDissentStubs', () => {
     const deps = { wikiFolder: 'wiki', preserveCase: false, normalizePath: (p: string) => p };
     expect(stubPath(deps, mkStub('Maca'))).toBe('wiki/entities/maca.md');
     expect(stubPath(deps, { ...mkStub('Maca'), kind: 'concept' })).toBe('wiki/concepts/maca.md');
+  });
+});
+
+describe('buildDissentStubContent — identity tag faces the harvest (S142)', () => {
+  const VOCAB = ['Sorte/Botenstoffe', 'Thema/Diagnostik'] as const;
+
+  it('drops a settings-typelist identity the vocabulary does not carry', () => {
+    const content = buildDissentStubContent({
+      item: { name: 'Israel Brekhman', type: 'person', summary: 's', mentions_in_source: [] },
+      stubType: 'entity',
+      sourceSlug: 'adaptogen',
+      cell: 'prose+named',
+      vocabulary: VOCAB,
+    });
+    expect(content).toContain('tags: []');
+    expect(content).not.toContain('person');
+  });
+
+  it('keeps an identity value the vocabulary carries', () => {
+    const content = buildDissentStubContent({
+      item: { name: 'Prostaglandin', type: 'method', summary: 's', mentions_in_source: [], domains: ['Thema/Diagnostik'] } as unknown as ConceptInfo,
+      stubType: 'concept',
+      sourceSlug: 'ass',
+      cell: 'prose+named',
+      vocabulary: [...VOCAB, 'method'],
+    });
+    expect(content).toContain('tags: [method, Thema/Diagnostik]');
+  });
+
+  it('writes no other/term fallback under a vocabulary — empty stays empty', () => {
+    const content = buildDissentStubContent({
+      item: { name: 'Herzfrequenz', summary: 's', mentions_in_source: [] } as unknown as ConceptInfo,
+      stubType: 'concept',
+      sourceSlug: 'sechs-minuten-gehtest',
+      cell: 'aside+covered',
+      vocabulary: VOCAB,
+    });
+    expect(content).toContain('tags: []');
+    expect(content).not.toContain('term');
   });
 });
