@@ -892,6 +892,10 @@ export const ZH_TEXTS = {
     multiFileStatusCompleted: '已完成',
     multiFileStatusFailed: '已失败',
     multiFileCancelAria: '取消该文件',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: '已摄入',
+    multiFileRowDrifted: '摄入后笔记已修改',
     startupCheckNoticeLevelName: '显示快速修复结果',
     startupCheckNoticeLevelDesc: '快速修复在插件启动时始终运行（Welcome note、文件夹结构、源归一化、不完整页面、日志头）。选择启动后是否显示摘要通知。静默模式仅记录到开发者控制台和操作历史面板。',
     startupCheckNoticeVisible: '显示（弹出通知）',

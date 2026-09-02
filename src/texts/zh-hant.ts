@@ -883,6 +883,10 @@ export const ZH_HANT_TEXTS = {
     multiFileStatusCompleted: '已完成',
     multiFileStatusFailed: '已失敗',
     multiFileCancelAria: '取消該檔案',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: '已攝入',
+    multiFileRowDrifted: '攝入後筆記已修改',
     startupCheckNoticeLevelName: '顯示快速修復結果',
     startupCheckNoticeLevelDesc: '快速修復在外掛啟動時始終執行（Welcome note、資料夾結構、來源正規化、不完整頁面、日誌標頭）。選擇啟動後是否顯示摘要通知。靜默模式僅記錄到開發者控制台與操作歷史面板。',
     startupCheckNoticeVisible: '顯示（彈出通知）',

@@ -890,6 +890,10 @@ export const KO_TEXTS = {
     multiFileStatusCompleted: '완료됨',
     multiFileStatusFailed: '실패함',
     multiFileCancelAria: '이 파일 취소',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: '수집됨',
+    multiFileRowDrifted: '수집 후 노트가 변경됨',
     startupCheckNoticeLevelName: '빠른 수정 결과 표시',
     startupCheckNoticeLevelDesc: 'QuickFixes는 플러그인 시작 시 항상 실행됩니다(Welcome 노트, 폴더 구조, 소스 정규화, 불완전한 페이지, 로그 헤더). 시작 후 요약 알림을 표시할지 선택합니다. 무음 모드는 개발자 콘솔 및 작업 기록 패널에만 기록됩니다.',
     startupCheckNoticeVisible: '표시(알림 표시)',

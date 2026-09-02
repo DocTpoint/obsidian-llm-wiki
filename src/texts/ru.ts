@@ -927,6 +927,10 @@ export const RU_TEXTS = {
     multiFileStatusCompleted: 'Завершено',
     multiFileStatusFailed: 'Не удалось',
     multiFileCancelAria: 'Отменить этот файл',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: 'Импортировано',
+    multiFileRowDrifted: 'Заметка изменена после импорта',
     // v1.23.0 Phase 5.1.5: кнопка действия модального окна Multi-File Suggest,
     // которая удаляет каждое задание в ожидании и выполнении из очереди
     // импорта. Завершённые и неудачные задания сохраняются, чтобы пользователь

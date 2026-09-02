@@ -884,6 +884,10 @@ export const JA_TEXTS = {
     multiFileStatusCompleted: '完了',
     multiFileStatusFailed: '失敗',
     multiFileCancelAria: 'このファイルを取り消す',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: '取り込み済み',
+    multiFileRowDrifted: '取り込み後にノートが変更されました',
     startupCheckNoticeLevelName: 'クイック修正結果の表示',
     startupCheckNoticeLevelDesc: 'QuickFixes はプラグイン起動時に常に実行されます（Welcome note、フォルダ構造、ソース正規化、不完全ページ、ログヘッダー）。起動後にサマリー通知を表示するかどうかを選択します。サイレントモードでは開発者コンソールと操作履歴パネルのみに記録されます。',
     startupCheckNoticeVisible: '表示（通知を表示）',

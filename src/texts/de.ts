@@ -890,6 +890,10 @@ export const DE_TEXTS = {
     multiFileStatusCompleted: 'Abgeschlossen',
     multiFileStatusFailed: 'Fehlgeschlagen',
     multiFileCancelAria: 'Diese Datei abbrechen',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: 'Importiert',
+    multiFileRowDrifted: 'Notiz seit dem Import geändert',
     startupCheckNoticeLevelName: 'Quick-Fix-Ergebnis anzeigen',
     startupCheckNoticeLevelDesc: 'QuickFixes laufen beim Plugin-Start immer (Willkommensnotiz, Ordnerstruktur, Quellen-Normalisierung, unvollständige Seiten, Log-Header). Wähle, ob die Zusammenfassungs-Notiz nach dem Start angezeigt wird. Im Silent-Modus wird nur in die Entwicklerkonsole und das Operationsverlaufs-Panel geschrieben.',
     startupCheckNoticeVisible: 'Sichtbar (Notiz anzeigen)',

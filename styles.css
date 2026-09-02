@@ -1083,6 +1083,21 @@
 .llm-wiki-multi-file-row-ingested:hover {
   background: transparent;
 }
+/* #598: the left pane's three vault-side row states. `-on-disk` is a
+ * report, not a lock — unlike `-ingested` above (a job completed in
+ * this session) the checkbox stays live, because the skip check
+ * declines the file anyway and says so. `-queued` carries the signal
+ * the checkbox used to carry before it became the user's selection. */
+.llm-wiki-multi-file-row-on-disk {
+  opacity: 0.6;
+}
+.llm-wiki-multi-file-row-drifted .llm-wiki-multi-file-ingested-tag {
+  color: var(--text-warning);
+  font-style: normal;
+}
+.llm-wiki-multi-file-row-queued {
+  box-shadow: inset 2px 0 0 0 var(--interactive-accent);
+}
 .llm-wiki-multi-file-basename {
   flex: 0 1 auto;
   font-family: var(--font-monospace);

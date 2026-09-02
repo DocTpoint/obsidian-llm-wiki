@@ -965,6 +965,10 @@ export const EN_TEXTS = {
     multiFileStatusCompleted: 'Completed',
     multiFileStatusFailed: 'Failed',
     multiFileCancelAria: 'Cancel this file',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: 'Ingested',
+    multiFileRowDrifted: 'Note changed since ingest',
     // v1.23.0 Phase 5.1.5: Multi-File Suggest modal action button
     // that removes every pending and running job from the ingest
     // queue. Completed and failed jobs are preserved so the user
