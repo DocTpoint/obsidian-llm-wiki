@@ -130,7 +130,13 @@ describe('TASK_SECTIONS delivery matrix (#491 — oversight reading)', () => {
       'Naming Conventions',
       'Classification Rules',
     ]);
-    expect(headingsOf(await mgr.getSchemaContext('index'))).toEqual(['Wiki Structure']);
+    // 'index' feeds the semantic dedup, which re-decides the entity/concept
+    // classification on a cross-folder match — the user's Classification
+    // Rules are the ruler for that decision.
+    expect(headingsOf(await mgr.getSchemaContext('index'))).toEqual([
+      'Wiki Structure',
+      'Classification Rules',
+    ]);
     expect(headingsOf(await mgr.getSchemaContext('lint'))).toEqual(['Maintenance Policies']);
   });
 

@@ -238,6 +238,54 @@ export class NodeVault {
     this.writes.push({ path: file.path, action: 'delete' });
   }
 
+  /**
+   * Move a file and rewrite inbound wiki-links across every markdown file —
+   * the headless stand-in for Obsidian's link-safe `fileManager.renameFile`.
+   * Generated pages link wiki-folder-relative (`[[entities/X|X]]`); some
+   * writers emit the wiki-folder prefix too. Both forms are rewritten, in
+   * bodies and in quoted frontmatter alike, with the link target bounded by
+   * `]`, `|` or `#` so `entities/Stress` never rewrites
+   * `entities/Stress-Resilienz`.
+   */
+  async renameWithLinkRewrite(file: TFile, newPath: string): Promise<void> {
+    const key = normalizePath(newPath);
+    if (this.files.has(key)) throw new Error(`File already exists: ${key}`);
+    const parent = parentPathOf(key);
+    if (parent !== '' && !this.folders.has(parent)) {
+      throw new Error(`Folder does not exist: ${parent}`);
+    }
+    const oldPath = file.path;
+    await this.modules.nodeFsPromises.rename(this.absolute(oldPath), this.absolute(key));
+    this.unregisterFile(file);
+    this.registerFile(key);
+    this.writes.push({ path: oldPath, action: 'delete' });
+    this.writes.push({ path: key, action: 'create' });
+
+    const noExt = (p: string): string => p.replace(/\.md$/, '');
+    const tail = (p: string): string => p.split('/').slice(1).join('/');
+    const pairs: Array<[string, string]> = [
+      [noExt(oldPath), noExt(key)],
+      [tail(noExt(oldPath)), tail(noExt(key))],
+    ].filter(([from]) => from.length > 0) as Array<[string, string]>;
+
+    for (const md of this.getMarkdownFiles()) {
+      let content: string;
+      try {
+        content = this.readSync(md.path);
+      } catch {
+        continue;
+      }
+      let updated = content;
+      for (const [from, to] of pairs) {
+        const esc = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        updated = updated.replace(new RegExp(`\\[\\[${esc}(?=[\\]|#|\\|])`, 'g'), `[[${to}`);
+      }
+      if (updated !== content) {
+        await this.writeContent(md.path, updated, 'update');
+      }
+    }
+  }
+
   // ── DataAdapter ──────────────────────────────────────────────────
   //
   // Obsidian's adapter is the raw filesystem view: it reaches paths the file
@@ -390,7 +438,10 @@ export interface VaultApp {
     getFirstLinkpathDest: (linkpath: string, sourcePath: string) => TFile | null;
     on: () => { unload: () => void };
   };
-  fileManager: { trashFile: (file: TFile) => Promise<void> };
+  fileManager: {
+    trashFile: (file: TFile) => Promise<void>;
+    renameFile: (file: TFile, newPath: string) => Promise<void>;
+  };
 }
 
 export async function createVaultApp(root: string): Promise<VaultApp> {
@@ -411,6 +462,7 @@ export async function createVaultApp(root: string): Promise<VaultApp> {
     },
     fileManager: {
       trashFile: (file: TFile) => vault.trash(file),
+      renameFile: (file: TFile, newPath: string) => vault.renameWithLinkRewrite(file, newPath),
     },
   };
 }

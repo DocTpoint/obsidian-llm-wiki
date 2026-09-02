@@ -155,3 +155,32 @@ describe('ConflictResolver — ambiguous designators', () => {
     expect(second.candidates).toHaveLength(2);
   });
 });
+
+describe('ConflictResolver — cross-folder claims (#472 both ways)', () => {
+  it('reports an opposite-folder title claim on a create', () => {
+    const r = new ConflictResolver(WIKI_FOLDER, pages(['concepts/Stress.md']));
+    const result = r.resolve({ name: 'Stress', slug: 'Stress', pageType: 'entity' });
+    // The claim never decides: the action stays 'create', the caller routes it.
+    expect(result.action).toBe('create');
+    expect(result.targetPath).toBe('wiki/entities/Stress.md');
+    expect(result.crossFolderCandidates?.map(p => p.path)).toEqual(['wiki/concepts/Stress.md']);
+  });
+
+  it('reports an opposite-folder alias claim alongside a same-type merge', () => {
+    const r = new ConflictResolver(WIKI_FOLDER, [
+      { path: 'wiki/concepts/Koronare-Herzkrankheit.md', title: 'Koronare-Herzkrankheit', aliases: ['KHK'] },
+      { path: 'wiki/entities/Ketohexokinase.md', title: 'Ketohexokinase', aliases: ['KHK'] },
+    ]);
+    const result = r.resolve({ name: 'KHK', slug: 'KHK', pageType: 'concept' });
+    expect(result.action).toBe('merge');
+    expect(result.targetPath).toBe('wiki/concepts/Koronare-Herzkrankheit.md');
+    expect(result.crossFolderCandidates?.map(p => p.path)).toEqual(['wiki/entities/Ketohexokinase.md']);
+  });
+
+  it('reports no cross-folder field when the opposite folder is silent', () => {
+    const r = new ConflictResolver(WIKI_FOLDER, pages(['entities/foo.md', 'concepts/bar.md']));
+    const result = r.resolve({ name: 'Foo', slug: 'foo', pageType: 'entity' });
+    expect(result.action).toBe('merge');
+    expect(result.crossFolderCandidates).toBeUndefined();
+  });
+});
