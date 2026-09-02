@@ -306,11 +306,90 @@ export class NodeVault {
     }
     return parseFrontmatter(content);
   }
+
+  /**
+   * Body wiki-links and embeds for `metadataCache.getFileCache`, in the shape
+   * `retargetLinksToPage` consumes: `link` (destination as written, incl. any
+   * `#subpath`, excl. any `|display`), `original` (the reference verbatim,
+   * embed `!` included), and character offsets. Obsidian's cache reports body
+   * references only — frontmatter wiki-links live in `frontmatterLinks`,
+   * which that module deliberately does not read — so the scan starts after
+   * the closing `---`. Parsed on demand, like `frontmatterOf`: the instrument
+   * runs one operation and exits, a cache would outlive nothing.
+   */
+  linkCacheOf(file: TFile): {
+    links: Array<{ link: string; original: string; position: { start: { offset: number }; end: { offset: number } } }>;
+    embeds: Array<{ link: string; original: string; position: { start: { offset: number }; end: { offset: number } } }>;
+  } {
+    let content: string;
+    try {
+      content = this.readSync(file.path);
+    } catch {
+      return { links: [], embeds: [] };
+    }
+    let bodyStart = 0;
+    if (content.startsWith('---\n')) {
+      const end = content.indexOf('\n---', 3);
+      if (end !== -1) bodyStart = end + 4;
+    }
+    const links: Array<{ link: string; original: string; position: { start: { offset: number }; end: { offset: number } } }> = [];
+    const embeds: typeof links = [];
+    const pattern = /(!?)\[\[([^[\]]+?)\]\]/g;
+    pattern.lastIndex = bodyStart;
+    for (let m = pattern.exec(content); m !== null; m = pattern.exec(content)) {
+      const inner = m[2];
+      const pipe = inner.indexOf('|');
+      const link = (pipe >= 0 ? inner.slice(0, pipe) : inner).trim();
+      const entry = {
+        link,
+        original: m[0],
+        position: { start: { offset: m.index }, end: { offset: m.index + m[0].length } },
+      };
+      (m[1] === '!' ? embeds : links).push(entry);
+    }
+    return { links, embeds };
+  }
+
+  /**
+   * Obsidian's linkpath resolver, headless: exact vault path first, then the
+   * path-suffix form the wiki writes (`entities/Foo`), then a bare-basename
+   * match — shortest path wins among several, tie broken by path so the
+   * answer never depends on index order. Frontmatter aliases are deliberately
+   * not consulted, matching the app's resolver.
+   */
+  getFirstLinkpathDest(linkpath: string, _sourcePath: string): TFile | null {
+    const wanted = linkpath.endsWith('.md') ? linkpath : `${linkpath}.md`;
+    const exact = this.files.get(normalizePath(wanted));
+    if (exact && exact.extension === 'md') return exact;
+
+    const bareName = linkpath.split('/').pop();
+    let best: TFile | null = null;
+    for (const f of this.getMarkdownFiles()) {
+      const hit = f.path.endsWith(`/${wanted}`) || f.basename === bareName && linkpath.indexOf('/') === -1;
+      if (!hit) continue;
+      if (
+        best === null ||
+        f.path.length < best.path.length ||
+        (f.path.length === best.path.length && f.path < best.path)
+      ) {
+        best = f;
+      }
+    }
+    return best;
+  }
 }
 
 export interface VaultApp {
   vault: NodeVault;
-  metadataCache: { getFileCache: (file: TFile) => { frontmatter: Record<string, unknown> } | null; on: () => { unload: () => void } };
+  metadataCache: {
+    getFileCache: (file: TFile) => {
+      frontmatter?: Record<string, unknown>;
+      links?: Array<{ link: string; original: string; position: { start: { offset: number }; end: { offset: number } } }>;
+      embeds?: Array<{ link: string; original: string; position: { start: { offset: number }; end: { offset: number } } }>;
+    } | null;
+    getFirstLinkpathDest: (linkpath: string, sourcePath: string) => TFile | null;
+    on: () => { unload: () => void };
+  };
   fileManager: { trashFile: (file: TFile) => Promise<void> };
 }
 
@@ -322,8 +401,12 @@ export async function createVaultApp(root: string): Promise<VaultApp> {
     metadataCache: {
       getFileCache: (file: TFile) => {
         const frontmatter = vault.frontmatterOf(file);
-        return frontmatter ? { frontmatter } : null;
+        const { links, embeds } = vault.linkCacheOf(file);
+        if (!frontmatter && links.length === 0 && embeds.length === 0) return null;
+        return { ...(frontmatter ? { frontmatter } : {}), links, embeds };
       },
+      getFirstLinkpathDest: (linkpath: string, sourcePath: string) =>
+        vault.getFirstLinkpathDest(linkpath, sourcePath),
       on: () => ({ unload: () => { /* nothing registered */ } }),
     },
     fileManager: {
