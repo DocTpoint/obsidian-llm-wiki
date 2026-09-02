@@ -1261,7 +1261,7 @@ export class WikiEngine {
       const contradictionStart = Date.now();
       for (const contradiction of analysis.contradictions) {
         try {
-          await this.noteContradiction(contradiction);
+          await this.noteContradiction(contradiction, file.path);
         } catch {
           // non-critical
         }
@@ -1802,8 +1802,8 @@ export class WikiEngine {
 
   // ---- Contradiction delegation ----
 
-  async noteContradiction(contradiction: ContradictionInfo) {
-    return this.contradictionManager.noteContradiction(contradiction);
+  async noteContradiction(contradiction: ContradictionInfo, sourceNotePath: string) {
+    return this.contradictionManager.noteContradiction(contradiction, sourceNotePath);
   }
 
   async getOpenContradictions(): Promise<Array<{ path: string; status: string; claim: string; sourcePage: string }>> {

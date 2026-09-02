@@ -44,13 +44,14 @@ import {
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
 import { mergeFrontmatter, parseFrontmatter, extractBody } from '../../core/frontmatter';
 import { incomingTypeTag } from '../../core/tag-vocab';
-import { appendContradictedByMarker, appendContradictionNotes } from '../../core/contradicted-marker';
+import { appendContradictedByMarker } from '../../core/contradicted-marker';
+import { buildContradictionRecord } from '../../core/contradiction-record';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
 import { UNIVERSAL_LINK_CONSTRAINTS } from '../prompts/constraints';
 import { getExistingWikiPages } from '../lint/get-existing-pages';
-import { classifyMergeNeed, isSourceOwnPageLemma } from './merge-triage';
+import { classifyMergeNeed, isSourceOwnPageLemma, type ComplementaryItem } from './merge-triage';
 import { assembleFinalContent } from './mentions-integration';
 import { applyComplementaryAppends } from './complementary-appends';
 import { firstQuotesForPrompt, isConversationSource, mergeError } from './contextualize';
@@ -166,9 +167,11 @@ export async function mergePage(
       } else if (strategy === 'complementary' && triage.items.length > 0) {
         // Item-level contradiction lane: a piece that conflicts with an
         // existing statement must not ride the per-section append (which
-        // integrates it as if it were a fact). It becomes an attributed
-        // conflict block, and the page gets the same frontmatter marker
-        // as the page-level 'contradictory' strategy.
+        // integrates it as if it were a fact). The page gets the same
+        // frontmatter marker as the page-level 'contradictory' strategy
+        // (the durable index), and the prose goes to a record file under
+        // `<wikiFolder>/contradictions/` — a body block is not a durable
+        // carrier, stripUnknownSections removes it on the next rewrite.
         const appendItems = triage.items.filter(i => i.kind !== 'contradictory');
         const conflictItems = triage.items.filter(i => i.kind === 'contradictory');
         console.debug(
@@ -184,13 +187,20 @@ export async function mergePage(
             )
           : existingBody;
         if (conflictItems.length > 0) {
-          complementaryBody = appendContradictionNotes(complementaryBody, conflictItems, sourceFile.basename);
           contradictedSourcePath = sourceFile.path;
+          await writeContradictionRecords(ctx, conflictItems, path, sourceFile.path);
         }
         if (complementaryBody === existingBody) {
-          console.debug(
-            `[mergePage] complementary path produced no per-section appends — falling back to body-merge for ${path}`,
-          );
+          if (contradictedSourcePath) {
+            // Only conflicts, no appends: the records are written and the
+            // marker still needs stamping — the body itself has nothing to
+            // merge, so keep it instead of falling into a body rewrite.
+            shouldSkip = true;
+          } else {
+            console.debug(
+              `[mergePage] complementary path produced no per-section appends — falling back to body-merge for ${path}`,
+            );
+          }
         } else {
           shouldSkip = true; // signal "use existing frontmatter + write complementaryBody"
         }
@@ -307,6 +317,51 @@ export async function mergePage(
     return path;
   } catch (error) {
     throw mergeError(error, info.name, pageType);
+  }
+}
+
+/**
+ * Write one contradiction record per item-level conflict. The record file
+ * under `<wikiFolder>/contradictions/` is the durable prose carrier; the
+ * frontmatter marker on the page is the index. File name is claim slug +
+ * date (same convention as ContradictionManager), and an existing record
+ * is left alone so idempotent re-runs are safe.
+ */
+async function writeContradictionRecords(
+  ctx: MergeContext,
+  items: readonly ComplementaryItem[],
+  pagePath: string,
+  sourceNotePath: string,
+): Promise<void> {
+  const wikiFolder = ctx.settings.wikiFolder;
+  const dir = `${wikiFolder}/contradictions`;
+  try {
+    await (ctx.app as { vault: { createFolder(p: string): Promise<unknown> } }).vault.createFolder(dir);
+  } catch {
+    // folder already exists
+  }
+  const labels = getSectionLabels(ctx.settings);
+  const date = new Date().toISOString().split('T')[0];
+  const pageRelPath = pagePath.startsWith(`${wikiFolder}/`)
+    ? pagePath.slice(wikiFolder.length + 1).replace(/\.md$/i, '')
+    : pagePath.replace(/\.md$/i, '');
+  for (const item of items) {
+    const record = buildContradictionRecord(
+      {
+        claim: item.content,
+        existingView: item.reason?.trim()
+          ? `${item.target_section}: ${item.reason.trim()}`
+          : item.target_section,
+        resolution: '',
+        pageRelPath,
+        sourceNotePath,
+        date,
+      },
+      labels,
+    );
+    const filePath = `${dir}/${record.fileName}`;
+    if (await ctx.tryReadFile(filePath)) continue;
+    await ctx.createOrUpdateFile(filePath, record.content);
   }
 }
 
