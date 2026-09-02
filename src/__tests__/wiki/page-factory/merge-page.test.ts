@@ -402,8 +402,8 @@ describe('mergePage — note excerpt window (payload fix)', () => {
   });
 });
 
-describe('mergePage — item-level contradiction lane stamps marker and appends attributed block', () => {
-  it('routes kind=contradictory items to the deterministic conflict block, not the section append', async () => {
+describe('mergePage — item-level contradiction lane stamps marker and writes a record', () => {
+  it('routes kind=contradictory items to a record file, not the section append or the body', async () => {
     const triage = JSON.stringify({
       strategy: 'complementary',
       reason: 'one conflicting claim',
@@ -419,9 +419,20 @@ describe('mergePage — item-level contradiction lane stamps marker and appends 
     const written = ctx.written.get('wiki/entities/caching.md');
     expect(written).toBeDefined();
     expect(written).toContain('## Description\nOld text.');
-    expect(written).toContain('## ⚠️ Potential Contradiction');
-    expect(written).toContain('**Source claim** (from note): Dose is 10mg');
+    // No body block: it is unknown to the section schema, so
+    // stripUnknownSections would remove it on the next rewrite.
+    expect(written).not.toContain('Potential Contradiction');
+    // The marker (the durable index) is stamped.
     expect(written).toContain('contradictions:');
     expect(written).toContain('note.md');
+    // The prose lives in a record under <wikiFolder>/contradictions/.
+    const recordPath = [...ctx.written.keys()].find(p => p.startsWith('wiki/contradictions/'));
+    expect(recordPath).toBeDefined();
+    const record = ctx.written.get(recordPath!)!;
+    expect(record).toContain('status: detected');
+    expect(record).toContain('Dose is 10mg');
+    expect(record).toContain('page states 5mg');
+    expect(record).toContain('source_page: "[[entities/caching]]"');
+    expect(record).toContain('source_note: "note.md"');
   });
 });
