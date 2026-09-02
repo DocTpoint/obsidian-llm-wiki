@@ -399,7 +399,7 @@ describe('classifyMergeNeed — item-level contradiction lane', () => {
           reason: 'mixed batch',
           items: [
             { kind: 'complementary', content: 'new fact', target_section: '## Background', reason: 'expands' },
-            { kind: 'contradictory', content: 'conflicting claim', target_section: '## Background', reason: 'conflicts with the stated dose' },
+            { kind: 'contradictory', content: 'conflicting claim', target_section: '## Background', reason: 'conflicts with the stated dose', existing_statement: 'existing' },
           ],
         }),
     });
@@ -429,5 +429,118 @@ describe('classifyMergeNeed — item-level contradiction lane', () => {
       '# x',
     );
     expect(result.items[0]?.kind).toBe('complementary');
+  });
+});
+
+describe('classifyMergeNeed — contradiction gate 1 (existing statement on the page)', () => {
+  const PAGE = '## Description\nThe standard dose is 5mg once daily.\n';
+
+  it('keeps a contradiction whose quote matches the page only in part, without the quote', async () => {
+    const ctx = makeCtx({
+      createMessage: async () => JSON.stringify({
+        strategy: 'complementary',
+        items: [{ kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', reason: 'conflicts', existing_statement: 'The page says the standard dose is 5mg once daily for adults' }],
+      }),
+    });
+    const r = await classifyMergeNeed(ctx, createMockEntity({ name: 'X' }), 'entity', { path: 'p.md', basename: 'p' }, PAGE);
+    expect(r.items[0].kind).toBe('contradictory');
+    expect(r.items[0].existing_statement).toBeUndefined();
+    expect(r.demoted).toEqual([]);
+  });
+
+  it('keeps a contradiction whose quoted statement is on the page, and carries the quote', async () => {
+    const ctx = makeCtx({
+      createMessage: async () => JSON.stringify({
+        strategy: 'complementary',
+        items: [{ kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', reason: 'conflicts', existing_statement: 'The standard dose is 5mg once daily.' }],
+      }),
+    });
+    const r = await classifyMergeNeed(ctx, createMockEntity({ name: 'X' }), 'entity', { path: 'p.md', basename: 'p' }, PAGE);
+    expect(r.items[0].kind).toBe('contradictory');
+    expect(r.items[0].existing_statement).toBe('The standard dose is 5mg once daily.');
+    expect(r.demoted).toEqual([]);
+  });
+
+  it('demotes a contradiction that quotes nothing — a conflict with nothing on the page is not a contradiction', async () => {
+    const ctx = makeCtx({
+      createMessage: async () => JSON.stringify({
+        strategy: 'complementary',
+        items: [{ kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', reason: 'conflicts with the known dose' }],
+      }),
+    });
+    const r = await classifyMergeNeed(ctx, createMockEntity({ name: 'X' }), 'entity', { path: 'p.md', basename: 'p' }, PAGE);
+    expect(r.items[0].kind).toBe('complementary');
+    expect(r.items[0].existing_statement).toBeUndefined();
+    expect(r.demoted).toEqual([{ content: 'Dose is 10mg', target_section: '## Description', gate: 'existing-statement', detail: '' }]);
+  });
+
+  it('demotes a contradiction whose quote is not on the page (world knowledge dressed as a quote)', async () => {
+    const ctx = makeCtx({
+      createMessage: async () => JSON.stringify({
+        strategy: 'complementary',
+        items: [{ kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', existing_statement: 'Guidelines recommend 5mg twice daily.' }],
+      }),
+    });
+    const r = await classifyMergeNeed(ctx, createMockEntity({ name: 'X' }), 'entity', { path: 'p.md', basename: 'p' }, PAGE);
+    expect(r.items[0].kind).toBe('complementary');
+    expect(r.demoted[0].gate).toBe('existing-statement');
+    expect(r.demoted[0].detail).toBe('Guidelines recommend 5mg twice daily.');
+  });
+
+  it('asks for the verbatim existing statement in the prompt', async () => {
+    let prompt = '';
+    const ctx = makeCtx({
+      createMessage: async (req: unknown) => { prompt = (req as { messages: Array<{ content: string }> }).messages[0].content; return JSON.stringify({ strategy: 'skip', items: [] }); },
+    });
+    await classifyMergeNeed(ctx, createMockEntity({ name: 'X' }), 'entity', { path: 'p.md', basename: 'p' }, PAGE);
+    expect(prompt).toContain('`existing_statement` (contradictory only) = the sentence on the page that the piece conflicts with, copied VERBATIM');
+  });
+});
+
+describe('classifyMergeNeed — contradiction gate 2 (the source holds the claim)', () => {
+  const PAGE = '## Description\nRed light acts through cytochrome c oxidase.\n';
+  const EXCERPT = 'A 2019 paper argues that CCO is not the primary photoacceptor. Most reviews keep CCO as the main pathway.';
+  const triage = JSON.stringify({
+    strategy: 'complementary',
+    items: [{ kind: 'contradictory', content: 'CCO is not the primary photoacceptor', target_section: '## Description', existing_statement: 'Red light acts through cytochrome c oxidase.' }],
+  });
+
+  function seqCtx(responses: string[]) {
+    let i = 0; const prompts: string[] = [];
+    const ctx = makeCtx({ createMessage: async (req: unknown) => { prompts.push((req as { messages: Array<{ content: string }> }).messages[0].content); return responses[i++] ?? '{}'; } });
+    return { ctx, prompts };
+  }
+
+  it('a reported position is demoted, with the excerpt sentence as the reason', async () => {
+    const { ctx, prompts } = seqCtx([triage, JSON.stringify({ holds: 'no', evidence: 'A 2019 paper argues that CCO is not the primary photoacceptor.' })]);
+    const r = await classifyMergeNeed(ctx, createMockEntity({ name: 'ATP' }), 'entity', { path: 'p.md', basename: 'p' }, PAGE, undefined, EXCERPT);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain(EXCERPT);
+    expect(prompts[1]).not.toContain('cytochrome c oxidase.\n'); // page content is not sent
+    expect(r.items[0].kind).toBe('complementary');
+    expect(r.items[0].existing_statement).toBeUndefined();
+    expect(r.demoted).toEqual([{ content: 'CCO is not the primary photoacceptor', target_section: '## Description', gate: 'source-stance', detail: 'A 2019 paper argues that CCO is not the primary photoacceptor.' }]);
+  });
+
+  it('a held position stays contradictory', async () => {
+    const { ctx } = seqCtx([triage, JSON.stringify({ holds: 'yes', evidence: 'Most reviews keep CCO as the main pathway.' })]);
+    const r = await classifyMergeNeed(ctx, createMockEntity({ name: 'ATP' }), 'entity', { path: 'p.md', basename: 'p' }, PAGE, undefined, EXCERPT);
+    expect(r.items[0].kind).toBe('contradictory');
+    expect(r.demoted).toEqual([]);
+  });
+
+  it('without an excerpt gate 2 is not asked and the item stays', async () => {
+    const { ctx, prompts } = seqCtx([triage]);
+    const r = await classifyMergeNeed(ctx, createMockEntity({ name: 'ATP' }), 'entity', { path: 'p.md', basename: 'p' }, PAGE);
+    expect(prompts).toHaveLength(1);
+    expect(r.items[0].kind).toBe('contradictory');
+  });
+
+  it('gate 2 is not asked for an item gate 1 already demoted', async () => {
+    const t = JSON.stringify({ strategy: 'complementary', items: [{ kind: 'contradictory', content: 'c', target_section: '## Description' }] });
+    const { ctx, prompts } = seqCtx([t]);
+    const r = await classifyMergeNeed(ctx, createMockEntity({ name: 'ATP' }), 'entity', { path: 'p.md', basename: 'p' }, PAGE, undefined, EXCERPT);
+    expect(prompts).toHaveLength(1);
+    expect(r.demoted[0].gate).toBe('existing-statement');
   });
 });

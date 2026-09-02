@@ -16,7 +16,7 @@
 //     kept tight to control classify-token cost.
 
 import { TFile } from 'obsidian';
-import type { EntityInfo, ConceptInfo, LLMWikiSettings, LLMClient, SourceContext } from '../../types';
+import type { EntityInfo, ConceptInfo, SourceContext } from '../../types';
 import { slugKeys } from '../../core/slug';
 import { PROMPTS } from '../../prompts';
 import { parseJsonResponse } from '../../core/json';
@@ -27,6 +27,8 @@ import { firstQuotesForPrompt } from './contextualize';
 import { renderNoteExcerptBlock } from './note-window';
 import { renderTemplate } from '../../core/template-renderer';
 import { MergeTriageSchema, type MergeTriage } from '../../llm-sdk/output-schemas';
+import { applyContradictionGates, type DemotedContradiction, type SourceStanceContext } from './contradiction-gates';
+export type { DemotedContradiction } from './contradiction-gates';
 
 /** Strategy selected by the LLM for handling new information vs. an existing page. */
 export type MergeStrategy = 'merge' | 'skip' | 'complementary' | 'contradictory';
@@ -43,6 +45,8 @@ export interface ComplementaryItem {
   content: string;
   target_section: string;
   reason?: string;
+  /** Contradictory only: the page sentence the claim conflicts with, verified on the page (gate 1, contradiction-gates.ts). */
+  existing_statement?: string;
 }
 
 /**
@@ -57,6 +61,8 @@ export interface MergeTriageResult {
   strategy: MergeStrategy;
   items: ComplementaryItem[];
   reason: string;
+  /** `contradictory` items the gates turned into plain complementary facts. */
+  demoted: DemotedContradiction[];
 }
 
 /**
@@ -66,9 +72,7 @@ export interface MergeTriageResult {
  * path (`createMessageWithOutput`) is available when the client
  * implements it (Phase B).
  */
-export interface MergeTriageContext {
-  settings: LLMWikiSettings;
-  getClient(): LLMClient | null;
+export interface MergeTriageContext extends SourceStanceContext {
   buildSystemPrompt(mode: 'full' | 'compact' | 'merge'): Promise<string>;
 }
 
@@ -158,6 +162,7 @@ export async function classifyMergeNeed(
   // Items are populated only for the complementary path. Validate the
   // shape defensively — invalid items throw so the caller falls back.
   const items: ComplementaryItem[] = [];
+  let demoted: DemotedContradiction[] = [];
   if (strategy === 'complementary') {
     const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
     if (rawItems.length === 0) {
@@ -171,18 +176,28 @@ export async function classifyMergeNeed(
       ) {
         throw new Error('merge triage: invalid complementary item');
       }
+      // Unknown/missing kinds default to 'complementary' so older or
+      // sloppier model outputs keep today's behavior.
+      const kind: ComplementaryItem['kind'] = item.kind === 'contradictory' ? 'contradictory' : 'complementary';
+      const statement = typeof item.existing_statement === 'string' ? item.existing_statement.trim() : '';
       items.push({
-        // Unknown/missing kinds default to 'complementary' so older or
-        // sloppier model outputs keep today's behavior.
-        kind: item.kind === 'contradictory' ? 'contradictory' : 'complementary',
+        kind,
         content: item.content,
         target_section: item.target_section,
         reason: typeof item.reason === 'string' ? item.reason : undefined,
+        ...(kind === 'contradictory' ? { existing_statement: statement } : {}),
       });
     }
+    // Both gates, in order: the quoted page sentence has to be on the page,
+    // and the source has to hold the claim rather than report it.
+    ({ demoted } = await applyContradictionGates(items, existingContent, ctx, {
+      pageName: info.name,
+      sourceExcerpt: sourceExcerpt ?? '',
+      sourceContext,
+    }));
   }
 
-  return { strategy, items, reason };
+  return { strategy, items, reason, demoted };
 }
 
 /**

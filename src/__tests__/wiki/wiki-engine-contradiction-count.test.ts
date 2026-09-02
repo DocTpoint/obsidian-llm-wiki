@@ -51,7 +51,7 @@ const TRIAGE = JSON.stringify({
   strategy: 'complementary',
   reason: 'one conflicting claim',
   items: [
-    { kind: 'contradictory', content: 'CCO is not the primary photoacceptor', target_section: 'Description', reason: 'page states NIR acts via CCO' },
+    { kind: 'contradictory', content: 'CCO is not the primary photoacceptor', target_section: 'Description', reason: 'page states NIR acts via CCO', existing_statement: 'NIR detaches NO from CCO.' },
   ],
 });
 

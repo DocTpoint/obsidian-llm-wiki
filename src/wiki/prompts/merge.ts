@@ -50,7 +50,8 @@ Examine the new information and classify each piece into ONE of the four strateg
   - \`kind\` = "complementary" for a new fact, "contradictory" for a piece that CONFLICTS with a specific statement already on the page
   - \`content\` = the specific new fact or conflicting claim (verbatim from the source if possible, otherwise a concise paraphrase)
   - \`target_section\` = EXACTLY one name from the available sections list (for "contradictory": the section containing the contradicted statement)
-  - \`reason\` = one-sentence justification (for "contradictory": name the existing statement it conflicts with)
+  - \`reason\` = one-sentence justification
+  - \`existing_statement\` (contradictory only) = the sentence on the page that the piece conflicts with, copied VERBATIM from "Existing Page Content"
 - "contradictory" — the new info AS A WHOLE conflicts with the page's core claims (not just single statements — use a "contradictory" item inside "complementary" for those). The full body-rewrite path will handle attribution. \`items\` MUST be an empty array.
 
 Output JSON format (ONLY this object, no other text):
@@ -61,7 +62,8 @@ Output JSON format (ONLY this object, no other text):
       "kind": "complementary" | "contradictory",
       "content": "Specific new fact text",
       "target_section": "Exact section name from the available sections list",
-      "reason": "Why this belongs in target section (one sentence)"
+      "reason": "Why this belongs in target section (one sentence)",
+      "existing_statement": "(contradictory only) verbatim sentence from the existing page"
     }
   ],
   "reason": "One-sentence overall justification"
@@ -71,6 +73,27 @@ Rules:
 - Default to "merge" if uncertain — better to rewrite than to silently drop new info.
 - \`target_section\` MUST be exactly one of the available sections list (case-sensitive).{{source_ownership_rule}}
 - Output ONLY JSON, nothing else.`,
+
+  // Contradiction gate 2 — the source-stance question, asked as its own small
+  // call over the note excerpt the triage already saw. Inside the triage the
+  // same question (as a `stance` field) answered "reports" for every item,
+  // the RCT the note itself presents included; alone, over excerpt + claim,
+  // it separated reported from held positions 24/24 vs 48/48 (S150/S151).
+  // The evidence sentence is checked against the excerpt by the caller.
+  sourceStance: `You are given an excerpt of a source note and one claim that was extracted from it.
+
+**Excerpt of the source note (what it says about "{{page_name}}"):**
+{{source_excerpt}}{{source_context}}
+
+**Extracted claim:**
+{{claim}}
+
+**Question:** Does the source itself hold this claim as its own position?
+- Answer "yes" if the source asserts the claim, presents it as established, or reports evidence it accepts.
+- Answer "no" if the source attributes the claim to others (critics, older reviews, a minority view, a hypothesis under debate) without endorsing it, or describes it as a position it argues against.
+
+Answer with JSON only:
+{"holds": "yes" | "no", "evidence": "<the sentence from the excerpt that shows this, verbatim>"}`,
 
   mergeEntityPage: `You are a Wiki editor performing intelligent content integration. Merge new source information into an existing page following the schema-defined structure.
 

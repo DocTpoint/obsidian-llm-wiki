@@ -584,7 +584,7 @@ export const JA_TEXTS = {
     disableThinkingDesc: 'モデル応答の思考過程/推論テキスト出力をオフにします。デフォルトはオフで、モデルが推論を表示するかを自分で決めるため、それが通常最も良い回答になります。プロバイダーが生の推論テキストを応答に混ぜてしまい、きれいな答えが欲しい場合にのみオンにしてください。',
     taskPoliciesPlaceholder: '例: extract=text:off',
     taskPoliciesName: 'ステップごとの出力モードと思考',
-    taskPoliciesDesc: 'パイプラインの各ステップにつき 1 項目、`step=mode:thinking` 形式でカンマ区切り（例: `extract=text:off`）。モード: `-`（変更なし）、`schema`、`json`、`text`。思考: `-`、`off`、`on`、`low`、`medium`、`high`。ステップ名には extract・extract-retry・lemma-classify・merge-triage・dedup・page-generate・related-page・lint-dedup などがあります（綴りを誤った名前は何にも一致しません）。空欄なら組み込みの既定（抽出はテキストモード）。解析できない項目は保存されません。',
+    taskPoliciesDesc: 'パイプラインの各ステップにつき 1 項目、`step=mode:thinking` 形式でカンマ区切り（例: `extract=text:off`）。モード: `-`（変更なし）、`schema`、`json`、`text`。思考: `-`、`off`、`on`、`low`、`medium`、`high`。ステップ名には extract・extract-retry・lemma-classify・merge-triage・source-stance・dedup・page-generate・related-page・lint-dedup などがあります（綴りを誤った名前は何にも一致しません）。空欄なら組み込みの既定（抽出はテキストモード）。解析できない項目は保存されません。',
     // Issue #137: 互換性に関する注意事項（簡潔；プロバイダ一覧は省略）
     extractionTemperatureName: '抽出温度',
     extractionTemperatureDesc: 'モデルがエンティティ/コンセプトページを書くときに、厳密さを優先するか創造性を優先するかを制御します。値が低いほど決定的で原文に忠実、値が高いほど変化に富みます。ほとんどのユーザーは空欄のままで問題ありません。',
