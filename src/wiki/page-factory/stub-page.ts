@@ -117,14 +117,15 @@ export function buildDissentStubContent(params: {
 }): string {
   const { item, stubType, sourceSlug, cell } = params;
   const today = new Date().toISOString().split('T')[0];
-  const tag = item.type || (stubType === 'entity' ? 'other' : 'term');
-  const domainsBlock = item.domains?.length
-    ? `domains:\n${item.domains.map(d => `  - ${d}`).join('\n')}\n`
-    : '';
+  // Tag-Achse Stufe 4 (S137): one field — the identity value (the extraction
+  // type) and the validated belonging values share `tags:`; no `domains:`.
+  const identity = item.type || (stubType === 'entity' ? 'other' : 'term');
+  const tagValues = [identity, ...(item.domains ?? []).filter(d => d !== identity)];
+  const tag = tagValues.join(', ');
   const quote = item.mentions_with_provenance?.[0]?.quote ?? item.mentions_in_source?.[0];
   const summary = (item.summary ?? '').trim();
   const quoteBlock = quote ? `\n> "${quote.trim()}" — [[sources/${sourceSlug}]]\n` : '';
-  return `---\ntype: ${stubType}\ncreated: ${today}\nsources:\n  - "[[sources/${sourceSlug}]]"\ntags: [${tag}]\n${domainsBlock}stub: true\ngeneration_complete: false\n---\n# ${item.name}\n\n> Stub created by the ingest candidate gate (${cell}) — [[sources/${sourceSlug}]] names this without treating it. Will be filled by the next ingest of a source that does.\n${summary ? `\n${summary}\n` : ''}${quoteBlock}`;
+  return `---\ntype: ${stubType}\ncreated: ${today}\nsources:\n  - "[[sources/${sourceSlug}]]"\ntags: [${tag}]\nstub: true\ngeneration_complete: false\n---\n# ${item.name}\n\n> Stub created by the ingest candidate gate (${cell}) — [[sources/${sourceSlug}]] names this without treating it. Will be filled by the next ingest of a source that does.\n${summary ? `\n${summary}\n` : ''}${quoteBlock}`;
 }
 
 export interface StubBirthDeps {

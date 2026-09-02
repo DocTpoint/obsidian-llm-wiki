@@ -81,8 +81,10 @@ describe('buildDissentStubContent', () => {
     expect(content).toContain('stub: true');
     expect(content).toContain('generation_complete: false');
     expect(content).toContain('- "[[sources/adhs]]"');
-    expect(content).toContain('tags: [other]');
-    expect(content).toContain('domains:\n  - Pharmakologie');
+    // Tag-Achse Stufe 4 (S137): one field — identity value + belonging values
+    // share `tags:`, no `domains:` block is born.
+    expect(content).toContain('tags: [other, Pharmakologie]');
+    expect(content).not.toContain('domains:');
   });
 
   it('body is the paid-for extraction: summary, one mention, the cell named', () => {
