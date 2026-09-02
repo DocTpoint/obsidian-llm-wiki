@@ -101,6 +101,40 @@ export function parseFrontmatter(content: string): FrontmatterData | null {
   return result;
 }
 
+/**
+ * The origin notes a `sources/` page was built from, normalized to vault
+ * paths.
+ *
+ * Two fields can name them and they are not interchangeable. The scalar
+ * `source_file:` is the canonical owner, written by the generation
+ * template. The `sources:` list records the multi-source merge: the other
+ * ingests that later extended this page. It holds `[[sources/X]]`
+ * wikilinks by contract — the Issue #81 normalizer removes or remaps any
+ * external `[[Notizen/X.md]]` entry that lands there — so a note path
+ * found in it is the exception, not the rule. Read the scalar first and
+ * fall back to the list, which is the resolution `scanSourceDrift` (#577)
+ * already uses.
+ *
+ * Returns an empty array when neither field is present: a page with no
+ * recorded origin proves nothing about ownership, and callers must decide
+ * for themselves what absence means.
+ */
+export function originNoteRefs(fm: FrontmatterData): string[] {
+  const raw: string[] = [];
+  const sourceFile = fm.source_file;
+  if (typeof sourceFile === 'string') raw.push(sourceFile);
+  if (Array.isArray(fm.sources)) raw.push(...fm.sources.map(s => String(s)));
+
+  return raw
+    .map(entry => {
+      const trimmed = entry.trim();
+      return trimmed.startsWith('[[') && trimmed.endsWith(']]')
+        ? trimmed.slice(2, -2).trim()
+        : trimmed;
+    })
+    .filter(entry => entry.length > 0);
+}
+
 /** Serialize value to YAML format for frontmatter */
 function yamlStringify(value: unknown): string {
   if (Array.isArray(value)) {

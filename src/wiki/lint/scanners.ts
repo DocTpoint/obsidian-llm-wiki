@@ -1,7 +1,7 @@
 // Lint scanner functions — extracted from lint-controller.ts for testability.
 // These have no Obsidian API dependencies and can be unit tested directly.
 
-import { parseFrontmatter, extractBody } from '../../core/frontmatter';
+import { parseFrontmatter, extractBody, originNoteRefs } from '../../core/frontmatter';
 import { hashBody } from '../../core/source-requirements';
 import { CONTRADICTIONS_KEY } from '../../core/contradicted-marker';
 import { getActiveEntityTags, getActiveConceptTags, getActiveSourceTags } from '../../core/tag-vocab';
@@ -512,23 +512,12 @@ export function scanSourceDrift(
 
     // Canonical source pages carry a scalar `source_file:` wikilink
     // (generation.ts template); a `sources:` list only appears on pages
-    // written through the entity/concept path. Read the scalar first and
-    // fall back to the list — reading only `sources:` would make the
-    // scanner blind on every canonical page (found by probing a real
-    // vault: 35/35 source pages carried source_file, none sources:).
-    const rawRefs: string[] = [];
-    const sourceFile = (fm as Record<string, unknown>).source_file;
-    if (typeof sourceFile === 'string') rawRefs.push(sourceFile);
-    if (Array.isArray(fm.sources)) rawRefs.push(...fm.sources.map(s => String(s)));
-
-    const notePaths = rawRefs
-      .map(s => {
-        const trimmed = s.trim();
-        return trimmed.startsWith('[[') && trimmed.endsWith(']]')
-          ? trimmed.slice(2, -2).trim()
-          : trimmed;
-      })
-      .filter(p => p.length > 0);
+    // written through the entity/concept path. `originNoteRefs` reads the
+    // scalar first and falls back to the list — reading only `sources:`
+    // would make the scanner blind on every canonical page (found by
+    // probing a real vault: 35/35 source pages carried source_file, none
+    // sources:).
+    const notePaths = originNoteRefs(fm);
     if (notePaths.length === 0) continue;
 
     let anyReadable = false;
