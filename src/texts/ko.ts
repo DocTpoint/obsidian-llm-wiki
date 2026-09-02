@@ -658,6 +658,10 @@ export const KO_TEXTS = {
     lintContradictionSection: '모순 (감지됨)',
     lintDuplicateSection: '중복 페이지 (감지됨)',
     lintNoIssuesFound: '중복, 깨진 링크, 빈 페이지, 고아 페이지 또는 출처 없는 인용이 감지되지 않았습니다.',
+    lintSourceDriftSection: '수집 후 변경된 소스 노트 [{count}개]',
+    lintSourceDriftItem: '- [[{page}]] — 원본 노트 [[{note}]]가 수집 후 수정되었습니다. 페이지가 오래되었을 수 있습니다',
+    lintContradictionMarkerSection: '모순 마커가 있는 페이지 (병합 분류) [{count}개]',
+    lintContradictionMarkerItem: '- [[{page}]] — 충돌하는 소스: {sources}. 검토 후 contradictions: 마커를 제거하세요',
     lintQuoteGroundingSection: '출처 없는 인용 (감지됨) [{count}개]',
     lintQuoteGroundingItem: '- [[{page}]]{sourceHint}: "{quote}"',
     lintDeadLinkItem: '- [[{source}]] → **{target}** (페이지가 존재하지 않음){dupFlag}',
@@ -886,6 +890,10 @@ export const KO_TEXTS = {
     multiFileStatusCompleted: '완료됨',
     multiFileStatusFailed: '실패함',
     multiFileCancelAria: '이 파일 취소',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: '수집됨',
+    multiFileRowDrifted: '수집 후 노트가 변경됨',
     startupCheckNoticeLevelName: '빠른 수정 결과 표시',
     startupCheckNoticeLevelDesc: 'QuickFixes는 플러그인 시작 시 항상 실행됩니다(Welcome 노트, 폴더 구조, 소스 정규화, 불완전한 페이지, 로그 헤더). 시작 후 요약 알림을 표시할지 선택합니다. 무음 모드는 개발자 콘솔 및 작업 기록 패널에만 기록됩니다.',
     startupCheckNoticeVisible: '표시(알림 표시)',

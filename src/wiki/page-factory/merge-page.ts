@@ -42,18 +42,20 @@ import {
   stripUnknownSections,
 } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
-import { mergeFrontmatter, parseFrontmatter } from '../../core/frontmatter';
+import { mergeFrontmatter, parseFrontmatter, extractBody } from '../../core/frontmatter';
 import { incomingTypeTag } from '../../core/tag-vocab';
 import { appendContradictedByMarker } from '../../core/contradicted-marker';
+import { buildContradictionRecord } from '../../core/contradiction-record';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
 import { UNIVERSAL_LINK_CONSTRAINTS } from '../prompts/constraints';
 import { getExistingWikiPages } from '../lint/get-existing-pages';
-import { classifyMergeNeed, isSourceOwnPageLemma } from './merge-triage';
+import { classifyMergeNeed, isSourceOwnPageLemma, type ComplementaryItem } from './merge-triage';
 import { assembleFinalContent } from './mentions-integration';
 import { applyComplementaryAppends } from './complementary-appends';
 import { firstQuotesForPrompt, isConversationSource, mergeError } from './contextualize';
+import { buildNoteExcerpt, renderNoteExcerptBlock } from './note-window';
 
 /**
  * Minimal context contract required by mergePage / appendToReviewedPage.
@@ -112,6 +114,26 @@ export async function mergePage(
       sourceContext,
     });
 
+    // Note excerpt window — the merge payload was a constant (item summary +
+    // two quotes) regardless of how much the note says about this page;
+    // measured on a real ingest, 5 of 7 merges added nothing but links. Give
+    // both merge consumers the note's own paragraphs about the page — and
+    // the page whose lemma the note carries gets the whole note, because a
+    // note about X is THE source for page X. Deterministic, bounded, and ''
+    // (prompt-invariant) when the note never discusses the page in prose.
+    const noteRaw = await ctx.tryReadFile(sourceFile.path);
+    const noteExcerpt = noteRaw
+      ? buildNoteExcerpt(extractBody(noteRaw), {
+          pageName: pageBasename,
+          aliases: [
+            info.name,
+            ...(info.aliases ?? []),
+            ...(Array.isArray(existingAliases) ? existingAliases : []),
+          ],
+          fullNote: sourceOwnsPage,
+        })
+      : '';
+
     // 1. v1.24.0 #216 — classify-then-route triage.
     let shouldSkip = false;
     let complementaryBody: string | null = null;
@@ -121,7 +143,7 @@ export async function mergePage(
     // not classified.
     let contradictedSourcePath: string | null = null;
     try {
-      const triage = await classifyMergeNeed(ctx, info, pageType, sourceFile, existingBody, sourceContext);
+      const triage = await classifyMergeNeed(ctx, info, pageType, sourceFile, existingBody, sourceContext, noteExcerpt);
 
       // #312 part 2: a page's own primary source must not be dropped on a
       // novelty judgement — that is how an incidental mention keeps a
@@ -143,20 +165,42 @@ export async function mergePage(
         );
         shouldSkip = true;
       } else if (strategy === 'complementary' && triage.items.length > 0) {
+        // Item-level contradiction lane: a piece that conflicts with an
+        // existing statement must not ride the per-section append (which
+        // integrates it as if it were a fact). The page gets the same
+        // frontmatter marker as the page-level 'contradictory' strategy
+        // (the durable index), and the prose goes to a record file under
+        // `<wikiFolder>/contradictions/` — a body block is not a durable
+        // carrier, stripUnknownSections removes it on the next rewrite.
+        const appendItems = triage.items.filter(i => i.kind !== 'contradictory');
+        const conflictItems = triage.items.filter(i => i.kind === 'contradictory');
         console.debug(
-          `[mergePage] triage=complementary items=${triage.items.length} — appending to existing sections for ${path}`,
+          `[mergePage] triage=complementary items=${appendItems.length} conflicts=${conflictItems.length} — appending to existing sections for ${path}`,
         );
-        complementaryBody = await applyComplementaryAppends(
-          ctx,
-          triage.items,
-          existingBody,
-          info,
-          sourceFile,
-        );
+        complementaryBody = appendItems.length > 0
+          ? await applyComplementaryAppends(
+              ctx,
+              appendItems,
+              existingBody,
+              info,
+              sourceFile,
+            )
+          : existingBody;
+        if (conflictItems.length > 0) {
+          contradictedSourcePath = sourceFile.path;
+          await writeContradictionRecords(ctx, conflictItems, path, sourceFile.path);
+        }
         if (complementaryBody === existingBody) {
-          console.debug(
-            `[mergePage] complementary path produced no per-section appends — falling back to body-merge for ${path}`,
-          );
+          if (contradictedSourcePath) {
+            // Only conflicts, no appends: the records are written and the
+            // marker still needs stamping — the body itself has nothing to
+            // merge, so keep it instead of falling into a body rewrite.
+            shouldSkip = true;
+          } else {
+            console.debug(
+              `[mergePage] complementary path produced no per-section appends — falling back to body-merge for ${path}`,
+            );
+          }
         } else {
           shouldSkip = true; // signal "use existing frontmatter + write complementaryBody"
         }
@@ -178,9 +222,14 @@ export async function mergePage(
 
     if (shouldSkip) {
       const bodyToWrite = complementaryBody ?? existingBody;
+      // Item-level contradictions reach this path (complementary write):
+      // stamp the same frontmatter marker the rewrite path stamps below.
+      const fmToWrite = contradictedSourcePath
+        ? appendContradictedByMarker(frontmatter, contradictedSourcePath)
+        : frontmatter;
       await ctx.createOrUpdateFile(
         path,
-        await assembleFinalContent(ctx, frontmatter, bodyToWrite, info, sourceFile, existingBody),
+        await assembleFinalContent(ctx, fmToWrite, bodyToWrite, info, sourceFile, existingBody),
       );
       return path;
     }
@@ -196,6 +245,7 @@ export async function mergePage(
       related_entities: info.related_entities?.join(', ') || '',
       related_concepts: info.related_concepts?.join(', ') || '',
       key_details: firstQuotesForPrompt(info),
+      source_excerpt: renderNoteExcerptBlock(noteExcerpt, pageBasename),
     });
 
     // #328 Phase 1 follow-up: user-layer tag-vocab removed — system layer injects once.
@@ -271,6 +321,51 @@ export async function mergePage(
 }
 
 /**
+ * Write one contradiction record per item-level conflict. The record file
+ * under `<wikiFolder>/contradictions/` is the durable prose carrier; the
+ * frontmatter marker on the page is the index. File name is claim slug +
+ * date (same convention as ContradictionManager), and an existing record
+ * is left alone so idempotent re-runs are safe.
+ */
+async function writeContradictionRecords(
+  ctx: MergeContext,
+  items: readonly ComplementaryItem[],
+  pagePath: string,
+  sourceNotePath: string,
+): Promise<void> {
+  const wikiFolder = ctx.settings.wikiFolder;
+  const dir = `${wikiFolder}/contradictions`;
+  try {
+    await (ctx.app as { vault: { createFolder(p: string): Promise<unknown> } }).vault.createFolder(dir);
+  } catch {
+    // folder already exists
+  }
+  const labels = getSectionLabels(ctx.settings);
+  const date = new Date().toISOString().split('T')[0];
+  const pageRelPath = pagePath.startsWith(`${wikiFolder}/`)
+    ? pagePath.slice(wikiFolder.length + 1).replace(/\.md$/i, '')
+    : pagePath.replace(/\.md$/i, '');
+  for (const item of items) {
+    const record = buildContradictionRecord(
+      {
+        claim: item.content,
+        existingView: item.reason?.trim()
+          ? `${item.target_section}: ${item.reason.trim()}`
+          : item.target_section,
+        resolution: '',
+        pageRelPath,
+        sourceNotePath,
+        date,
+      },
+      labels,
+    );
+    const filePath = `${dir}/${record.fileName}`;
+    if (await ctx.tryReadFile(filePath)) continue;
+    await ctx.createOrUpdateFile(filePath, record.content);
+  }
+}
+
+/**
  * Issue #216 — append-only path for `reviewed: true` pages. The existing
  * content is locked (the Mentions section is preserved by the pageIsReviewed
  * flag); we only ask the LLM to draft a small new block, then assemble.
@@ -297,12 +392,29 @@ export async function appendToReviewedPage(
       incomingTypeTag(ctx.settings, pageKind, info.type),
     );
 
-    // 2. Minimal LLM check for genuinely new content.
+    // 2. Minimal LLM check for genuinely new content. Same note-excerpt
+    // window as mergePage (matched paragraphs only — no lemma full-note
+    // here, the reviewed body is locked anyway and only a small block is
+    // drafted): the draft should see what the note says, not just two quotes.
+    const reviewedPageBasename = path.split('/').pop()?.replace(/\.md$/i, '') ?? '';
+    const reviewedAliases = parseFrontmatter(existingContent)?.aliases;
+    const reviewedNoteRaw = await ctx.tryReadFile(sourceFile.path);
+    const reviewedExcerpt = reviewedNoteRaw
+      ? buildNoteExcerpt(extractBody(reviewedNoteRaw), {
+          pageName: reviewedPageBasename,
+          aliases: [
+            info.name,
+            ...(info.aliases ?? []),
+            ...(Array.isArray(reviewedAliases) ? reviewedAliases : []),
+          ],
+        })
+      : '';
     const prompt = renderTemplate(PROMPTS.appendToReviewedPage, {
       existing_body: existingBody,
       new_source: sourceFile.basename,
       entity_summary: info.summary,
       key_details: firstQuotesForPrompt(info),
+      source_excerpt: renderNoteExcerptBlock(reviewedExcerpt, reviewedPageBasename),
       constraints: UNIVERSAL_LINK_CONSTRAINTS,
     });
 

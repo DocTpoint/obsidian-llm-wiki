@@ -669,6 +669,10 @@ export const EN_TEXTS = {
     lintSourcesNormalizedSection: 'Sources normalized (auto-fixed) [{files} files / {entries} entries]',
     lintSourcesNormalizedItem: 'Cleaned {entries} polluted sources entries across {files} file(s) (external paths, .md extensions, alias pipes removed and deduplicated).',
     lintNoIssuesFound: 'No duplicates, dead links, empty pages, orphan pages, or ungrounded quotes detected.',
+    lintSourceDriftSection: 'Source notes changed since ingest [{count}]',
+    lintSourceDriftItem: '- [[{page}]] — origin note [[{note}]] was edited after ingest; the page may be stale',
+    lintContradictionMarkerSection: 'Pages flagged with contradictions (merge triage) [{count}]',
+    lintContradictionMarkerItem: '- [[{page}]] — conflicting source(s): {sources}; review and remove the contradictions: marker when settled',
     lintQuoteGroundingSection: 'Ungrounded quotes (detected) [{count}]',
     lintQuoteGroundingItem: '- [[{page}]]{sourceHint}: "{quote}"',
     lintDeadLinkItem: '- [[{source}]] → **{target}** (page does not exist){dupFlag}',
@@ -961,6 +965,10 @@ export const EN_TEXTS = {
     multiFileStatusCompleted: 'Completed',
     multiFileStatusFailed: 'Failed',
     multiFileCancelAria: 'Cancel this file',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: 'Ingested',
+    multiFileRowDrifted: 'Note changed since ingest',
     // v1.23.0 Phase 5.1.5: Multi-File Suggest modal action button
     // that removes every pending and running job from the ingest
     // queue. Completed and failed jobs are preserved so the user

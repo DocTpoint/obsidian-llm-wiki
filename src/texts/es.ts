@@ -655,6 +655,10 @@ export const ES_TEXTS = {
     lintContradictionSection: 'Contradicciones (detectadas)',
     lintDuplicateSection: 'Páginas duplicadas (detectadas)',
     lintNoIssuesFound: 'No se detectaron duplicados, enlaces rotos, páginas vacías, páginas huérfanas ni citas sin fuente.',
+    lintSourceDriftSection: 'Notas fuente modificadas desde la ingesta [{count}]',
+    lintSourceDriftItem: '- [[{page}]] — la nota de origen [[{note}]] fue editada después de la ingesta; la página puede estar desactualizada',
+    lintContradictionMarkerSection: 'Páginas marcadas con contradicciones (triaje de fusión) [{count}]',
+    lintContradictionMarkerItem: '- [[{page}]] — fuente(s) en conflicto: {sources}; tras revisar, elimine el marcador contradictions:',
     lintQuoteGroundingSection: 'Citas sin fuente (detectadas) [{count}]',
     lintQuoteGroundingItem: '- [[{page}]]{sourceHint}: "{quote}"',
     lintDeadLinkItem: '- [[{source}]] → **{target}** (la página no existe){dupFlag}',
@@ -884,6 +888,10 @@ export const ES_TEXTS = {
     multiFileStatusCompleted: 'Completado',
     multiFileStatusFailed: 'Fallido',
     multiFileCancelAria: 'Cancelar este archivo',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: 'Ingerido',
+    multiFileRowDrifted: 'Nota modificada desde la ingesta',
     startupCheckNoticeLevelName: 'Mostrar resultado de arreglos rápidos',
     startupCheckNoticeLevelDesc: 'Los QuickFixes siempre se ejecutan al iniciar el plugin (nota Welcome, estructura de carpetas, normalización de fuentes, páginas incompletas, encabezado del registro). Elige si mostrar el aviso resumen tras el inicio. El modo silencioso solo registra en la consola del desarrollador y en el panel Historial de operaciones.',
     startupCheckNoticeVisible: 'Visible (mostrar aviso)',

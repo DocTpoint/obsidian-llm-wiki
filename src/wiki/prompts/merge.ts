@@ -36,7 +36,7 @@ export const MERGE_PROMPTS = {
 {{existing_content}}
 
 **New Information from Source File:**
-{{new_info}}{{source_context}}
+{{new_info}}{{source_excerpt}}{{source_context}}
 
 **Available sections in the existing page (target_section MUST be one of these exact names):**
 {{section_labels}}
@@ -45,20 +45,20 @@ export const MERGE_PROMPTS = {
 Examine the new information and classify each piece into ONE of the four strategies:
 
 - "skip" — every piece is already fully present in the existing page. No new content to add. \`items\` MUST be an empty array.
-- "merge" — substantial restructuring needed (e.g. a new section is required, the existing structure is wrong, or the new info contradicts existing). The full body-rewrite path will be used. \`items\` MUST be an empty array.
-- "complementary" — each piece adds new facts that fit into one of the existing sections. Populate \`items\` with one entry per new fact:
-  - \`kind\` = "complementary"
-  - \`content\` = the specific new fact to append (verbatim from the source if possible, otherwise a concise paraphrase)
-  - \`target_section\` = EXACTLY one name from the available sections list (this is critical for i18n matching)
-  - \`reason\` = one-sentence justification
-- "contradictory" — new info conflicts with existing facts. The full body-rewrite path will handle attribution. \`items\` MUST be an empty array.
+- "merge" — substantial restructuring needed (e.g. a new section is required, or the existing structure is wrong). The full body-rewrite path will be used. \`items\` MUST be an empty array.
+- "complementary" — each piece adds new facts that fit into one of the existing sections, or conflicts with a specific existing statement. Populate \`items\` with one entry per piece:
+  - \`kind\` = "complementary" for a new fact, "contradictory" for a piece that CONFLICTS with a specific statement already on the page
+  - \`content\` = the specific new fact or conflicting claim (verbatim from the source if possible, otherwise a concise paraphrase)
+  - \`target_section\` = EXACTLY one name from the available sections list (for "contradictory": the section containing the contradicted statement)
+  - \`reason\` = one-sentence justification (for "contradictory": name the existing statement it conflicts with)
+- "contradictory" — the new info AS A WHOLE conflicts with the page's core claims (not just single statements — use a "contradictory" item inside "complementary" for those). The full body-rewrite path will handle attribution. \`items\` MUST be an empty array.
 
 Output JSON format (ONLY this object, no other text):
 {
   "strategy": "skip" | "merge" | "complementary" | "contradictory",
   "items": [
     {
-      "kind": "complementary",
+      "kind": "complementary" | "contradictory",
       "content": "Specific new fact text",
       "target_section": "Exact section name from the available sections list",
       "reason": "Why this belongs in target section (one sentence)"
@@ -86,11 +86,11 @@ Rules:
 - Summary: {{entity_summary}}
 - Related entities: {{related_entities}}
 - Related concepts: {{related_concepts}}
-- Key details: {{key_details}}
+- Key details: {{key_details}}{{source_excerpt}}
 
 **Integration Requirements:**
 1. STRUCTURE: Follow the schema sections exactly. If a section exists, update it; if missing, create it.
-2. DESCRIPTION: Integrate new facts naturally. Do NOT duplicate existing information.
+2. DESCRIPTION: Integrate new facts naturally. When a verbatim excerpt block is present, it is the authoritative payload: integrate EVERY fact in it that concerns this page, not only the summary lines. Do NOT duplicate existing information.
 3. RELATED: Update "{{section_related_entities}}" and "{{section_related_concepts}}" sections with new relationships.
 4. CONTRADICTIONS: If new info conflicts with existing, preserve BOTH with clear attribution.
 5. LINKS: Write [[Name]] as you would say the name. Do NOT write or guess a folder path — the system resolves every name to its real page after the merge, against the whole wiki. A display name is optional.
@@ -123,11 +123,11 @@ Output ONLY the body content (no frontmatter):
 - Summary: {{concept_summary}}
 - Related concepts: {{related_concepts}}
 - Related entities: {{related_entities}}
-- Key details: {{key_details}}
+- Key details: {{key_details}}{{source_excerpt}}
 
 **Integration Requirements:**
 1. STRUCTURE: Follow the schema sections exactly. Update existing, create missing.
-2. DESCRIPTION: Integrate new understanding coherently with existing.
+2. DESCRIPTION: Integrate new understanding coherently with existing. When a verbatim excerpt block is present, it is the authoritative payload: integrate EVERY fact in it that concerns this concept, not only the summary lines.
 3. RELATED CONCEPTS: Update links — add new ones, preserve existing.
 4. RELATED ENTITIES: Update links — add new ones from this source.
 5. CONTRADICTIONS: If new info conflicts, preserve both with attribution.
@@ -155,7 +155,7 @@ Output ONLY the body content (no frontmatter):
 
 **New Information from Source "{{new_source}}":**
 - Summary: {{entity_summary}}
-- Key details: {{key_details}}
+- Key details: {{key_details}}{{source_excerpt}}
 
 **Task:**
 1. Compare new information against existing content

@@ -607,6 +607,10 @@ export const JA_TEXTS = {
     lintContradictionSection: '矛盾（検出済み）',
     lintDuplicateSection: '重複ページ（検出済み）',
     lintNoIssuesFound: '重複、リンク切れ、空ページ、孤立ページ、または根拠のない引用は検出されませんでした。',
+    lintSourceDriftSection: '取り込み後に変更されたソースノート [{count} 件]',
+    lintSourceDriftItem: '- [[{page}]] — 元ノート [[{note}]] が取り込み後に編集されました。ページが古い可能性があります',
+    lintContradictionMarkerSection: '矛盾マーカー付きページ（マージトリアージ）[{count} 件]',
+    lintContradictionMarkerItem: '- [[{page}]] — 矛盾するソース: {sources}。確認後に contradictions: マーカーを削除してください',
     lintQuoteGroundingSection: '根拠のない引用（検出）[{count} 件]',
     lintQuoteGroundingItem: '- [[{page}]]{sourceHint}: 「{quote}」',
     lintDeadLinkItem: '- [[{source}]] → **{target}**（ページが存在しません）{dupFlag}',
@@ -880,6 +884,10 @@ export const JA_TEXTS = {
     multiFileStatusCompleted: '完了',
     multiFileStatusFailed: '失敗',
     multiFileCancelAria: 'このファイルを取り消す',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: '取り込み済み',
+    multiFileRowDrifted: '取り込み後にノートが変更されました',
     startupCheckNoticeLevelName: 'クイック修正結果の表示',
     startupCheckNoticeLevelDesc: 'QuickFixes はプラグイン起動時に常に実行されます（Welcome note、フォルダ構造、ソース正規化、不完全ページ、ログヘッダー）。起動後にサマリー通知を表示するかどうかを選択します。サイレントモードでは開発者コンソールと操作履歴パネルのみに記録されます。',
     startupCheckNoticeVisible: '表示（通知を表示）',

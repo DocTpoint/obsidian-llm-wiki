@@ -619,6 +619,10 @@ export const ZH_HANT_TEXTS = {
     lintHubLinkDensitySummary: '摘要：{strip} 個頁面建議剝離，{review} 個頁面建議覆核。',
     lintHubLinkDensityNoRelated: ' （未找到 ## Related 區塊）',
     lintNoIssuesFound: '未檢測到重複、斷鏈、空洞、孤立頁面或無來源引證。',
+    lintSourceDriftSection: '匯入後已變更的來源筆記 [共 {count} 個]',
+    lintSourceDriftItem: '- [[{page}]] — 原始筆記 [[{note}]] 在匯入後被編輯，頁面內容可能已過時',
+    lintContradictionMarkerSection: '帶有矛盾標記的頁面（合併分流）[共 {count} 個]',
+    lintContradictionMarkerItem: '- [[{page}]] — 衝突來源：{sources}；審閱後請移除 contradictions: 標記',
     lintQuoteGroundingSection: '無來源引證（程式檢測）[共 {count} 個]',
     lintQuoteGroundingItem: '- [[{page}]]{sourceHint}："{quote}"',
     lintContradictionOpen: '未解決的矛盾：{count} 個',
@@ -879,6 +883,10 @@ export const ZH_HANT_TEXTS = {
     multiFileStatusCompleted: '已完成',
     multiFileStatusFailed: '已失敗',
     multiFileCancelAria: '取消該檔案',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: '已攝入',
+    multiFileRowDrifted: '攝入後筆記已修改',
     startupCheckNoticeLevelName: '顯示快速修復結果',
     startupCheckNoticeLevelDesc: '快速修復在外掛啟動時始終執行（Welcome note、資料夾結構、來源正規化、不完整頁面、日誌標頭）。選擇啟動後是否顯示摘要通知。靜默模式僅記錄到開發者控制台與操作歷史面板。',
     startupCheckNoticeVisible: '顯示（彈出通知）',

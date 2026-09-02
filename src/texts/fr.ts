@@ -611,6 +611,10 @@ export const FR_TEXTS = {
     lintContradictionSection: 'Contradictions (détectées)',
     lintDuplicateSection: 'Pages dupliquées (détectées)',
     lintNoIssuesFound: 'Aucun doublon, lien cassé, page vide, page orpheline ou citation non fondée détecté.',
+    lintSourceDriftSection: 'Notes sources modifiées depuis l\'ingestion [{count}]',
+    lintSourceDriftItem: '- [[{page}]] — la note d\'origine [[{note}]] a été modifiée après l\'ingestion ; la page peut être obsolète',
+    lintContradictionMarkerSection: 'Pages marquées de contradictions (triage de fusion) [{count}]',
+    lintContradictionMarkerItem: '- [[{page}]] — source(s) en conflit : {sources} ; après examen, retirez le marqueur contradictions:',
     lintQuoteGroundingSection: 'Citations non fondées (détectées) [{count}]',
     lintQuoteGroundingItem: '- [[{page}]]{sourceHint}: « {quote} »',
     lintDeadLinkItem: '- [[{source}]] → **{target}** (la page n\'existe pas){dupFlag}',
@@ -887,6 +891,10 @@ export const FR_TEXTS = {
     multiFileStatusCompleted: 'Terminé',
     multiFileStatusFailed: 'Échoué',
     multiFileCancelAria: 'Annuler ce fichier',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: 'Importé',
+    multiFileRowDrifted: 'Note modifiée depuis l’import',
     startupCheckNoticeLevelName: 'Afficher le résultat des correctifs rapides',
     startupCheckNoticeLevelDesc: 'Les QuickFixes s\'exécutent toujours au démarrage du plugin (note Welcome, structure des dossiers, normalisation des sources, pages incomplètes, en-tête du journal). Choisis d\'afficher ou non la notice récapitulative après le démarrage. Le mode silencieux n\'écrit que dans la console développeur et le panneau Historique des opérations.',
     startupCheckNoticeVisible: 'Visible (afficher la notice)',

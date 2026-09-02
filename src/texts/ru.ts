@@ -650,6 +650,10 @@ export const RU_TEXTS = {
     lintSourcesNormalizedSection: 'Источники нормализованы (авто-исправлено) [{files} файлов / {entries} записей]',
     lintSourcesNormalizedItem: 'Очищено {entries} загрязнённых записей источников в {files} файл(ах) (внешние пути, расширения .md, псевдонимы pipes удалены и дедуплицированы).',
     lintNoIssuesFound: 'Дубликатов, мёртвых ссылок, пустых страниц, висячих страниц или неподтверждённых цитат не обнаружено.',
+    lintSourceDriftSection: 'Исходные заметки изменены после импорта [{count}]',
+    lintSourceDriftItem: '- [[{page}]] — исходная заметка [[{note}]] была изменена после импорта; страница может быть устаревшей',
+    lintContradictionMarkerSection: 'Страницы с маркером противоречий (триаж слияния) [{count}]',
+    lintContradictionMarkerItem: '- [[{page}]] — конфликтующие источники: {sources}; после проверки удалите маркер contradictions:',
     lintQuoteGroundingSection: 'Неподтверждённые цитаты (обнаружено) [{count}]',
     lintQuoteGroundingItem: '- [[{page}]]{sourceHint}: «{quote}»',
     lintDeadLinkItem: '- [[{source}]] → **{target}** (страница не существует){dupFlag}',
@@ -923,6 +927,10 @@ export const RU_TEXTS = {
     multiFileStatusCompleted: 'Завершено',
     multiFileStatusFailed: 'Не удалось',
     multiFileCancelAria: 'Отменить этот файл',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: 'Импортировано',
+    multiFileRowDrifted: 'Заметка изменена после импорта',
     // v1.23.0 Phase 5.1.5: кнопка действия модального окна Multi-File Suggest,
     // которая удаляет каждое задание в ожидании и выполнении из очереди
     // импорта. Завершённые и неудачные задания сохраняются, чтобы пользователь

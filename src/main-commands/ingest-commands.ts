@@ -24,7 +24,7 @@ import type { BatchProgress } from '../core/status-bar';
 import { TEXTS } from '../texts';
 import { getText } from '../core/i18n';
 import { slugify } from '../core/slug';
-import { parseFrontmatter } from '../core/frontmatter';
+import { pageBelongsToNote } from '../core/ingest-state';
 import { isIngestableSource } from '../core/folder-scope';
 import { COMPATIBLE_SOURCE_EXTENSIONS, NOTICE_NORMAL, NOTICE_ERROR } from '../constants';
 import { FileSuggestModal, FolderSuggestModal, MultiFileSuggestModal, IngestReportModal } from '../ui/modals';
@@ -64,18 +64,15 @@ export const ingestCommands = {
 
       try {
         const content = await this.app.vault.read(file);
-        const fm = parseFrontmatter(content);
-        if (fm && fm.sources) {
-          const normalizedSources = fm.sources.map(s => {
-            const trimmed = s.trim();
-            if (trimmed.startsWith('[[') && trimmed.endsWith(']]')) {
-              return trimmed.slice(2, -2).trim();
-            }
-            return trimmed;
-          });
-          return normalizedSources.includes(sourceFile.path);
-        }
-        return true;
+        // Ownership: the page found by slug belongs to this note only if
+        // the note is one of its recorded origins. Reading `sources:`
+        // alone never established that — it holds `[[sources/X]]` links
+        // by contract, so the note path being searched for is the one
+        // shape it cannot contain, and every multi-source page read as
+        // "not ingested". `pageBelongsToNote` holds that decision; the
+        // file picker (#598) displays the same answer and must not
+        // reimplement it.
+        return pageBelongsToNote(content, sourceFile.path);
       } catch {
         return true;
       }

@@ -64,4 +64,3 @@ export function appendContradictedByMarker(
 function normalizeSource(s: string): string {
   return s.trim().replace(/^\[\[|\]\]$/g, '').trim().toLowerCase();
 }
-

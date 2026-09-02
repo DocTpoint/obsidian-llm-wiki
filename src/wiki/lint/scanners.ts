@@ -1,7 +1,9 @@
 // Lint scanner functions — extracted from lint-controller.ts for testability.
 // These have no Obsidian API dependencies and can be unit tested directly.
 
-import { parseFrontmatter } from '../../core/frontmatter';
+import { parseFrontmatter, extractBody, originNoteRefs } from '../../core/frontmatter';
+import { hashBody } from '../../core/source-requirements';
+import { CONTRADICTIONS_KEY } from '../../core/contradicted-marker';
 import { getActiveEntityTags, getActiveConceptTags, getActiveSourceTags } from '../../core/tag-vocab';
 import { normalizeQuote, isQuoteGrounded } from './utils';
 import { LLMWikiSettings } from '../../types';
@@ -467,3 +469,119 @@ export function scanTagViolations(
 // makes the algorithm unit-testable without an Obsidian dependency.
 
 export { scanHubLinkDensity, type HubLinkDensityIssue, type HubLinkDensityOptions } from '../../core/hub-link-distinctiveness';
+
+// ── Source drift scanner (Issue #220 Tier 0, read half) ──────────────────────
+
+export interface SourceDriftIssue {
+  /** Wiki source page whose stored fingerprint no longer matches. */
+  sourcePage: string;
+  /** Origin note (first listed, normalized) whose current body was compared. */
+  note: string;
+  storedHash: string;
+  currentHash: string;
+}
+
+/**
+ * Detect source drift: a `sources/` page stores the `contentHash` of the note
+ * body it was built from (#164). When the note is edited afterwards, nothing
+ * re-reads that hash — the wiki silently keeps summarizing a body that no
+ * longer exists (Issue #220, Tier 0). This scanner is the read half: recompute
+ * the fingerprint of each origin note and flag mismatches.
+ *
+ * Report-only by design — a re-ingest is additive, so acting on drift
+ * automatically would duplicate content rather than revise it. Conservative on
+ * multi-source pages: the stored hash belongs to whichever note was written
+ * last, so a page is only flagged when NO listed, readable note matches it.
+ * Pages without a `contentHash` (pre-#164) and notes that cannot be read are
+ * skipped — absence of evidence is not drift.
+ */
+export function scanSourceDrift(
+  pageMap: Map<string, ScannerPage>,
+  noteContents: Map<string, string>,
+  wikiFolder: string,
+): SourceDriftIssue[] {
+  const issues: SourceDriftIssue[] = [];
+  const sourcesPrefix = `${wikiFolder}/sources/`;
+
+  for (const [path, page] of pageMap) {
+    if (!path.startsWith(sourcesPrefix)) continue;
+    const fm = parseFrontmatter(page.content);
+    if (!fm) continue;
+    const storedHash = (fm as Record<string, unknown>).contentHash;
+    if (typeof storedHash !== 'string' || !storedHash) continue;
+
+    // Canonical source pages carry a scalar `source_file:` wikilink
+    // (generation.ts template); a `sources:` list only appears on pages
+    // written through the entity/concept path. `originNoteRefs` reads the
+    // scalar first and falls back to the list — reading only `sources:`
+    // would make the scanner blind on every canonical page (found by
+    // probing a real vault: 35/35 source pages carried source_file, none
+    // sources:).
+    const notePaths = originNoteRefs(fm);
+    if (notePaths.length === 0) continue;
+
+    let anyReadable = false;
+    let anyMatch = false;
+    let firstMismatch: { note: string; currentHash: string } | null = null;
+    for (const notePath of notePaths) {
+      const noteContent = noteContents.get(notePath);
+      if (noteContent === undefined) continue;
+      anyReadable = true;
+      const currentHash = hashBody(extractBody(noteContent));
+      if (currentHash === storedHash) {
+        anyMatch = true;
+        break;
+      }
+      if (!firstMismatch) firstMismatch = { note: notePath, currentHash };
+    }
+
+    if (anyReadable && !anyMatch && firstMismatch) {
+      issues.push({
+        sourcePage: path,
+        note: firstMismatch.note,
+        storedHash,
+        currentHash: firstMismatch.currentHash,
+      });
+    }
+  }
+  return issues;
+}
+
+// ── Contradiction marker scanner (#575 read half) ──────────────────────
+
+export interface ContradictionMarkerIssue {
+  /** Wiki page carrying a non-empty `contradictions:` frontmatter list. */
+  path: string;
+  /** Source paths whose triage flagged a conflict with this page. */
+  sources: string[];
+}
+
+/**
+ * Surface pages whose frontmatter carries the `contradictions:` marker that
+ * the merge triage stamps when it routes a conflicted rewrite (#575). The
+ * marker module wrote the field for exactly this consumer ("Lint can later
+ * scan this field to surface pages that need editorial review") — without
+ * this scanner the durable half of the contradiction lane is write-only.
+ *
+ * Pure and IO-free: the marker accumulates across re-touches, so this is a
+ * frontmatter read over the pages the lint already holds. A page leaves the
+ * report when the user removes the marker after review — the inline
+ * "Potential Contradiction" body block is NOT required to still exist (it
+ * falls to section pruning on later rewrites; the frontmatter is the
+ * durable signal).
+ */
+export function scanContradictionMarkers(
+  pageMap: Map<string, ScannerPage>,
+): ContradictionMarkerIssue[] {
+  const issues: ContradictionMarkerIssue[] = [];
+  for (const [path, page] of pageMap) {
+    const fm = parseFrontmatter(page.content);
+    if (!fm) continue;
+    const raw = (fm as Record<string, unknown>)[CONTRADICTIONS_KEY];
+    if (!Array.isArray(raw)) continue;
+    const sources = raw.map(s => String(s).trim()).filter(s => s.length > 0);
+    if (sources.length === 0) continue;
+    issues.push({ path, sources });
+  }
+  return issues;
+}

@@ -1,5 +1,6 @@
-import { detectAliasDeficiency, scanOrphans, scanTagViolations, scanDeadLinks, scanQuoteGrounding, scanHubLinkDensity, collectCitedRawNoteTargets } from '../scanners';
+import { detectAliasDeficiency, scanOrphans, scanTagViolations, scanDeadLinks, scanQuoteGrounding, scanHubLinkDensity, scanSourceDrift, scanContradictionMarkers, collectCitedRawNoteTargets } from '../scanners';
 import { detectPollutedPages } from '../utils';
+import { parseFrontmatter } from '../../../core/frontmatter';
 import { getText } from '../../../core/i18n';
 import { getSectionLabels } from '../../system-prompts';
 import type { Graph } from '../../../core/monte-carlo-ppr';
@@ -113,6 +114,50 @@ export async function runProgrammaticPhase(
   });
   console.debug(`lintWiki: ${hubLinkDensityIssues.length} hub pages with link density issues`);
 
+  // 8. Source drift (Issue #220 Tier 0, read half) — every `sources/` page
+  // carries a `contentHash` of the note body it was built from (#164), but
+  // nothing reads it back. Read each origin note once (same bounded-read
+  // pattern as the quote-grounding notes above) and flag pages whose note
+  // has changed since ingest. Report-only: re-ingest is additive, so the
+  // finding routes to the user, not to an automatic action.
+  const driftNoteContents = new Map<string, string>();
+  for (const [path, page] of input.pageMap) {
+    if (!path.startsWith(`${ctx.settings.wikiFolder}/sources/`)) continue;
+    const fm = parseFrontmatter(page.content);
+    if (!fm) continue;
+    // Same field precedence as scanSourceDrift: scalar `source_file:`
+    // (canonical on sources/ pages) plus any `sources:` list entries.
+    const refs: string[] = [];
+    const sourceFile = (fm as Record<string, unknown>).source_file;
+    if (typeof sourceFile === 'string') refs.push(sourceFile);
+    if (Array.isArray(fm.sources)) refs.push(...fm.sources.map(s => String(s)));
+    for (const s of refs) {
+      const trimmed = s.trim();
+      const notePath = trimmed.startsWith('[[') && trimmed.endsWith(']]')
+        ? trimmed.slice(2, -2).trim()
+        : trimmed;
+      if (!notePath || driftNoteContents.has(notePath)) continue;
+      const abstract = ctx.app.vault.getAbstractFileByPath(notePath);
+      if (!abstract) continue;
+      try {
+        const content = await (ctx.app.vault as unknown as { read: (f: unknown) => Promise<string> }).read(abstract);
+        driftNoteContents.set(notePath, content);
+      } catch {
+        /* unreadable note — stays out; absence of evidence is not drift */
+      }
+    }
+  }
+  const sourceDriftIssues = scanSourceDrift(input.pageMap, driftNoteContents, ctx.settings.wikiFolder);
+  console.debug(`lintWiki: ${sourceDriftIssues.length} source page(s) with drifted origin notes`);
+
+  // 9. Contradiction markers (#575 read half) — pages the merge triage
+  // stamped with `contradictions:` when it routed a conflicted rewrite.
+  // Pure frontmatter read, zero IO, zero LLM; complements the
+  // contradiction-phase folder records, which only cover conflicts the
+  // lint's own LLM pass detected.
+  const contradictionMarkerIssues = scanContradictionMarkers(input.pageMap);
+  console.debug(`lintWiki: ${contradictionMarkerIssues.length} page(s) carrying a contradictions: marker`);
+
   return {
     aliasDeficientPages,
     emptyPages: [],
@@ -122,6 +167,8 @@ export async function runProgrammaticPhase(
     deadLinks,
     ungroundedQuotes,
     hubLinkDensityIssues,
+    sourceDriftIssues,
+    contradictionMarkerIssues,
     sourcesNormalizedFiles: 0, // populated by preparation phase caller
     sourcesNormalizedEntries: 0,
     doubleNestFixes: 0,

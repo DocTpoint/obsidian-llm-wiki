@@ -24,15 +24,22 @@ import { TOKENS_MERGE_TRIAGE } from '../../constants';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { getSectionLabels, applySectionLabels } from '../system-prompts';
 import { firstQuotesForPrompt } from './contextualize';
+import { renderNoteExcerptBlock } from './note-window';
 import { renderTemplate } from '../../core/template-renderer';
 import { MergeTriageSchema, type MergeTriage } from '../../llm-sdk/output-schemas';
 
 /** Strategy selected by the LLM for handling new information vs. an existing page. */
 export type MergeStrategy = 'merge' | 'skip' | 'complementary' | 'contradictory';
 
-/** A single complementary append item (only populated when strategy === 'complementary'). */
+/**
+ * A single triage item (only populated when strategy === 'complementary').
+ * `kind: 'contradictory'` marks a piece that conflicts with a specific
+ * existing statement — it is appended as an attributed conflict note and
+ * stamps the `contradictions:` frontmatter marker, instead of being
+ * integrated as if it were a fact.
+ */
 export interface ComplementaryItem {
-  kind: 'complementary';
+  kind: 'complementary' | 'contradictory';
   content: string;
   target_section: string;
   reason?: string;
@@ -80,6 +87,7 @@ export async function classifyMergeNeed(
   sourceFile: TFile | { path: string; basename: string },
   existingContent: string,
   sourceContext?: SourceContext,
+  sourceExcerpt?: string,
 ): Promise<MergeTriageResult> {
   const client = ctx.getClient();
   if (!client) throw new Error('LLM client not initialized');
@@ -95,6 +103,7 @@ export async function classifyMergeNeed(
     page_type: pageType,
     existing_content: existingContent,
     new_info: buildNewInfoSummary(info, sourceFile),
+    source_excerpt: renderNoteExcerptBlock(sourceExcerpt ?? '', info.name),
     source_context: renderSourceContextBlock(sourceContext),
     source_ownership_rule: renderSourceOwnershipRule(sourceContext),
     section_labels: `- ${sectionLabelsList}`,
@@ -163,7 +172,9 @@ export async function classifyMergeNeed(
         throw new Error('merge triage: invalid complementary item');
       }
       items.push({
-        kind: 'complementary',
+        // Unknown/missing kinds default to 'complementary' so older or
+        // sloppier model outputs keep today's behavior.
+        kind: item.kind === 'contradictory' ? 'contradictory' : 'complementary',
         content: item.content,
         target_section: item.target_section,
         reason: typeof item.reason === 'string' ? item.reason : undefined,

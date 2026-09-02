@@ -655,6 +655,10 @@ export const PT_TEXTS = {
     lintContradictionSection: 'Contradições (detectadas)',
     lintDuplicateSection: 'Páginas duplicadas (detectadas)',
     lintNoIssuesFound: 'Nenhuma duplicata, link quebrado, página vazia, página órfã ou citação sem fonte detectada.',
+    lintSourceDriftSection: 'Notas de origem alteradas desde a ingestão [{count}]',
+    lintSourceDriftItem: '- [[{page}]] — a nota de origem [[{note}]] foi editada após a ingestão; a página pode estar desatualizada',
+    lintContradictionMarkerSection: 'Páginas marcadas com contradições (triagem de mesclagem) [{count}]',
+    lintContradictionMarkerItem: '- [[{page}]] — fonte(s) em conflito: {sources}; após a revisão, remova o marcador contradictions:',
     lintQuoteGroundingSection: 'Citações sem fonte (detectadas) [{count}]',
     lintQuoteGroundingItem: '- [[{page}]]{sourceHint}: "{quote}"',
     lintDeadLinkItem: '- [[{source}]] → **{target}** (página inexistente){dupFlag}',
@@ -884,6 +888,10 @@ export const PT_TEXTS = {
     multiFileStatusCompleted: 'Concluído',
     multiFileStatusFailed: 'Falhou',
     multiFileCancelAria: 'Cancelar este ficheiro',
+    // #598: what the vault says about a row, resolved when the picker
+    // opens. The queue only knows this session.
+    multiFileRowIngested: 'Ingerido',
+    multiFileRowDrifted: 'Nota alterada desde a ingestão',
     startupCheckNoticeLevelName: 'Mostrar resultado das correções rápidas',
     startupCheckNoticeLevelDesc: 'Os QuickFixes são sempre executados no arranque do plugin (nota Welcome, estrutura de pastas, normalização de fontes, páginas incompletas, cabeçalho do registo). Escolhe se queres mostrar o aviso de resumo após o arranque. O modo silencioso apenas regista na consola do programador e no painel Histórico de Operações.',
     startupCheckNoticeVisible: 'Visível (mostrar aviso)',

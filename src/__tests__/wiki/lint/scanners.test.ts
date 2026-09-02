@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildKnownTargets, detectAliasDeficiency, scanDeadLinks, scanOrphans, scanTagViolations, ScannerPage } from '../../../wiki/lint/scanners';
+import { buildKnownTargets, detectAliasDeficiency, scanDeadLinks, scanOrphans, scanTagViolations, scanSourceDrift, scanContradictionMarkers, ScannerPage } from '../../../wiki/lint/scanners';
+import { hashBody } from '../../../core/source-requirements';
 import { LLMWikiSettings } from '../../../types';
 
 // ── buildKnownTargets ─────────────────────────────────────────
@@ -453,5 +454,177 @@ describe('scanTagViolations', () => {
     ]);
     const result = scanTagViolations(pm, baseSettings);
     expect(result[0].title).toBe('Test');
+  });
+});
+
+// ── scanSourceDrift (Issue #220 Tier 0, read half) ─────────────
+
+describe('scanSourceDrift', () => {
+  const folder = 'wiki';
+  const noteBody = 'Original note body about butyrate.';
+  const page = (path: string, fmLines: string[]): [string, ScannerPage] => [
+    path,
+    { path, basename: path.split('/').pop()!, content: `---\n${fmLines.join('\n')}\n---\n\nSummary.` },
+  ];
+
+  const hashOf = (body: string) => hashBody(body);
+
+  it('flags a source page whose origin note changed since ingest', () => {
+    const pageMap = new Map<string, ScannerPage>([
+      page('wiki/sources/butyrat.md', [
+        'type: source',
+        `contentHash: ${hashOf(noteBody)}`,
+        'sources:',
+        '  - "[[Notizen/Butyrat.md]]"',
+      ]),
+    ]);
+    const notes = new Map([['Notizen/Butyrat.md', 'Revised note body — the claim changed.']]);
+    const issues = scanSourceDrift(pageMap, notes, folder);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].sourcePage).toBe('wiki/sources/butyrat.md');
+    expect(issues[0].note).toBe('Notizen/Butyrat.md');
+    expect(issues[0].storedHash).toBe(hashOf(noteBody));
+    expect(issues[0].currentHash).toBe(hashOf('Revised note body — the claim changed.'));
+  });
+
+  it('does not flag when the note body still matches (whitespace-insensitive)', () => {
+    const pageMap = new Map<string, ScannerPage>([
+      page('wiki/sources/butyrat.md', [
+        'type: source',
+        `contentHash: ${hashOf(noteBody)}`,
+        'sources:',
+        '  - Notizen/Butyrat.md',
+      ]),
+    ]);
+    const notes = new Map([['Notizen/Butyrat.md', '  Original   note body\nabout butyrate.  ']]);
+    expect(scanSourceDrift(pageMap, notes, folder)).toHaveLength(0);
+  });
+
+  it('strips note frontmatter before hashing, matching the write side', () => {
+    const pageMap = new Map<string, ScannerPage>([
+      page('wiki/sources/butyrat.md', [
+        'type: source',
+        `contentHash: ${hashOf(noteBody)}`,
+        'sources:',
+        '  - Notizen/Butyrat.md',
+      ]),
+    ]);
+    const notes = new Map([['Notizen/Butyrat.md', `---\ntags:\n  - Sorte/Stoff\n---\n\n${noteBody}`]]);
+    expect(scanSourceDrift(pageMap, notes, folder)).toHaveLength(0);
+  });
+
+  it('skips pages without contentHash (pre-#164) and pages outside sources/', () => {
+    const pageMap = new Map<string, ScannerPage>([
+      page('wiki/sources/alt.md', ['type: source', 'sources:', '  - Notizen/Alt.md']),
+      page('wiki/entities/butyrat.md', [
+        'type: entity',
+        `contentHash: ${hashOf(noteBody)}`,
+        'sources:',
+        '  - Notizen/Butyrat.md',
+      ]),
+    ]);
+    const notes = new Map([
+      ['Notizen/Alt.md', 'changed'],
+      ['Notizen/Butyrat.md', 'changed'],
+    ]);
+    expect(scanSourceDrift(pageMap, notes, folder)).toHaveLength(0);
+  });
+
+  it('skips pages whose note is unreadable — absence of evidence is not drift', () => {
+    const pageMap = new Map<string, ScannerPage>([
+      page('wiki/sources/butyrat.md', [
+        'type: source',
+        `contentHash: ${hashOf(noteBody)}`,
+        'sources:',
+        '  - Notizen/Verschwunden.md',
+      ]),
+    ]);
+    expect(scanSourceDrift(pageMap, new Map(), folder)).toHaveLength(0);
+  });
+
+  it('multi-source page: not flagged while ANY listed note still matches the stored hash', () => {
+    const pageMap = new Map<string, ScannerPage>([
+      page('wiki/sources/multi.md', [
+        'type: source',
+        `contentHash: ${hashOf(noteBody)}`,
+        'sources:',
+        '  - Notizen/Geaendert.md',
+        '  - Notizen/Original.md',
+      ]),
+    ]);
+    const notes = new Map([
+      ['Notizen/Geaendert.md', 'edited elsewhere'],
+      ['Notizen/Original.md', noteBody],
+    ]);
+    expect(scanSourceDrift(pageMap, notes, folder)).toHaveLength(0);
+  });
+
+  it('multi-source page: flagged with the first mismatching note when none match', () => {
+    const pageMap = new Map<string, ScannerPage>([
+      page('wiki/sources/multi.md', [
+        'type: source',
+        `contentHash: ${hashOf(noteBody)}`,
+        'sources:',
+        '  - Notizen/A.md',
+        '  - Notizen/B.md',
+      ]),
+    ]);
+    const notes = new Map([
+      ['Notizen/A.md', 'changed A'],
+      ['Notizen/B.md', 'changed B'],
+    ]);
+    const issues = scanSourceDrift(pageMap, notes, folder);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].note).toBe('Notizen/A.md');
+  });
+});
+
+describe('scanSourceDrift — canonical source_file frontmatter', () => {
+  it('reads the scalar source_file wikilink written by the generation template', () => {
+    const noteBody = 'Original note body.';
+    const pageMap = new Map<string, ScannerPage>([
+      ['wiki/sources/geh-test.md', {
+        path: 'wiki/sources/geh-test.md',
+        basename: 'geh-test.md',
+        content: `---\ntype: source\nsource_file: "[[Notizen/6-Minuten-Gehtest.md]]"\ncontentHash: ${hashBody(noteBody)}\n---\n\nSummary.`,
+      }],
+    ]);
+    const changed = new Map([['Notizen/6-Minuten-Gehtest.md', 'Edited body.']]);
+    const issues = scanSourceDrift(pageMap, changed, 'wiki');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].note).toBe('Notizen/6-Minuten-Gehtest.md');
+
+    const unchanged = new Map([['Notizen/6-Minuten-Gehtest.md', noteBody]]);
+    expect(scanSourceDrift(pageMap, unchanged, 'wiki')).toHaveLength(0);
+  });
+});
+
+// ── scanContradictionMarkers (#575 read half) ─────────────
+
+describe('scanContradictionMarkers', () => {
+  const page = (path: string, content: string): [string, ScannerPage] => [
+    path,
+    { path, basename: path.split('/').pop()!, content },
+  ];
+
+  it('surfaces pages with a non-empty contradictions: list', () => {
+    const pageMap = new Map<string, ScannerPage>([
+      page('wiki/entities/butyrat.md',
+        '---\ntype: entity\ncontradictions:\n  - Notizen/Neue-Studie.md\n  - Notizen/Alte-Studie.md\n---\n\nBody'),
+      page('wiki/entities/clean.md', '---\ntype: entity\n---\n\nBody'),
+    ]);
+    const issues = scanContradictionMarkers(pageMap);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].path).toBe('wiki/entities/butyrat.md');
+    expect(issues[0].sources).toEqual(['Notizen/Neue-Studie.md', 'Notizen/Alte-Studie.md']);
+  });
+
+  it('ignores empty lists, blank entries, and non-list values', () => {
+    const pageMap = new Map<string, ScannerPage>([
+      page('wiki/entities/empty.md', '---\ntype: entity\ncontradictions:\n---\n\nBody'),
+      page('wiki/entities/blank.md', '---\ntype: entity\ncontradictions:\n  - ""\n---\n\nBody'),
+      page('wiki/entities/nofm.md', 'Body without frontmatter'),
+    ]);
+    expect(scanContradictionMarkers(pageMap)).toHaveLength(0);
   });
 });

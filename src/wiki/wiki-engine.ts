@@ -16,6 +16,7 @@ import {
   DEFAULT_SOURCE_TAG,
 } from '../types';
 import { PROMPTS } from '../prompts';
+import { normalizeHeadingSpacing } from '../core/markdown-spacing';
 import { getText } from '../core/i18n';
 import { buildRepetitionPenaltyHint } from '../core/repetition-penalty-hint';
 import { formatTaskUsage, snapshotTaskUsage, taskUsageSince } from '../core/llm-task-usage';
@@ -995,6 +996,9 @@ export class WikiEngine {
 
     const failedItems: Array<{ type: 'entity' | 'concept'; name: string; reason: string }> = [];
     let analysis: SourceAnalysis | null = null;
+    // Path of the summary page written in Stage 2, tracked outside the try so
+    // the cancellation path can remove it — see the AbortError branch below.
+    let summaryPagePath: string | null = null;
 
     try {
       await this.ensureWikiStructure();
@@ -1082,6 +1086,7 @@ export class WikiEngine {
       const summaryTime = Date.now() - summaryStart;
       console.debug(`[Time] Summary page generation: ${summaryTime}ms`);
       analysis.created_pages.push(summaryPage);
+      summaryPagePath = summaryPage;
 
       // Stage 3: Entity/Concept Page Generation
       // v1.25.1 Phase C-PR1: retry + rate-limit template extracted to
@@ -1256,7 +1261,7 @@ export class WikiEngine {
       const contradictionStart = Date.now();
       for (const contradiction of analysis.contradictions) {
         try {
-          await this.noteContradiction(contradiction);
+          await this.noteContradiction(contradiction, file.path);
         } catch {
           // non-critical
         }
@@ -1334,13 +1339,30 @@ export class WikiEngine {
       if (error instanceof DOMException && error.name === 'AbortError') {
         this.wasCancelled = true;
         console.debug('=== Ingestion cancelled by user ===');
+
+        // A cancelled ingest must not read as a completed one: the summary
+        // page doubles as the completion marker (isAlreadyIngested checks its
+        // existence), so leaving it behind freezes the half-finished ingest as
+        // done and every later trigger skips the source. Trash it — the next
+        // trigger then re-ingests cleanly. Content pages stay: a re-ingest
+        // merges them additively.
+        if (summaryPagePath) {
+          try {
+            await this.deleteFile(summaryPagePath);
+            console.debug('Cancelled ingest: removed summary page so the source re-ingests:', summaryPagePath);
+          } catch (cleanupError) {
+            console.warn('Cancelled ingest: could not remove summary page:', summaryPagePath, cleanupError);
+          }
+        }
+        const reportedCreated = createdPages.filter(p => p !== summaryPagePath);
+
         new Notice(getText(this.settings.language, 'ingestionCancelled'), NOTICE_NORMAL);
         this.onDone?.({
           sourceFile: file.path,
-          createdPages,
+          createdPages: reportedCreated,
           updatedPages: analysis?.updated_pages || [],
-          entitiesCreated: createdPages.filter(p => p.includes('/entities/')).length,
-          conceptsCreated: createdPages.filter(p => p.includes('/concepts/')).length,
+          entitiesCreated: reportedCreated.filter(p => p.includes('/entities/')).length,
+          conceptsCreated: reportedCreated.filter(p => p.includes('/concepts/')).length,
           failedItems,
           contradictionsFound: analysis?.contradictions?.length || 0,
           success: false,
@@ -1569,6 +1591,13 @@ export class WikiEngine {
       content = sourcesFix.content;
     }
 
+    // Cosmetic spacing: one blank line after each heading, blank-line runs
+    // collapsed (see core/markdown-spacing.ts). Wiki content pages only —
+    // log/schema writes pass through untouched.
+    if (this.isInWikiContentFolder(path, this.settings.wikiFolder)) {
+      content = normalizeHeadingSpacing(content);
+    }
+
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const file = this.app.vault.getAbstractFileByPath(path);
@@ -1773,8 +1802,8 @@ export class WikiEngine {
 
   // ---- Contradiction delegation ----
 
-  async noteContradiction(contradiction: ContradictionInfo) {
-    return this.contradictionManager.noteContradiction(contradiction);
+  async noteContradiction(contradiction: ContradictionInfo, sourceNotePath: string) {
+    return this.contradictionManager.noteContradiction(contradiction, sourceNotePath);
   }
 
   async getOpenContradictions(): Promise<Array<{ path: string; status: string; claim: string; sourcePage: string }>> {

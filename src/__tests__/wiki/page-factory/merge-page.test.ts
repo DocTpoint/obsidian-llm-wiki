@@ -304,3 +304,135 @@ describe('mergePage — H1 survives a rewrite that omits it', () => {
     expect(written).toContain('Merged body.');
   });
 });
+
+describe('mergePage — note excerpt window (payload fix)', () => {
+  function makeCapturingClient(responses: string[]): LLMClient & { prompts: string[] } {
+    let i = 0;
+    const prompts: string[] = [];
+    return {
+      prompts,
+      createMessage: async (req: { messages: Array<{ content: string }> }) => {
+        prompts.push(req.messages[0].content);
+        return responses[i++] ?? 'NO_NEW_CONTENT';
+      },
+    } as LLMClient & { prompts: string[] };
+  }
+
+  const NOTE = [
+    '---',
+    'tags:',
+    '  - Thema/Test',
+    '---',
+    'Einleitung ohne den Begriff.',
+    '',
+    'Caching beschleunigt wiederholte Zugriffe erheblich und senkt die Latenz.',
+    '',
+    'Ein Absatz über etwas völlig anderes.',
+  ].join('\n');
+
+  it('passes the matching note paragraphs to triage AND body merge', async () => {
+    const client = makeCapturingClient([
+      JSON.stringify({ strategy: 'merge', reason: 'restructure' }),
+      '## Description\nNew merged text.\n',
+    ]);
+    const ctx = makeCtx(client);
+    ctx.written.set('Notizen/Some-Note.md', NOTE);
+    await mergePage(
+      ctx,
+      createMockEntity({ name: 'Caching' }),
+      'entity',
+      { path: 'Notizen/Some-Note.md', basename: 'Some-Note' },
+      EXISTING,
+      [],
+      'wiki/entities/Caching.md',
+    );
+    expect(client.prompts.length).toBe(2);
+    // Triage prompt carries the excerpt block…
+    expect(client.prompts[0]).toContain('says about "Caching"');
+    expect(client.prompts[0]).toContain('senkt die Latenz');
+    expect(client.prompts[0]).not.toContain('völlig anderes');
+    // …and so does the body-merge prompt.
+    expect(client.prompts[1]).toContain('senkt die Latenz');
+    // Note frontmatter is stripped before matching/excerpting.
+    expect(client.prompts[1]).not.toContain('Thema/Test');
+  });
+
+  it('lemma case: the note that IS the page delivers its full body', async () => {
+    const client = makeCapturingClient([
+      JSON.stringify({ strategy: 'merge', reason: 'own lemma' }),
+      '## Description\nNew merged text.\n',
+    ]);
+    const ctx = makeCtx(client);
+    ctx.written.set('Notizen/Caching.md', NOTE);
+    await mergePage(
+      ctx,
+      createMockEntity({ name: 'Caching' }),
+      'entity',
+      { path: 'Notizen/Caching.md', basename: 'Caching' },
+      EXISTING,
+      [],
+      'wiki/entities/Caching.md',
+      undefined,
+      { sourceTitle: 'Caching', summary: 'A note about caching.', sourcePath: 'Notizen/Caching.md' },
+    );
+    // Full-note mode: even the non-matching paragraphs travel.
+    expect(client.prompts[0]).toContain('völlig anderes');
+    expect(client.prompts[0]).toContain('Einleitung ohne den Begriff');
+  });
+
+  it('no prose about the page → prompts carry no excerpt block (prompt-invariant)', async () => {
+    const client = makeCapturingClient([
+      JSON.stringify({ strategy: 'merge', reason: 'x' }),
+      '## Description\nNew merged text.\n',
+    ]);
+    const ctx = makeCtx(client);
+    ctx.written.set('Notizen/Other.md', 'Nur fremde Themen.\n\nNichts über die Seite.');
+    await mergePage(
+      ctx,
+      createMockEntity({ name: 'Caching' }),
+      'entity',
+      { path: 'Notizen/Other.md', basename: 'Other' },
+      EXISTING,
+      [],
+      'wiki/entities/Caching.md',
+    );
+    expect(client.prompts[0]).not.toContain('says about');
+    expect(client.prompts[1]).not.toContain('says about');
+    expect(client.prompts[1]).not.toContain('{{source_excerpt}}');
+  });
+});
+
+describe('mergePage — item-level contradiction lane stamps marker and writes a record', () => {
+  it('routes kind=contradictory items to a record file, not the section append or the body', async () => {
+    const triage = JSON.stringify({
+      strategy: 'complementary',
+      reason: 'one conflicting claim',
+      items: [
+        { kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', reason: 'page states 5mg' },
+      ],
+    });
+    // Only ONE LLM response: the triage. A per-section append call for the
+    // conflicting item would consume a second response and integrate the
+    // claim as if it were a fact.
+    const ctx = makeCtx(makeClient([triage]));
+    await mergePage(ctx, createMockEntity({ name: 'Caching' }), 'entity', { path: 'note.md', basename: 'note' }, EXISTING, [], 'wiki/entities/caching.md');
+    const written = ctx.written.get('wiki/entities/caching.md');
+    expect(written).toBeDefined();
+    expect(written).toContain('## Description\nOld text.');
+    // No body block: it is unknown to the section schema, so
+    // stripUnknownSections would remove it on the next rewrite.
+    expect(written).not.toContain('Potential Contradiction');
+    // The marker (the durable index) is stamped.
+    expect(written).toContain('contradictions:');
+    expect(written).toContain('note.md');
+    // The prose lives in a record under <wikiFolder>/contradictions/.
+    const recordPath = [...ctx.written.keys()].find(p => p.startsWith('wiki/contradictions/'));
+    expect(recordPath).toBeDefined();
+    const record = ctx.written.get(recordPath!)!;
+    expect(record).toContain('status: detected');
+    expect(record).toContain('Dose is 10mg');
+    expect(record).toContain('page states 5mg');
+    expect(record).toContain('source_page: "[[entities/caching]]"');
+    expect(record).toContain('source_note: "note.md"');
+  });
+});
