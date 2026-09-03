@@ -48,6 +48,7 @@ import {
   applySectionLabels,
 } from './system-prompts';
 import { getExistingWikiPages } from './lint/get-existing-pages';
+import { correctRelatedLinkPrefixes } from '../core/related-link-corrector';
 import { fixDeadLink } from './lint/fix-dead-link';
 import { fillEmptyPage } from './lint/fill-empty-page';
 import { deleteEmptyStubs } from './lint/delete-empty-stubs';
@@ -1692,6 +1693,24 @@ export class WikiEngine {
     // a `domains:` field — one field, and the note itself carries the tags
     // one click away; the mirror only duplicated every tag-pane hit.
     // `tags:` stays the plugin's format axis (#90/#114).
+
+    // The source page was the one writer without the link corrector: 212 of
+    // 314 folder-wrong links measured on a 3,025-page vault stood in its Key
+    // Entities / Key Concepts / Core Content sections. Same pass as the
+    // entity and concept pages — the typed lists come from the analysis, the
+    // two Key sections play the role of the Related sections, and every
+    // folder-typed link elsewhere on the page is checked against the vault.
+    {
+      const labels = getSectionLabels(this.settings);
+      finalContent = correctRelatedLinkPrefixes(
+        finalContent,
+        analysis.entities.map(e => e.name),
+        analysis.concepts.map(c => c.name),
+        labels.key_entities,
+        labels.key_concepts,
+        { wikiFolder: this.settings.wikiFolder, pages: await this.getExistingWikiPages() },
+      );
+    }
 
     await this.createOrUpdateFile(path, finalContent);
     return path;

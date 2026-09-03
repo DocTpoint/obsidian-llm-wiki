@@ -16,6 +16,16 @@
 // `[[sources/<sourceSlug>]]` citations in "Mentions in Source" — whose names often
 // coincide with a related concept (e.g. the source "Gedächtnis" is also a related
 // concept) — are never rewritten. No false-merge risk.
+//
+// Outside those sections a narrower pass runs, with the vault index only: a link
+// the model already typed as `entities/X` or `concepts/X` whose page the vault
+// holds under the other folder is re-pointed there. Measured on a 3,025-page
+// vault, 279 of 314 folder-wrong links stood in prose (Description, Core
+// Content, the source page's Key Entities/Concepts) — the section-scoped pass
+// never saw them, and every one of them was a dead link in the reader and a
+// missing edge in the query graph. Bare `[[X]]` links stay untouched there (no
+// section to type them), `sources/` links are never re-typed, and a name the
+// vault does not know is left alone.
 
 import { slugify } from './slug';
 
@@ -165,6 +175,18 @@ export function correctRelatedLinkPrefixes(
   // the same treatment: resolved against the vault, or folder-stamped from the
   // typed lists so the stub path can pick it up.
   const bareLinkRe = /\[\[(?!entities\/|entity\/|concepts\/|concept\/|sources\/)([^\]|/]+)(\|[^\]]*)?\]\]/g;
+  // Prose pass: only folder-typed entity/concept links, only re-pointed to a
+  // page the vault actually holds. Everything else on the line is left as is.
+  const proseLinkRe = /\[\[(entities|entity|concepts|concept)\/([^\]|]+)(\|[^\]]*)?\]\]/g;
+  const repointInProse = (line: string): string => {
+    if (!vaultIndex) return line;
+    return line.replace(proseLinkRe, (full, folder: string, target: string, display?: string) => {
+      const inVault = resolveInVault(target);
+      if (!inVault || inVault === `${folder}/${target}`) return full;
+      return `[[${inVault}|${display ? display.slice(1) : target}]]`;
+    });
+  };
+
   let current: 'entities' | 'concepts' | undefined;
   return content.split('\n').map(line => {
     const header = /^#{1,6}\s+(.*?)\s*$/.exec(line);
@@ -172,7 +194,7 @@ export function correctRelatedLinkPrefixes(
       current = sectionFolder.get(header[1].trim());
       return line;
     }
-    if (!current) return line;
+    if (!current) return repointInProse(line);
     const rewrite = (target: string, folder: string | undefined, display: string | undefined): string => {
       // The vault's own answer wins: it knows the real path, including the case
       // where `target` is an alias of a page with a different title.
