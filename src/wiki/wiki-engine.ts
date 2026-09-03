@@ -48,7 +48,7 @@ import {
   applySectionLabels,
 } from './system-prompts';
 import { getExistingWikiPages } from './lint/get-existing-pages';
-import { correctRelatedLinkPrefixes } from '../core/related-link-corrector';
+import { correctRelatedLinkPrefixes, repointFolderTypedLinks } from '../core/related-link-corrector';
 import { fixDeadLink } from './lint/fix-dead-link';
 import { fillEmptyPage } from './lint/fill-empty-page';
 import { deleteEmptyStubs } from './lint/delete-empty-stubs';
@@ -1412,6 +1412,17 @@ export class WikiEngine {
       }
 
       // Stage 5: Contradiction Recording
+      // Stage 4.5: re-point folder-typed links on every page this run wrote.
+      // A page written early in the run links to a sibling that does not
+      // exist yet; the write-time corrector then trusts the extraction's
+      // folder, and the sibling may land in the other one (the folder is
+      // decided at dedup, #589). Only now does the vault know. Measured:
+      // 35 of 314 folder-wrong links sat in Related sections of pages
+      // whose target was born in the same run.
+      const repointStart = Date.now();
+      await this.repointLinksAfterRun([...analysis.created_pages, ...analysis.updated_pages]);
+      console.debug(`[Time] Link re-point pass: ${Date.now() - repointStart}ms`);
+
       const contradictionStart = Date.now();
       for (const contradiction of analysis.contradictions) {
         try {
@@ -1578,6 +1589,62 @@ export class WikiEngine {
     }
 
     await this.schemaManager.ensureSchemaExists();
+  }
+
+  /**
+   * End-of-run link pass. Deterministic, no model: every folder-typed link on
+   * the pages this run wrote is resolved against the pages this run wrote —
+   * that is the whole class. A target that existed before the run was
+   * resolvable at write time already; only a sibling born later in the same
+   * run was not, so the index is built from the run's own pages (title from
+   * the file name, aliases from the frontmatter), one read per page, and
+   * never from a vault-wide scan. Pages that come out byte-identical are not
+   * rewritten, and a `reviewed: true` page is not touched at all — its body
+   * is locked for every writer (K: reviewed = hands off), this pass included;
+   * it still lends its title and aliases to the index. A failure on one page
+   * is logged and never fails the ingest or the pass for the other pages —
+   * the pages are already on disk.
+   */
+  async repointLinksAfterRun(pagePaths: string[]): Promise<{ pages: number; links: number }> {
+    const paths = [...new Set(pagePaths)].filter(p => p.endsWith('.md'));
+    const result = { pages: 0, links: 0 };
+    if (paths.length === 0) return result;
+    const contents = new Map<string, string>();
+    for (const path of paths) {
+      try {
+        const content = await this.tryReadFile(path);
+        if (content) contents.set(path, content);
+      } catch (error) {
+        console.warn(`[link-repoint] could not read ${path}, left as written:`, error);
+      }
+    }
+    const runIndex = {
+      wikiFolder: this.settings.wikiFolder,
+      pages: [...contents].map(([path, content]) => {
+        const fm = parseFrontmatter(content);
+        return {
+          path,
+          title: (path.split('/').pop() ?? path).replace(/\.md$/, ''),
+          aliases: Array.isArray(fm?.aliases) ? fm.aliases : undefined,
+        };
+      }),
+    };
+    for (const [path, content] of contents) {
+      if (parseFrontmatter(content)?.reviewed === true) continue;
+      const { content: repointed, moved } = repointFolderTypedLinks(content, runIndex);
+      if (moved === 0 || repointed === content) continue;
+      try {
+        await this.createOrUpdateFile(path, repointed);
+        result.pages++;
+        result.links += moved;
+      } catch (error) {
+        console.warn(`[link-repoint] could not write ${path}, left as written:`, error);
+      }
+    }
+    if (result.links > 0) {
+      console.debug(`[link-repoint] ${result.links} link(s) on ${result.pages} page(s) re-pointed to where the target landed`);
+    }
+    return result;
   }
 
   async createSummaryPage(file: TFile, analysis: SourceAnalysis, plannedPaths: string[] = [], sourceSlug?: string, contentOverride?: string): Promise<string> {
