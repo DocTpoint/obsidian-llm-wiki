@@ -16,6 +16,7 @@ import {
 } from '../../core/prompt-builders';
 import { normalizeFrontmatterDates, buildSectionLabelsHint, EMPTY_CONTENT_STRIP, MIN_SUBSTANTIVE_CHARS, STUB_MARKER } from './utils';
 import { WIKI_SUBFOLDERS } from '../../constants';
+import { localDateStamp } from '../../core/format';
 
 
 export async function fillEmptyPage(
@@ -90,7 +91,7 @@ export async function fillEmptyPage(
     );
   }
 
-  const dateStr = new Date().toISOString().split('T')[0];
+  const dateStr = localDateStamp();
   const withDates = normalizeFrontmatterDates(stubFree, dateStr);
   const pageTypeSingular = pageType === WIKI_SUBFOLDERS.entities ? 'entity' : pageType === WIKI_SUBFOLDERS.concepts ? 'concept' : 'source';
   // Issue #388: the page being filled already exists, so its real creation date

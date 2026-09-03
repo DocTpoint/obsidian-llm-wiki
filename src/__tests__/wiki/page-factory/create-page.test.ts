@@ -15,6 +15,7 @@ import {
 } from '../../../wiki/page-factory/create-page';
 import { createMockEntity, createMockConcept } from '../../__support__/factories';
 import type { LLMWikiSettings, LLMClient } from '../../../types';
+import { localDateStamp } from '../../../core/format';
 
 const EXISTING_FM = `---\ncreated: 2026-07-10\nupdated: 2026-07-10\nsources:\n  - "[[existing]]"\ntags: []\n---\n\n## Description\nOld body.\n`;
 
@@ -446,7 +447,7 @@ describe('createNewPage — created: provenance (Issue #388)', () => {
       'wiki/entities/X.md',
     );
     const written = ctx.written.get('wiki/entities/X.md')!;
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStamp();
     expect(written).toContain(`created: ${today}`);
     expect(written).not.toContain('2024-11-03');
   });

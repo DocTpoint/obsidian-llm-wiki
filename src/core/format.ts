@@ -11,3 +11,20 @@ export function formatBytes(n: number): string {
   if (n >= 1024) return `${(n / 1024).toFixed(1)}KB`;
   return `${n}B`;
 }
+
+/**
+ * Today's calendar date in the user's local time zone, as `YYYY-MM-DD`.
+ *
+ * `new Date().toISOString().slice(0, 10)` yields the UTC date, which in any
+ * zone east of UTC is still *yesterday* for the first hours after local
+ * midnight (until 08:00 in UTC+8, 02:00 in CEST). Every date stamp the plugin
+ * writes into the vault — `created:` / `updated:` frontmatter, the ingest
+ * log's `## [date time]` header, contradiction records — is read by a human
+ * in local time, so it must be built from local components.
+ */
+export function localDateStamp(now: Date = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}

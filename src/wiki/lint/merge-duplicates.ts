@@ -9,6 +9,7 @@ import { cleanMarkdownResponse } from '../../core/markdown';
 import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { retargetLinksToPage } from '../../core/link-retarget';
+import { localDateStamp } from '../../core/format';
 
 export async function mergeDuplicatePages(
   ctx: EngineContext,
@@ -145,7 +146,7 @@ export async function mergeDuplicatePages(
     }
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStamp();
   const newContent = serializeFrontmatter(
     {
       type: targetFm?.type,

@@ -14,6 +14,7 @@ import {
 import { getExistingWikiPages } from './get-existing-pages';
 import { selectCandidateWindow, contextAround } from '../../core/candidate-window';
 import { FixDeadLinkSchema, type FixDeadLink } from '../../llm-sdk/output-schemas';
+import { localDateStamp } from '../../core/format';
 
 /** Characters to each side of the dead link that describe what it points to (300 in all, the dedup summary length). */
 const DEAD_LINK_CONTEXT_RADIUS = 150;
@@ -73,7 +74,7 @@ export interface StubContentParams {
 
 export function buildStubContent(params: StubContentParams): string {
   const { title, stubType, referringPageRel } = params;
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStamp();
   const defaultTag = stubType === 'entity' ? 'other' : 'term';
   // Emit `sources:` as block-style so the v1.25.11 provenance-stamp
   // writer in create-page.ts's `appendSourceSlugToFrontmatter` (which
