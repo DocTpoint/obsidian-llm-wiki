@@ -31,7 +31,7 @@
     "conversational-query",
     "streaming"
   ],
-  "author": "Greener-Dalii",
+  "author": "Greener-Dalii, DocTpoint",
   "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "16.18.126",
