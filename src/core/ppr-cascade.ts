@@ -64,6 +64,60 @@ export function formatPageRefSummary(p: PageRef): string {
  * count of needles matched (`tokensFound`) so callers can apply a
  * multi-needle bonus. Pure function — no IO.
  */
+/**
+ * What a "word" is made of: letters, digits and combining marks (so a
+ * decomposed umlaut — NFD, as macOS and iCloud hand files over — stays
+ * inside its word). Shared by the tokenizer and the needle matcher so
+ * both agree. Built with the RegExp constructor because a `\p{…}`
+ * literal is what the ES6 tsconfig target rejects, not the runtime —
+ * the same form candidate-gate.ts uses.
+ */
+const WORD_CHAR_CLASS = '\\p{L}\\p{N}\\p{M}';
+/**
+ * Scripts written without word spaces. A needle in one of them cannot
+ * be asked to start a word — there is no boundary to find — so it keeps
+ * substring semantics; a run of them is not a "word run" either, the
+ * CJK block below cuts those. Matches the tokenizer's CJK/kana/Hangul
+ * handling, plus Thai for the same reason.
+ */
+const NO_BOUNDARY_SCRIPT = '\\p{sc=Han}\\p{sc=Hiragana}\\p{sc=Katakana}\\p{sc=Hangul}\\p{sc=Thai}';
+const BOUNDED_WORD_CHAR = `(?:(?![${NO_BOUNDARY_SCRIPT}])[${WORD_CHAR_CLASS}])`;
+const WORD_CHAR = new RegExp(`[${WORD_CHAR_CLASS}]`, 'u');
+const WORD_RUN = new RegExp(`${BOUNDED_WORD_CHAR}{2,}`, 'gu');
+const BOUNDED_WORD_ONLY = new RegExp(`^${BOUNDED_WORD_CHAR}+$`, 'u');
+/**
+ * Leading/trailing characters that are not part of any word — punctuation
+ * for our purposes. Two alternatives so a token that is nothing but
+ * punctuation collapses to the empty string.
+ */
+const EDGE_PUNCTUATION = new RegExp(`^[^${WORD_CHAR_CLASS}]+|[^${WORD_CHAR_CLASS}]+$`, 'gu');
+
+/**
+ * Does `kw` occur in `textLower`? A needle from a space-delimited script
+ * must start a word; a needle from a script without word spaces (CJK,
+ * Thai …) matches as a substring.
+ *
+ * Substring matching was dominated by accidents of spelling: in a
+ * 3,000-page German vault "man" hit Kahneman and Karpman, "bei" hit
+ * Salbei, "kann" hit Pekannüsse, and "creatin" hit Phosphocreatin — a
+ * different substance that shares seven letters. A word start keeps
+ * prefix compounds ("nierenfunktion" → Nierenfunktionsstörung) and
+ * hyphenated ones ("kinase" → Creatin-Kinase); a tail compound
+ * ("insuffizienz" in Niereninsuffizienz) is left to aliases, the LLM
+ * keyword stage and the graph walk. Pure function.
+ */
+export function needleHits(textLower: string, kw: string): boolean {
+  if (!BOUNDED_WORD_ONLY.test(kw)) {
+    return textLower.includes(kw);
+  }
+  let i = textLower.indexOf(kw);
+  while (i !== -1) {
+    if (i === 0 || !WORD_CHAR.test(textLower[i - 1])) return true;
+    i = textLower.indexOf(kw, i + 1);
+  }
+  return false;
+}
+
 export function scorePagesByNeedles(
   pages: PageRef[],
   needles: string[],
@@ -77,10 +131,10 @@ export function scorePagesByNeedles(
     let tokensFound = 0;
     for (const kw of needles) {
       if (kw.length === 0) continue;
-      if (titleLower.includes(kw)) {
+      if (needleHits(titleLower, kw)) {
         score += 3;
         tokensFound++;
-      } else if (aliasLowers.some(a => a.includes(kw))) {
+      } else if (aliasLowers.some(a => needleHits(a, kw))) {
         score += 2;
         tokensFound++;
       }
@@ -161,6 +215,8 @@ const DEFAULT_MIN_EDGES = 30;
 const DEFAULT_MIN_EDGE_DENSITY = 1.0;
 const DEFAULT_SEED_MIN_DEGREE = 1;
 const DEFAULT_TOP_N = 10;
+/** Share of the top PPR mass the lex rank hint may add — see mergeWithPPR. */
+const LEX_HINT_WEIGHT = 0.1;
 
 /**
  * Tokenize a query into individual searchable terms. Language-aware:
@@ -181,13 +237,20 @@ export function tokenizeQuery(query: string): string[] {
   const tokens = new Set<string>();
   const queryLower = query.toLowerCase();
 
-  // ASCII runs of length ≥ 2.
-  const asciiRuns = queryLower.match(/[a-z0-9]{2,}/g);
-  if (asciiRuns) for (const r of asciiRuns) tokens.add(r);
+  // Word runs of length ≥ 2 in any space-delimited script, diacritics
+  // included. An ASCII-only class split "über" into "ber" and
+  // "eingeschränkter" into "eingeschr" + "nkter": fragments that matched
+  // titles the query never named, and "ber" double-counted every title
+  // "über" already hit. Cyrillic, Greek, Arabic … get the same treatment.
+  const wordRuns = queryLower.match(WORD_RUN);
+  if (wordRuns) for (const r of wordRuns) tokens.add(r);
 
   // Whitespace-split tokens of length ≥ 2 (catches words with CJK
   // mixed in: "InterVL和Janus" → "intervl和janus", "和" rejected by length).
-  for (const t of queryLower.split(/\s+/)) {
+  // Edge punctuation is stripped so "Creatin." and "nehmen?" do not
+  // survive as needles that can never match a title.
+  for (const raw of queryLower.split(/\s+/)) {
+    const t = raw.replace(EDGE_PUNCTUATION, '');
     if (t.length >= 2) tokens.add(t);
   }
 
@@ -275,9 +338,9 @@ function lexMatch(query: string, pages: PageRef[]): PageRef[] {
     let score = 0;
     let tokensFound = 0;
     for (const kw of tokens) {
-      if (titleLower.includes(kw)) { score += 3; tokensFound++; }
-      else if (aliasLowers.some(a => a.includes(kw))) { score += 2; tokensFound++; }
-      else if (summaryLower.includes(kw)) { score += 1; tokensFound++; }
+      if (needleHits(titleLower, kw)) { score += 3; tokensFound++; }
+      else if (aliasLowers.some(a => needleHits(a, kw))) { score += 2; tokensFound++; }
+      else if (needleHits(summaryLower, kw)) { score += 1; tokensFound++; }
     }
     if (tokensFound === tokens.length && tokens.length > 1) score += 2;
     if (score > 0) scored.push({ page, score });
@@ -475,13 +538,36 @@ function mergeWithPPR(
   const byPath = new Map<string, PageRef>();
   for (const p of pages) byPath.set(p.path, p);
 
-  // Merge: each page gets a composite score = max(lexScore, pprScore).
-  // PPR is the dominant signal (ranker); lex is the fallback hint.
+  // Merge: PPR mass is the ranker; the lex rank hint breaks ties among
+  // reached pages and orders the pages PPR never reached. The two live
+  // on different scales — lexScoreOf is a rank placeholder in (0, 1],
+  // PPR mass on a 3,000-node graph is ~0.05 for a seed — so the old
+  // `max(lex, ppr)` let any keyword hit outrank every PPR seed: with 76
+  // lex hits the top ten were all lex, and the seeds the LLM stage had
+  // just paid for were gone.
+  //
+  // Reached pages: ppr + hint × LEX_HINT_WEIGHT × maxPpr — the hint can
+  // reorder pages within a tenth of the top mass (e.g. several seeds of
+  // equal mass), nothing further apart. Unreached pages: hint scaled
+  // strictly below the smallest mass, so one monotone key sorts both.
+  let minPpr = Infinity;
+  let maxPpr = 0;
+  for (const v of pprScores.values()) {
+    if (v <= 0) continue;
+    if (v < minPpr) minPpr = v;
+    if (v > maxPpr) maxPpr = v;
+  }
+  const reachedHintScale = maxPpr * LEX_HINT_WEIGHT;
+  const unreachedHintScale = Number.isFinite(minPpr) ? minPpr / 2 : 1;
+
   const merged = new Map<string, { page: PageRef; score: number; arm: PageMatch['arm'] }>();
 
   for (const page of lex) {
     const ppr = pprScores.get(page.path) ?? 0;
-    const score = Math.max(lexScoreOf(page, lex), ppr);
+    const hint = lexScoreOf(page, lex);
+    const score = ppr > 0
+      ? ppr + hint * reachedHintScale
+      : hint * unreachedHintScale;
     merged.set(page.path, { page, score, arm });
   }
   for (const [path, ppr] of pprScores) {
