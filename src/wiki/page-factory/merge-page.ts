@@ -37,10 +37,9 @@ import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import {
   canonicalizeSectionHeaders,
-  preserveExistingSections,
-  reassertH1,
   stripUnknownSections,
 } from '../../core/section-header-canonicalizer';
+import { guardBodyRewrite } from '../../core/paragraph-provenance';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
 import { mergeFrontmatter, parseFrontmatter, extractBody } from '../../core/frontmatter';
 import { incomingTypeTag } from '../../core/tag-vocab';
@@ -325,20 +324,17 @@ export async function mergePage(
       // link targets are resolved here — against every page, not a window.
       { wikiFolder: ctx.settings.wikiFolder, pages: await getExistingWikiPages(ctx.app as never, ctx.settings.wikiFolder) },
     );
-    // Completeness is the schema's call, not the model's: restore any canonical
-    // section that carried content before the rewrite and is wholly absent from
-    // it. The Mentions section is re-attached by assembleFinalContent below.
-    const guardedBody = preserveExistingSections(
+    // Completeness is the schema's call, not the model's: sections the rewrite
+    // dropped or collapsed come back (#618), footnoted paragraphs another source
+    // owns come back, the H1 comes back (#419). The Mentions section is
+    // re-attached by assembleFinalContent below.
+    const titledBody = guardBodyRewrite(
       existingBody,
       correctedBody,
+      sourceFile.basename,
       Object.values(labels),
       labels.mentions_in_source,
     );
-
-    // #419: the guard above owns `##` blocks only, so the title line falls
-    // between the layers — the model is asked for the whole body and the reply
-    // routinely starts at the first `##`. Restore the page's own H1.
-    const titledBody = reassertH1(existingBody, guardedBody);
     await ctx.createOrUpdateFile(
       path,
       await assembleFinalContent(

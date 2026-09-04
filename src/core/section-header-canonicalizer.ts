@@ -121,6 +121,16 @@ export function classifyHeader(
   return { label: base, suffix: m[2].trim() };
 }
 
+/**
+ * The key a section's identity is compared under — label, plus ` (suffix)`
+ * when the header carries one — or null for a header that is not a schema
+ * section. Every guard that decides keep-vs-drop per section keys by this.
+ */
+export function sectionIdentityKey(header: string, canonicalLabels: string[]): string | null {
+  const id = classifyHeader(header, canonicalLabels);
+  return id ? (id.suffix === null ? id.label : `${id.label} (${id.suffix})`) : null;
+}
+
 export function canonicalizeSectionHeaders(content: string, canonicalLabels: string[]): string {
   const snap = (header: string): string | null => snapHeaderToCanonical(header, canonicalLabels);
   return content.split('\n').map(line => {
@@ -156,8 +166,7 @@ function canonicalSectionBlocks(
     const m = /^##\s+(.+?)\s*$/.exec(line);
     if (m) {
       flush();
-      const id = classifyHeader(m[1], canonicalLabels);
-      key = id ? (id.suffix === null ? id.label : `${id.label} (${id.suffix})`) : null;
+      key = sectionIdentityKey(m[1], canonicalLabels);
       lines = key ? [line] : [];
       continue;
     }
@@ -274,8 +283,7 @@ function replaceSectionBlocks(
     const m = /^##\s+(.+?)\s*$/.exec(line);
     if (m) {
       skipping = false;
-      const id = classifyHeader(m[1], canonicalLabels);
-      const key = id ? (id.suffix === null ? id.label : `${id.label} (${id.suffix})`) : null;
+      const key = sectionIdentityKey(m[1], canonicalLabels);
       const replacement = key !== null ? replacements.get(key) : undefined;
       if (replacement) {
         out.push(...replacement.join('\n').replace(/\s+$/, '').split('\n'), '');
