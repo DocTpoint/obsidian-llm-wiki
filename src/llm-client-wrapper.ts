@@ -113,13 +113,16 @@ export function wrapWithAdvancedSettings(
   // Object.create, silently dropping advanced settings on the stream path.
   // Issue #469: the interface now carries a task label, so the stream path
   // accounts under the step like every other caller — Query Wiki streams
-  // under 'query-wiki' instead of a merged 'untagged' row.
+  // under 'query-wiki' instead of a merged 'untagged' row — and the same
+  // label keys the per-step thinking policy (see applyTaskPolicy).
   if (client.createMessageStream) {
     wrapper.createMessageStream = (params) => withTaskAccounting(params.task, async () => {
       logLlmCall(params.task, params.model, params.max_tokens, 'stream');
+      const { enableThinking } = applyTaskPolicy(params.task, settings);
       return client.createMessageStream!({
         ...params,
         ...injectAdvancedSettings(params, settings, capTokens),
+        ...(enableThinking !== undefined ? { enableThinking } : {}),
       });
     });
   }
@@ -159,8 +162,13 @@ function injectAdvancedSettings(
  * spreads `{}` and changes nothing, which is what keeps the default path
  * byte-identical to pre-#481.
  *
- * Not applied on the stream path — it carries no `task` label (#469), so
- * there is nothing to key a per-step decision on.
+ * The stream path takes only the thinking half: it has no output mode (a
+ * stream is text by construction) and its interface carries no effort
+ * level, so a named level rides as `enableThinking: true` and the budget
+ * is left to the client's default. Until now the stream path was skipped
+ * altogether — the note here said it carried no `task` label, which #469
+ * ended: Query Wiki streams under 'query-wiki', and a policy of
+ * `*=default:off` reached every step except the one the user waits for.
  */
 function applyTaskPolicy(
   task: string | undefined,
