@@ -2,7 +2,7 @@
 
 > Feature planning and improvement proposals
 
-**Latest shipped:** v1.27.0 MINOR (2026-08-27). See [CHANGELOG.md §1.27.0](./CHANGELOG.md#1270---2026-08-27) for the canonical composition record. | **Updated:** 2026-08-28 (post v1.27.0 PATCH triage — 5 new items + simplify/code-review pass on PR #569)
+**Latest shipped:** v1.27.0 MINOR (2026-08-27). See [CHANGELOG.md §1.27.0](./CHANGELOG.md#1270---2026-08-27) for the canonical composition record. | **Updated:** 2026-09-04 (post v1.27.x PATCH triage — 21-PR wave merged: 12 on 09-02 + 9 on 09-04; 3830 tests)
 
 **v1.26.5 PATCH CANCELLED 2026-08-19** — folded into v1.27.0 MINOR to amortize release-cycle overhead (per user direction).
 
@@ -75,21 +75,49 @@ Open follow-ups from review threads: alias-floor unification (#537×#532), bound
 
 ---
 
-## v1.27.x PATCH cycle — current scope (2026-08-28)
+## v1.27.x PATCH cycle — current scope (updated 2026-09-04)
 
-**Triggered by:** v1.27.0 MINOR shipped 2026-08-27 (`3464cce`). PATCH backlog is the union of (a) v1.27.0 ship-day bugs from architect-level triage (4 PRs already shipped 2026-08-27: #559 / #564 / #557 + #566 owner-passby), (b) deferred items from v1.27.0 review threads, (c) post-MINOR new Issues filed by @DocTpoint 2026-08-28 (#567 / #568) + PR #569.
+**Triggered by:** v1.27.0 MINOR shipped 2026-08-27 (`3464cce`). PATCH backlog is the union of (a) v1.27.0 ship-day bugs from architect-level triage, (b) deferred items from v1.27.0 review threads, (c) post-MINOR new Issues filed by @DocTpoint (2026-08-28 onwards: #567 / #568 / #605–#620 series).
+
+**Milestone note (2026-09-04):** the `v1.27.0 MINOR` GitHub milestone is CLOSED (released 2026-08-27) and must not carry new work. All open PATCH/feature items live under `v1.27.x PATCH` until a future MINOR milestone is created.
+
+### Shipped into v1.27.x PATCH — wave A (2026-08-27 → 09-02, 12 PRs, main `7c4d144`)
+
+Architect + community correctness wave merged 09-02: repetition-loop echo (#572), task-policy `__proto__` guard (#571), Hermes cross-reference memory (#587), contradiction marker read half (#578), item-level contradiction lane (#576), contentHash drift lint (#577), merge note paragraphs (#579), preamble cut fix (#580), heading normalization (#581), cancelled-ingest fix (#583), reasoning-channel gates (#585/#586), Claude-residue removal (#574). Plus Tier-0 5-PR wave (09-02, merged in order #596 → #602 → #591 → #600 → #589): ingest ownership from `source_file` (#596), contradiction write-path resolution (#602), dev-instrument link cache (#591), picker disk-state (#600), cross-folder dedup routing (#589). 3741 → 3792 tests.
+
+### Shipped into v1.27.x PATCH — wave B (2026-09-04, 9 PRs, main `8feb5fd`)
+
+DocTpoint rewrite-safety audit wave, all merge-ready and review-approved in one pass (09-04):
+
+| PR | Issue | What | Severity class |
+|----|-------|------|----------------|
+| **#612** | #611 | `localDateStamp()` replaces `toISOString().split('T')` at all 17 date-write sites — vault dates now local, not UTC | data-correctness |
+| **#615** | #613 | related-page rewrite scoped to `entities/`+`concepts/` — 573 misdirected source-page rewrites stop | **data-corruption** |
+| **#616** | #614 | Mentions re-emit uses existing block length as floor — no more 500-char capping of accumulated quotes | content-loss |
+| **#618** | #617 | kept-but-collapsed sections (below `SECTION_SHRINK_FLOOR`) restored — closes the #419 guard hole | **content-loss** |
+| **#621** | #620 | candidate gate keeps edges to pages the vault already has (`isKnownPage`) — no vault-blind pruning | graph-integrity |
+| **#606** | #605 | merge-triage contradictions reach the log/report via `onContradiction` callback | reporting |
+| **#610** | #609 | two gates before a contradiction record — page sentence exists + source holds the claim (7/9 false-positive rate measured) | correctness |
+| **#622** | — | README Marp URL + LICENSE relative links fixed (community first PR, NotAFlightRisk) | docs |
+| **#619** | — | DocTpoint listed as co-maintainer in manifest/NOTICE/README (owner-approved) | credit |
+
+3830 tests (Gate 1 green). Issues #605/#609/#611/#613/#614/#617/#620 auto-closed by their PRs.
 
 ### Active backlog (priority × ROI)
 
 | # | Issue | What | Why now | Owner | Status |
 |---|-------|------|---------|-------|--------|
-| 1 | **#543** | `parseTaskPolicySpec` — `__proto__` entry bypasses the duplicate-task guard | 1-line + 1 test; closes `Object.prototype` pollution class | green-dalii (owner-self) | Ready, not yet PR |
-| 2 | **#567** | `customEntityLimit` / `customConceptLimit` ceiling-vs-denominator coupling reduces yield as limit rises | Real user pain (11-50 default range); recommended contract: ceiling-only + stop gets own signal sibling to `checkEmptyBatch` | green-dalii (owner-self) | Issue open; needs contract decision then PR |
-| 3 | **#568 / #569** | Domain-axis write side — `domains:` frontmatter key, validated against vault tag vocabulary | #91 read-side prerequisite; PR #569 has 6 pre-merge bugs (B1-B6) concentrated in fold-aware dedup inconsistency (3 writers vs validator) + empty-`wikiFolder` edge case + 3 test gaps | DocTpoint | PR open; **CHANGES_REQUESTED 2026-08-28**; author fix needed |
-| 4 | **#542** | `isSourceBorneLoop` suppresses halve-retry for common-word degenerate cases | Reaffirmed by #525 follow-up review (source-borne loop pre-check before spending halve-retry) | green-dalii (owner-self) | Issue open; small fix |
-| 5 | **#407 Stage 2** | 7 silent-failure sites in `conversation-ingest.ts:337` et al (one PR per blast radius) | High-ROI bug series, blast-radius split per `feedback_*` lessons | green-dalii (owner-self) | Open; split into ~3 PRs |
-| 6 | **#528** | Type-repair fan-out — bound concurrency to 2-4 chunks | Review-thread follow-up from #528 merged (PR #526/#528); no hot spot today | DocTpoint | Open; defer to mid-PATCH |
-| 7 | **#539 follow-ups** | codex-client `outputModeOverride` honoring + exhaustion-arm test + hardcoded-EN placeholder i18n | 6 filed items from simplify pass on PR #539 (merged `4c15cc5`); quality items | green-dalii (owner-self) | Open; mid-PATCH |
+| 1 | **#569 / #568** | Domain-axis write side (one-field `tags:`, vault-tag vocabulary) — PR #569 35 files | #91 read-side prerequisite; **B1-B6 fixed** (unionDomains fold helper at all 3 writers, empty-wikiFolder guard, DropReason narrowed) + T1-T3 tests landed; 6 further commits after the fix need fresh review | DocTpoint | PR open; **B1-B6 done 09-02 — awaiting full re-review** (11 commits) |
+| 2 | **#567** | `customEntityLimit` / `customConceptLimit` ceiling-vs-denominator coupling reduces yield as limit rises | Real user pain (11-50 default range); recommended contract: ceiling-only + stop gets own signal sibling to `checkEmptyBatch` | green-dalii (owner-self) | Issue open; needs contract decision then PR; #607's gate table addresses part of it |
+| 3 | **#603** | "single write gate" contract does not hold — six writers bypass `createOrUpdatePage` | Design call (09-02 reply): narrow documented contract + progressive funnel + write-audit logging | DocTpoint | Open; design decision pending |
+| 4 | **#604** | contradiction resolution loop dead code — nothing sets `review_ok` | Design call (09-02 reply): remove dead branch, keep review field on record | DocTpoint | Open; design decision pending |
+| 5 | **#592 / #593 / #594 / #597** | Jan-Heldal community bug series (dead-link clobber / modal crash / log voice / schema metadata) | Verified against bundled main.js by DocTpoint; submitter invited to PR | Jan-Heldal | Open; awaiting contributor PRs |
+| 6 | **#542** | `isSourceBorneLoop` suppresses halve-retry for common-word degenerate cases | Reaffirmed by #525 follow-up review | green-dalii (owner-self) | Issue open; small fix |
+| 7 | **#407 Stage 2** | 7 silent-failure sites in `conversation-ingest.ts:337` et al (one PR per blast radius) | High-ROI bug series, blast-radius split per `feedback_*` lessons | green-dalii (owner-self) | Open; split into ~3 PRs |
+| 8 | **#528** | Type-repair fan-out — bound concurrency to 2-4 chunks | Review-thread follow-up from #528 merged | DocTpoint | Open; defer to mid-PATCH |
+| 9 | **#539 follow-ups** | codex-client `outputModeOverride` honoring + exhaustion-arm test + hardcoded-EN placeholder i18n | 6 filed items from simplify pass on PR #539 | green-dalii (owner-self) | Open; mid-PATCH |
+
+**Removed from backlog as shipped (wave A/B):** #543 (PR #571) · #542-adjacent repetition-loop (PR #572) · #595/#598/#601/#588/#590/#605/#609/#611/#613/#614/#617/#620 (all closed by PRs #596/#600/#602/#589/#591/#606/#610/#612/#615/#616/#618/#621)
 
 ### Recently shipped into v1.27.x PATCH (2026-08-27, pre-triage batch)
 
@@ -112,13 +140,14 @@ Open follow-ups from review threads: alias-floor unification (#537×#532), bound
 - **#479** Coverage measurement denominator — "no edge" readability (DocTpoint, 2026-08-18): 30.1% omission rate measured; on `v1.27.0+ research` milestone 2026-08-28; reopen when LLM-side probe ready
 - **#480** "PPR ≈ kNN" is a property of co-occurrence edges — depends on typed relations #285 emitting before re-test meaningful; on `v1.27.0+ research` milestone 2026-08-28
 
-### Recommended cycle cadence
+### Recommended cycle cadence (updated 2026-09-04)
 
 | Phase | Items | ETA |
 |-------|-------|-----|
-| **Early PATCH** (urgent + self-contained) | #543 + #567 + merge #569 (post B1-B6 + T1-T3) | ~1 day |
-| **Mid PATCH** (consolidation) | #542 + first PR of #407 Stage 2 + #539 follow-ups | ~3 days |
+| **Next** (re-review + design) | re-review #569 (11 commits, B1-B6 done) + decide #603/#604 + #567 contract | ~1-2 days |
+| **Mid PATCH** (community + consolidation) | Jan-Heldal #592/#593/#594/#597 PRs (if submitted) + #542 + first PR of #407 Stage 2 + #539 follow-ups | ~3 days |
 | **Late PATCH** (research-grade) | #528 type-repair chunking + #521 zh/ja measurement | ~5 days |
+| **Future MINOR** (v1.28.0, not yet a milestone) | #607 gate three-outcome table (post-#569) + #608 image-embed ingest + #317/#326/#295 design-track | — |
 
 ### Triage discipline notes (post-triage 2026-08-28)
 

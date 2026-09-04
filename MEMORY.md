@@ -301,11 +301,32 @@ memory directory for this project.
 - v1.20.2–v1.24.x: PATCH cadence every 1-2 weeks, occasional MINOR (v1.24.0)
 - v1.25.x: 11 PATCH releases in 6 weeks (eucher-era hot-fix cadence)
 - v1.26.x: 5 releases (v1.26.0 MINOR + v1.26.1–v1.26.4 PATCH)
-- **v1.27.0 MINOR** ships 2026-08-27; **next** is v1.27.x PATCH (deferred items)
+- **v1.27.0 MINOR** ships 2026-08-27; **in** v1.27.x PATCH (wave A 09-02: 12 PRs; wave B 09-04: 9 PRs; next release after #569/#607 or community PRs land)
 
 MINOR cadence is roughly every 3-4 PATCH releases or when an architect-level
 contributor lands a ≥5-PR cluster. Decision documented in AGENTS.md "PR merge
 workflow".
+
+---
+
+## Lessons learned (2026-09-04 session — wave-B rewrite-safety audit + 21-PR PATCH wave)
+
+**Trigger:** post-09-02 PATCH continuation. Merged 21 PRs total (wave A 12 on 09-02, wave B 9 on 09-04); main `7c4d144` → `8feb5fd`; 3677 → 3830 tests. Wave B was DocTpoint's rewrite-safety audit — every PR measured on a 413-note German vault with per-write audit parking (previous version saved before each write), exposing a whole class of "non-lossy promise broken" bugs.
+
+### Durable lessons
+
+1. **Merge-stack conflicts on shared files are the norm for same-author waves, not the exception.** Wave B's stacked PRs (#606→#610; #569→#607) each carried their base's commits; when the base merged to main first, the child's diff was computed against a stale base and went CONFLICTING. Resolution pattern that worked: fetch head, `git merge origin/main`, resolve per-hunk (keep BOTH sides when two complementary changes touch the same lines — e.g. `localDateStamp` from #612 + `wikiRelativePagePath` from #606 — keep the child's superset in tests), local Gate 1, force-push to the fork. **Cost:** two force-push cycles (#600, #606, #610). Lesson: for stacked same-author PRs, either merge the whole stack in one sitting before anything else lands, or expect per-child conflict resolution.
+2. **`v1.27.0 MINOR` GitHub milestone is a shipped release — it must never receive new open items.** I moved #569/#568/#567 there from PATCH (judging them "MINOR-scale work") and was corrected: a released milestone is closed to new work by definition. Future-work items belong under `v1.27.x PATCH` (the only active cycle) or a not-yet-created v1.28.0 milestone. **Scale of a PR (35 files) is a code-size observation, not a release-window argument.**
+3. **`shazam_verify` after every edit is a hard requirement the harness enforces — including markdown.** Doc edits to ROADMAP/CHANGELOG trigger the same turn-end verification as code edits.
+4. **DocTpoint's write-audit methodology is the project's best bug-discovery instrument.** Park-previous-version-before-every-write + compare → surfaced #613 (573 misdirected source rewrites), #614 (180 mentions losses), #617 (9 sections, 34K chars lost) — three data-corruption classes no fuzz test would find. When a future contributor wants to hunt bugs, this is the pattern to copy.
+5. **Co-maintainer credit landed (PR #619, owner-approved).** DocTpoint is now in manifest author + README maintainer + NOTICE. Permission elevation (to `maintain` role) remains a separate decision, still gated on ruleset required-review per the 09-02 research — credit and permission are different surfaces.
+
+### State pointers (2026-09-04)
+
+- **Open PRs:** #569 (domain-axis, B1-B6 fixed 09-02, needs full re-review of 11 commits), #607 (gate three-outcome table, stacked on #569), #570 (wontfix).
+- **Open design calls:** #603 (write-gate contract), #604 (dead contradiction loop), #567 (limit contract).
+- **Community:** Jan-Heldal bugs #592/#593/#594/#597 invited to PR; Chase07 #608 image-embeds deferred to MINOR.
+- **Milestones:** v1.27.x PATCH open=11; v1.27.0 MINOR closed (0 open); v1.27.0+ research open=15.
 
 ---
 
