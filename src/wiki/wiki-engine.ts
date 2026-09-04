@@ -65,6 +65,7 @@ import { GraphCache, type GraphPageLoader } from './engine-internals/graph-cache
 import { IndexGenerator } from './engine-internals/index-generator';
 import { LogWriter } from './engine-internals/log-writer';
 import { dedupPages } from './engine-internals/dedup-pages';
+import { localDateStamp } from '../core/format';
 
 /**
  * Issue #173 Symptom B: drop exact-string duplicates from a page-path list
@@ -1470,7 +1471,7 @@ export class WikiEngine {
       analysis: JSON.stringify(analysis),
       created_pages_list: createdPagesList || '(none)',
       source_file: file.path,
-      date: new Date().toISOString().split('T')[0],
+      date: localDateStamp(),
       tags: tagsValue,
       constraints: UNIVERSAL_LINK_CONSTRAINTS,
     });

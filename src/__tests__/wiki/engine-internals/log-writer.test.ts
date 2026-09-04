@@ -57,6 +57,27 @@ describe('LogWriter', () => {
     expect(content).toContain(' · 4.3KB'); // 4400 bytes → 4.3KB
   });
 
+  it('appendIngest stamps the local calendar date, not the UTC one', async () => {
+    // 00:30 local on 3 Sep. East of UTC the ISO date is still 2 Sep at this
+    // hour; the log is read in local time, so the header must say 3 Sep.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 8, 3, 0, 30));
+    try {
+      const writeFile = vi.fn().mockResolvedValue(undefined);
+      const writer = new LogWriter({
+        wikiFolder: 'wiki',
+        wikiLanguage: 'en',
+        readFile: vi.fn().mockResolvedValue('# Wiki Operation Log\n'),
+        writeFile,
+      });
+      await writer.appendIngest('ingest', makeAnalysis(), {});
+      const [, content] = writeFile.mock.calls[0] as [string, string];
+      expect(content).toContain('## [2026-09-03 00:30] ingest');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('appendIngest with no metrics omits the suffix entirely', async () => {
     const writeFile = vi.fn().mockResolvedValue(undefined);
     const readFile = vi.fn().mockResolvedValue('# Header\n');

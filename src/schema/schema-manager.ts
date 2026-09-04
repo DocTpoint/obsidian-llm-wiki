@@ -10,6 +10,7 @@ import { TOKENS_SCHEMA_SUGGESTION } from '../constants';
 import { renderTemplate } from '../core/template-renderer';
 import { SchemaSuggestionLLMSchema } from '../llm-sdk/output-schemas';
 import { callLlm } from '../core/llm-dispatch';
+import { localDateStamp } from '../core/format';
 
 const SCHEMA_FILENAME = 'schema/config.md';
 const SUGGESTIONS_FILENAME = 'schema/suggestions.md';
@@ -391,7 +392,7 @@ ${selectedBody}
       // Already exists
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateStamp();
     const body = buildDefaultSchemaBody(this.settings);
     const content = `---
 version: 1
@@ -410,7 +411,7 @@ ${body}`;
 
   async regenerateDefaultSchema(): Promise<void> {
     const path = this.getSchemaPath();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateStamp();
     const body = buildDefaultSchemaBody(this.settings);
     const content = `---
 version: 1
