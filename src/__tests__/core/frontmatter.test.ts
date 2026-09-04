@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { LLMWikiSettings } from '../../types';
 import { enforceFrontmatterConstraints, isBlankSource, mergeFrontmatter, mergeFrontmatterArrayField, parseFrontmatter, preserveFrontmatterReviewTag, replaceFrontmatterArrayField, serializeFrontmatter, upsertFrontmatterField } from '../../core/frontmatter';
+import { localDateStamp } from '../../core/format';
 
 describe('isBlankSource', () => {
   it('is true for empty or whitespace-only content', () => {
@@ -186,7 +187,7 @@ describe('enforceFrontmatterConstraints', () => {
     // must still be normalized to today. Safety > user intent on dates.
     const input = '---\ntype: entity\nreviewed: true\ncreated: 2025-13-99\nupdated: 2099-99-99\n---\n\nBody';
     const result = enforceFrontmatterConstraints(input, 'entity');
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStamp();
     expect(result).toContain('reviewed: true');
     expect(result).toContain(`created: ${today}`);
     expect(result).not.toContain('2025-13-99');
@@ -242,7 +243,7 @@ describe('enforceFrontmatterConstraints', () => {
     const result = enforceFrontmatterConstraints(input, 'entity', undefined, {
       preserveCreated: '2026-01-01',
     });
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStamp();
     expect(result).toContain('created: 2026-01-01');
     expect(result).not.toContain('created: 2024-11-03');
     expect(result).toContain(`updated: ${today}`);
@@ -292,7 +293,7 @@ describe('enforceFrontmatterConstraints', () => {
     const result = enforceFrontmatterConstraints(input, 'entity', undefined, {
       preserveCreated: '2025-03-20',
     });
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStamp();
     expect(result).toContain('created: 2025-03-20');
     expect(result).toContain(`updated: ${today}`);
     expect(result).not.toContain('updated: 2024-12-01');
@@ -301,7 +302,7 @@ describe('enforceFrontmatterConstraints', () => {
   it('adds created/updated when missing from frontmatter', () => {
     const input = '---\ntype: entity\n---\n\nBody';
     const result = enforceFrontmatterConstraints(input, 'entity');
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStamp();
     expect(result).toContain(`created: ${today}`);
     expect(result).toContain(`updated: ${today}`);
   });
@@ -314,14 +315,14 @@ describe('enforceFrontmatterConstraints', () => {
     // is invented by construction.
     const input = '---\ntype: entity\ncreated: 2024-11-03\n---\n\nBody';
     const result = enforceFrontmatterConstraints(input, 'entity');
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStamp();
     expect(result).toContain(`created: ${today}`);
     expect(result).not.toContain('2024-11-03');
   });
 
   it('ignores a caller value that is not an ISO date', () => {
     const input = '---\ntype: entity\n---\n\nBody';
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStamp();
     for (const bogus of ['gestern', '2025-13-99x', '', '   ']) {
       const result = enforceFrontmatterConstraints(input, 'entity', undefined, {
         preserveCreated: bogus,
@@ -336,7 +337,7 @@ describe('enforceFrontmatterConstraints', () => {
     // every pass. With the value supplied it survives; without one the branch
     // behaves as before.
     const input = '---\ntype: entity\nreviewed: true\ncreated: 2024-11-03\nupdated: 2020-01-01\n---\n\nBody';
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStamp();
 
     const withValue = enforceFrontmatterConstraints(input, 'entity', undefined, {
       preserveCreated: '2026-01-05',
@@ -496,7 +497,7 @@ describe('serializeFrontmatter', () => {
 });
 
 describe('mergeFrontmatter', () => {
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStamp();
 
   it('returns body as-is when no frontmatter exists', () => {
     const input = '# Just content\nNo frontmatter';

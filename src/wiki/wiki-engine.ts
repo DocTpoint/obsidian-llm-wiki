@@ -35,6 +35,7 @@ import type { SourceRejection } from '../core/source-requirements';
 import { formatRateLimitNotice } from '../core/rate-limit';
 import { extractSourceTags } from '../core/arrays';
 import { gateCandidates } from '../core/candidate-gate';
+import { buildVaultResolver } from '../core/related-link-corrector';
 import { getSourceLanguage, isCrossLanguage } from '../core/source-language';
 import { cleanMarkdownResponse } from '../core/markdown';
 import { injectMentionsSection } from '../core/mentions-injector';
@@ -65,6 +66,7 @@ import { GraphCache, type GraphPageLoader } from './engine-internals/graph-cache
 import { IndexGenerator } from './engine-internals/index-generator';
 import { LogWriter } from './engine-internals/log-writer';
 import { dedupPages } from './engine-internals/dedup-pages';
+import { localDateStamp } from '../core/format';
 
 /**
  * Issue #173 Symptom B: drop exact-string duplicates from a page-path list
@@ -1051,14 +1053,26 @@ export class WikiEngine {
         const sourceLang = getSourceLanguage(file, this.app);
         const translated = sourceLang !== null && isCrossLanguage(sourceLang, wikiLang);
         if (!translated) {
-          const gated = gateCandidates(analysis, extractBody(opts?.contentOverride ?? await this.app.vault.read(file)), wikiLang);
+          // A dropped name the vault already has a page for keeps its edge:
+          // the gate judges whether this note earns the page, not whether a
+          // page another note earned may be linked. Same resolver as the
+          // related-link corrector, so "known" means the same thing at both
+          // ends of the pipeline.
+          const resolve = buildVaultResolver({ wikiFolder: this.settings.wikiFolder, pages: await this.getExistingWikiPages() });
+          const gated = gateCandidates(
+            analysis,
+            extractBody(opts?.contentOverride ?? await this.app.vault.read(file)),
+            wikiLang,
+            name => resolve(name) !== undefined,
+          );
           if (!gated.applied) {
             console.debug(`[candidate-gate] ${file.path}: no language profile for "${wikiLang}" — gate not applied`);
             this.onProgress?.(`Candidate gate: no language profile for "${wikiLang}" — not applied`);
           } else if (gated.dropped.length > 0) {
             const list = gated.dropped.map(d => `${d.name} (${d.kind}, ${d.verdict})`).join('; ');
-            console.warn(`[candidate-gate] ${file.path}: dropped ${gated.dropped.length} of ${analysis.entities.length + analysis.concepts.length} candidates — ${list}`);
-            this.onProgress?.(`Candidate gate: ${gated.dropped.length} dropped — ${list}`);
+            const kept = gated.linkedAnyway.length > 0 ? ` — linked anyway (existing page): ${gated.linkedAnyway.join('; ')}` : '';
+            console.warn(`[candidate-gate] ${file.path}: dropped ${gated.dropped.length} of ${analysis.entities.length + analysis.concepts.length} candidates — ${list}${kept}`);
+            this.onProgress?.(`Candidate gate: ${gated.dropped.length} dropped — ${list}${kept}`);
             analysis.entities = gated.entities;
             analysis.concepts = gated.concepts;
           }
@@ -1482,7 +1496,7 @@ export class WikiEngine {
       analysis: JSON.stringify(analysis),
       created_pages_list: createdPagesList || '(none)',
       source_file: file.path,
-      date: new Date().toISOString().split('T')[0],
+      date: localDateStamp(),
       tags: tagsValue,
       constraints: UNIVERSAL_LINK_CONSTRAINTS,
     });

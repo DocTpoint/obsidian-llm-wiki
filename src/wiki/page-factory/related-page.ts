@@ -16,7 +16,7 @@
 import { TFile } from 'obsidian';
 import type { SourceAnalysis, LLMWikiSettings, LLMClient } from '../../types';
 import { PROMPTS } from '../../prompts';
-import { TOKENS_PAGE_GENERATION } from '../../constants';
+import { TOKENS_PAGE_GENERATION, WIKI_SUBFOLDERS } from '../../constants';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
 import { mergeFrontmatter, parseFrontmatter } from '../../core/frontmatter';
@@ -69,7 +69,20 @@ export async function updateRelatedPage(
     ctx.app as never,
     ctx.settings.wikiFolder,
   );
-  const page = existingPages.find(p => p.title === pageName);
+  // A related page is an entity or concept page. The title index spans the
+  // whole wiki folder, and a source page shares its basename with the entity
+  // its note is about (`sources/Zytokine` next to `entities/Zytokine`), so a
+  // bare title lookup picked whichever the vault listed first — on a measured
+  // vault 573 of the rewrites landed on source pages, whose one-note summary
+  // then got the entity prompt, the entity's `new_info`, and the entity-page
+  // Mentions budget. Only the two entity folders are candidates here.
+  const relatedFolders = [
+    `${ctx.settings.wikiFolder}/${WIKI_SUBFOLDERS.entities}/`,
+    `${ctx.settings.wikiFolder}/${WIKI_SUBFOLDERS.concepts}/`,
+  ];
+  const page = existingPages.find(
+    p => p.title === pageName && relatedFolders.some(folder => p.path.startsWith(folder)),
+  );
 
   if (!page) {
     console.debug('Related page not found:', pageName);

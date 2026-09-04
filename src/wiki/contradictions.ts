@@ -21,6 +21,7 @@ import {
   resolveContradictionTarget,
   ResolvedContradictionTarget,
 } from '../core/contradiction-record';
+import { localDateStamp } from '../core/format';
 
 export class ContradictionManager {
   constructor(private ctx: EngineContext) {}
@@ -74,7 +75,7 @@ export class ContradictionManager {
       // folder already exists
     }
 
-    const date = new Date().toISOString().split('T')[0];
+    const date = localDateStamp();
     const record = buildContradictionRecord(
       {
         claim: contradiction.claim,
@@ -151,7 +152,7 @@ export class ContradictionManager {
     }
     const updated = content.replace(/^status:\s*\S+/m, `status: ${newStatus}`);
     if (newStatus === 'resolved') {
-      const resolvedDate = new Date().toISOString().split('T')[0];
+      const resolvedDate = localDateStamp();
       if (updated.includes('resolved:')) {
         const final = updated.replace(
           /^resolved:\s*\S*/m,

@@ -179,12 +179,22 @@ function canonicalSectionBlocks(
  *
  * The schema, not the model, decides which sections must exist, so restore any
  * canonical section that carried content in `existingBody` and is wholly absent
- * from `rewrite`. Conservative by construction: it only ever APPENDS a dropped
- * section back (at the end, in first-seen order) — it never edits or removes
- * what the model produced, so a section the model legitimately rewrote (its
- * identity still present, however much its content changed) is left untouched.
- * The same non-lossy guarantee #267 gives the Mentions section, generalized to
- * the rest of the schema body.
+ * from `rewrite`: a dropped section is APPENDED back (at the end, in first-seen
+ * order). The same non-lossy guarantee #267 gives the Mentions section,
+ * generalized to the rest of the schema body.
+ *
+ * A section that is still there but collapsed is the same loss one header
+ * short of it. Measured on a rebuilt vault: nine `## Beschreibung` blocks of
+ * 800–8400 characters came back from a rewrite at under half their size —
+ * 5046 → 335 in the worst case, the first paragraph kept and five paragraphs
+ * of merged, footnoted content gone — while the prompt said "without deleting
+ * existing content" and the guard saw the header and called it kept. So a
+ * canonical section whose content shrinks below SECTION_SHRINK_FLOOR of what
+ * it held (once it held at least SECTION_SHRINK_MIN_CHARS) is treated like a
+ * dropped one: the previous block is put back IN PLACE of the collapsed one,
+ * and a warning names the section and both sizes. Below the size threshold
+ * or above the floor the content stays the model's call — a genuine rewrite
+ * changes wording, not an order of magnitude.
  *
  * Presence is decided per full identity (label + suffix), which matters for the
  * one section that repeats: emitting `## New Information (Source B)` must not
@@ -196,6 +206,15 @@ function canonicalSectionBlocks(
  * though the prompt body was mentions-stripped. assembleFinalContent re-attaches
  * it programmatically below — once, at the right anchor. Pure, O(lines × labels).
  */
+/** A kept section whose content falls below this fraction of its previous length is restored. */
+export const SECTION_SHRINK_FLOOR = 0.5;
+/** Sections shorter than this before the rewrite are never shrink-guarded — the model may reword them freely. */
+export const SECTION_SHRINK_MIN_CHARS = 400;
+
+function blockContentLength(block: string[]): number {
+  return block.slice(1).join('\n').trim().length;
+}
+
 export function preserveExistingSections(
   existingBody: string,
   rewrite: string,
@@ -208,16 +227,65 @@ export function preserveExistingSections(
   const newBlocks = canonicalSectionBlocks(strippedRewrite, canonicalLabels);
 
   const restored: string[] = [];
+  const collapsed = new Map<string, string[]>();
   for (const [key, block] of oldBlocks) {
-    if (newBlocks.has(key)) continue; // model kept the section — its call
+    const oldLen = blockContentLength(block);
+    const kept = newBlocks.get(key);
+    if (kept) {
+      const newLen = blockContentLength(kept);
+      if (oldLen >= SECTION_SHRINK_MIN_CHARS && newLen < oldLen * SECTION_SHRINK_FLOOR) {
+        console.warn(
+          `[preserveExistingSections] "${block[0]}" came back at ${newLen} of ${oldLen} chars — restoring the previous block`,
+        );
+        collapsed.set(key, block);
+      }
+      continue; // model kept the section at a plausible size — its call
+    }
     // Only restore sections that actually carried content; an empty scaffold the
     // model correctly omitted stays omitted.
-    if (block.slice(1).some(l => l.trim() !== '')) {
+    if (oldLen > 0) {
       restored.push(block.join('\n').replace(/\s+$/, ''));
     }
   }
-  if (restored.length === 0) return strippedRewrite;
-  return `${strippedRewrite.replace(/\s+$/, '')}\n\n${restored.join('\n\n')}\n`;
+
+  const body = collapsed.size === 0
+    ? strippedRewrite
+    : replaceSectionBlocks(strippedRewrite, collapsed, canonicalLabels);
+  if (restored.length === 0) return body;
+  return `${body.replace(/\s+$/, '')}\n\n${restored.join('\n\n')}\n`;
+}
+
+/**
+ * Swap whole canonical blocks in place: every section of `body` whose identity
+ * is in `replacements` is emitted from the replacement (header included) and
+ * the model's lines for that section are skipped up to the next `##`. Every
+ * other line — lead paragraph, foreign sections, H1 — passes through untouched.
+ * Same header walk as `canonicalSectionBlocks`, so the two cannot disagree on
+ * where a section starts.
+ */
+function replaceSectionBlocks(
+  body: string,
+  replacements: Map<string, string[]>,
+  canonicalLabels: string[],
+): string {
+  const out: string[] = [];
+  let skipping = false;
+  for (const line of body.split('\n')) {
+    const m = /^##\s+(.+?)\s*$/.exec(line);
+    if (m) {
+      skipping = false;
+      const id = classifyHeader(m[1], canonicalLabels);
+      const key = id ? (id.suffix === null ? id.label : `${id.label} (${id.suffix})`) : null;
+      const replacement = key !== null ? replacements.get(key) : undefined;
+      if (replacement) {
+        out.push(...replacement.join('\n').replace(/\s+$/, '').split('\n'), '');
+        skipping = true;
+        continue;
+      }
+    }
+    if (!skipping) out.push(line);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
 /**

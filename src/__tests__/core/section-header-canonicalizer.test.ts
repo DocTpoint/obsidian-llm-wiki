@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  SECTION_SHRINK_MIN_CHARS,
   canonicalizeSectionHeaders,
   classifyHeader,
   preserveExistingSections,
@@ -401,5 +402,53 @@ describe('stripUnknownSections (drop prompt-scaffolding sections the model copie
     const r = stripUnknownSections(canon, DE);
     expect(r).toContain('## Erwähnungen in der Quelle');
     expect(r).not.toContain('Active Tag Vocabulary');
+  });
+});
+
+describe('preserveExistingSections — a kept section that collapsed is a dropped section', () => {
+  const DE = [
+    'Beschreibung', 'Hauptmerkmale', 'Verwandte Konzepte', 'Verwandte Entitäten',
+    'Erwähnungen in der Quelle', 'Neue Informationen',
+  ];
+  const M = 'Erwähnungen in der Quelle';
+  // Five footnoted paragraphs, the shape a description reaches after merges.
+  const paragraphs = Array.from({ length: 5 }, (_, i) =>
+    `Absatz ${i + 1}: ${'Belegter Inhalt aus einer Quelle. '.repeat(6)}^[Quelle: [[Q${i + 1}]]]`,
+  );
+  const longDescription = paragraphs.join('\n\n');
+
+  it('restores a section in place when the rewrite kept the header but a fraction of the content', () => {
+    const oldBody = `# Stress\n\n## Beschreibung\n${longDescription}\n\n## Hauptmerkmale\n- alt\n\n## Verwandte Konzepte\n- [[concepts/X|X]]`;
+    const newBody = `# Stress\n\n## Beschreibung\n${paragraphs[0]}\n\n## Hauptmerkmale\n- alt\n- neu\n\n## Verwandte Konzepte\n- [[concepts/X|X]]`;
+    const out = preserveExistingSections(oldBody, newBody, DE, M);
+    for (const p of paragraphs) expect(out).toContain(p);
+    // In place: the restored block sits between the H1 and Hauptmerkmale, and
+    // the model's other sections are untouched.
+    expect(out.indexOf('## Beschreibung')).toBeLessThan(out.indexOf('## Hauptmerkmale'));
+    expect(out).toContain('- neu');
+    expect(out.match(/## Beschreibung/g)).toHaveLength(1);
+  });
+
+  it('leaves a section alone when it shrank but stayed above the floor', () => {
+    const oldBody = `## Beschreibung\n${longDescription}`;
+    const kept = paragraphs.slice(0, 3).join('\n\n'); // 60 % of the content
+    const newBody = `## Beschreibung\n${kept}`;
+    expect(preserveExistingSections(oldBody, newBody, DE, M)).toBe(newBody);
+  });
+
+  it('leaves a short section alone however much it shrank — below the size threshold the wording is the model\'s call', () => {
+    const short = 'Kurzer Text. '.repeat(10).trim();
+    expect(short.length).toBeLessThan(SECTION_SHRINK_MIN_CHARS);
+    const oldBody = `## Beschreibung\n${short}`;
+    const newBody = '## Beschreibung\nKurz.';
+    expect(preserveExistingSections(oldBody, newBody, DE, M)).toBe(newBody);
+  });
+
+  it('guards a suffixed New Information block by identity', () => {
+    const oldBody = `## Neue Informationen (SIBO)\n${longDescription}`;
+    const newBody = `## Neue Informationen (SIBO)\nEin Satz.`;
+    const out = preserveExistingSections(oldBody, newBody, DE, M);
+    expect(out).toContain(paragraphs[4]);
+    expect(out).not.toContain('Ein Satz.');
   });
 });

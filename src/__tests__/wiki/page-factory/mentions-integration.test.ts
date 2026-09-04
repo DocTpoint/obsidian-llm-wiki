@@ -198,3 +198,30 @@ describe('assembleFinalContent — frontmatter + body composition', () => {
     expect(out.startsWith('---\ntitle: X\n---\n\n# X')).toBe(true);
   });
 });
+describe('assembleFinalContent — re-emitting the union never shrinks the block', () => {
+  it('keeps every accumulated quote when the existing section already exceeds the fresh-page budget', async () => {
+    const source = makeSource('notes/late.md', 'late');
+    const info = createMockEntity({
+      name: 'Zytokine',
+      mentions_with_provenance: [
+        { quote: 'the new quote', source_path: 'notes/late.md', source_slug: '', extracted_at: '' },
+      ],
+    });
+    // Eight ~170-char bullets: ~1400 chars, the size a #496 source page or a
+    // multi-source entity page reaches. The fresh-page budget is 500.
+    const old = Array.from({ length: 8 }, (_, i) =>
+      `- "old quote number ${i} ${'x'.repeat(140)}" — [[sources/early|early]]`,
+    );
+    const existingBody = `# Zytokine\n\n${SECTION}\n\n${old.join('\n')}`;
+    const out = await assembleFinalContent(
+      CTX,
+      '---\ntitle: Zytokine\n---',
+      '# Zytokine\n\nBody.',
+      info,
+      source,
+      existingBody,
+    );
+    for (let i = 0; i < 8; i++) expect(out).toContain(`old quote number ${i} `);
+    expect(out).toContain('the new quote');
+  });
+});

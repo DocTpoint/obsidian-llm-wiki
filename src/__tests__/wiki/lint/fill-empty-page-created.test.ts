@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { fillEmptyPage } from '../../../wiki/lint/fill-empty-page';
 import type { EngineContext } from '../../../types';
+import { localDateStamp } from '../../../core/format';
 
 // Issue #388 at the fill path. Unlike page creation, a real page exists here —
 // so the model's `created:` does not invent a date, it overwrites a true one.
@@ -35,7 +36,7 @@ describe('fillEmptyPage — created: provenance (Issue #388)', () => {
     await fillEmptyPage(ctx, PAGE);
 
     const written = files.get(PAGE)!;
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStamp();
     expect(written).toContain('created: 2026-07-30');
     expect(written).not.toContain('2024-11-03');
     expect(written).toContain(`updated: ${today}`);

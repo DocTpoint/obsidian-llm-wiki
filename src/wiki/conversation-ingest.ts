@@ -19,6 +19,7 @@ import { TOKENS_CONVERSATION_EXTRACTION, TOKENS_CONVERSATION_PAGE, TOKENS_PAGE_G
 import { PageFactory } from './page-factory';
 import { SourceAnalysisLLMSchema, ConversationDedupStatusLLMSchema } from '../llm-sdk/output-schemas';
 import { callLlm } from '../core/llm-dispatch';
+import { localDateStamp } from '../core/format';
 
 export interface ConversationOrchestration {
   ensureWikiStructure: () => Promise<void>;
@@ -66,7 +67,7 @@ export class ConversationIngestor {
     console.debug('=== Starting conversation extraction ===');
     this.ctx.onProgress?.(getText(this.ctx.settings.language, 'convAnalyzing'));
 
-    const actualDate = new Date().toISOString().split('T')[0];
+    const actualDate = localDateStamp();
     console.debug('[System time]', actualDate);
 
     const indexPath = `${this.ctx.settings.wikiFolder}/index.md`;
