@@ -22,17 +22,18 @@
 //     options: {
 //       descriptionLabel: string;   // entity section title (i18n-translated or custom)
 //       definitionLabel: string;    // concept section title (i18n-translated or custom)
-//       pageType: 'entity' | 'concept';
+//       pageType: 'entity' | 'concept';  // kept for callers; no longer selects the label
 //       maxChars: number;
 //     }
 //   ): string
 //
 // Behavior:
-// - Pick the primary label based on pageType (entity → descriptionLabel,
-//   concept → definitionLabel).
-// - Match `## <primaryLabel>` first (case-insensitive). If not present,
-//   fall back to the other label (the page may have been ingested before
-//   the user changed wikiLanguage).
+// - Match `## <descriptionLabel>` first (case-insensitive), for both page
+//   types: the merge template writes the Description on every multi-source
+//   page and that is where the substance accumulates. If not present, fall
+//   back to `## <definitionLabel>` (a single-source concept page has only
+//   that; a page may also have been ingested before the user changed
+//   wikiLanguage).
 // - Extract content up to the next ## or ### header.
 // - Strip `[[wikilink]]` and `[[#^block-id]]` constructs.
 // - Strip folder prefix from `[[entities/Cardiology]]` → `Cardiology`.
@@ -44,6 +45,7 @@
 export interface SectionExtractOptions {
   descriptionLabel: string;
   definitionLabel: string;
+  /** Kept for callers; no longer selects the label (see extractSummaryFromPage). */
   pageType: 'entity' | 'concept';
   maxChars: number;
 }
@@ -143,14 +145,21 @@ function truncateAtSentenceBoundary(text: string, maxChars: number): string {
 export function extractSummaryFromPage(body: string, options: SectionExtractOptions): string {
   if (!body) return '';
 
-  const { descriptionLabel, definitionLabel, pageType, maxChars } = options;
+  const { descriptionLabel, definitionLabel, maxChars } = options;
 
   // Step 1: strip frontmatter so it doesn't confuse header search.
   const stripped = stripFrontmatter(body);
 
-  // Step 2: pick primary label by pageType, fall back to the other.
-  const primaryLabel = pageType === 'entity' ? descriptionLabel : definitionLabel;
-  const secondaryLabel = pageType === 'entity' ? definitionLabel : descriptionLabel;
+  // Step 2: the description is the page's substance for both page types;
+  // the definition is the one-sentence gloss the concept template writes
+  // above it. Measured 2026-09-04 on a 3,025-page vault: of 241 concept
+  // pages carrying both sections, 183 had a definition under 400 chars and
+  // a description at least three times as long (median ratio 5.2). With
+  // the definition primary, an osteoporosis question reached the model as
+  // one sentence while the 3,100-char description — therapy, exercise,
+  // dysbiosis — never did. A page that has only a definition still gets it.
+  const primaryLabel = descriptionLabel;
+  const secondaryLabel = definitionLabel;
 
   let header = findSectionHeader(stripped, primaryLabel);
   if (!header) {
