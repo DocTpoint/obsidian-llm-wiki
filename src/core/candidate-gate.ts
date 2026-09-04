@@ -342,6 +342,12 @@ export interface GateResult {
   entities: EntityInfo[];
   concepts: ConceptInfo[];
   dropped: DroppedCandidate[];
+  /**
+   * Dropped names that stayed in the survivors' related_* lists because the
+   * vault already has a page for them (`isKnownPage`). No page is written
+   * for them in this ingest; the edge to the existing page is kept.
+   */
+  linkedAnyway: string[];
   /** False when no profile exists for `language` — the input came back untouched. */
   applied: boolean;
 }
@@ -352,14 +358,23 @@ export interface GateResult {
  * pruned from related_* lists) and what was dropped, why. Pure; the caller
  * decides what to log and writes the result back. The cross-language check
  * (note declares another language) is the caller's — it needs the vault.
+ *
+ * `isKnownPage` answers whether a name already resolves to a wiki page
+ * (title or alias). The gate decides whether THIS note earns a page for a
+ * name; it cannot decide that a link to a page another note already earned
+ * is dead. Without the predicate every dropped name is pruned, which on a
+ * measured vault emptied the related sections of pages whose named
+ * neighbours existed — a passing mention of an existing page is exactly the
+ * edge the graph is for.
  */
 export function gateCandidates(
   analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
   sourceText: string,
   language: string | undefined | null,
+  isKnownPage?: (name: string) => boolean,
 ): GateResult {
   const profile = gateProfileFor(language);
-  if (!profile) return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], applied: false };
+  if (!profile) return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], linkedAnyway: [], applied: false };
   const dropped: DroppedCandidate[] = [];
   const keep = <T extends { name: string }>(items: T[], kind: DroppedCandidate['kind']): T[] =>
     items.filter(item => {
@@ -370,11 +385,13 @@ export function gateCandidates(
     });
   const entities = keep(analysis.entities, 'entity');
   const concepts = keep(analysis.concepts, 'concept');
-  if (dropped.length === 0) return { entities: analysis.entities, concepts: analysis.concepts, dropped, applied: true };
+  if (dropped.length === 0) return { entities: analysis.entities, concepts: analysis.concepts, dropped, linkedAnyway: [], applied: true };
 
-  const gone = new Set(dropped.map(d => nfc(d.name).trim().toLowerCase()));
+  const key = (n: string) => nfc(n).trim().toLowerCase();
+  const linkedAnyway = dropped.filter(d => isKnownPage?.(d.name) === true).map(d => d.name);
+  const gone = new Set(dropped.filter(d => !linkedAnyway.includes(d.name)).map(d => key(d.name)));
   const prune = (names: string[] | undefined): string[] | undefined =>
-    names?.filter(n => !gone.has(nfc(n).trim().toLowerCase()));
+    names?.filter(n => !gone.has(key(n)));
   return {
     entities: entities.map(e => ({
       ...e,
@@ -387,6 +404,7 @@ export function gateCandidates(
       ...(c.related_entities ? { related_entities: prune(c.related_entities) } : {}),
     })),
     dropped,
+    linkedAnyway,
     applied: true,
   };
 }
