@@ -417,3 +417,38 @@ describe('updateRelatedPage — H1 survives a rewrite that omits it', () => {
     expect(body.trimStart().startsWith('# X —')).toBe(true);
   });
 });
+
+describe('updateRelatedPage — only entity and concept pages are related targets', () => {
+  const SOURCE_PATH = 'wiki/sources/X.md';
+
+  // The stock mock resolves only PAGE_PATH; here both the source twin and the
+  // entity page must resolve, so a wrong pick writes to the wrong file
+  // instead of vanishing behind a null lookup.
+  function makeTwinCtx(pages: Array<{ path: string; basename: string }>) {
+    const ctx = makeCtx({ pageContent: EXISTING_FM, pages });
+    ctx.written.set(SOURCE_PATH, EXISTING_FM);
+    ctx.app.vault.getAbstractFileByPath = (p: string): unknown =>
+      p === PAGE_PATH || p === SOURCE_PATH
+        ? Object.assign(new TFile(), { path: p, basename: PAGE_TITLE })
+        : null;
+    return ctx;
+  }
+
+  it('rewrites the entity page when a source page shares its basename and is listed first', async () => {
+    const ctx = makeTwinCtx([
+      { path: SOURCE_PATH, basename: PAGE_TITLE },
+      { path: PAGE_PATH, basename: PAGE_TITLE },
+    ]);
+    const result = await updateRelatedPage(ctx, PAGE_TITLE, makeAnalysis(PAGE_TITLE), { path: 'p.md', basename: 'p' });
+    expect(result).toBe(true);
+    expect(ctx.written.get(PAGE_PATH)).toContain('new body');
+    expect(ctx.written.get(SOURCE_PATH)).toBe(EXISTING_FM);
+  });
+
+  it('returns false and writes nothing when only a source page carries the name', async () => {
+    const ctx = makeTwinCtx([{ path: SOURCE_PATH, basename: PAGE_TITLE }]);
+    const result = await updateRelatedPage(ctx, PAGE_TITLE, makeAnalysis(PAGE_TITLE), { path: 'p.md', basename: 'p' });
+    expect(result).toBe(false);
+    expect(ctx.written.get(SOURCE_PATH)).toBe(EXISTING_FM);
+  });
+});
