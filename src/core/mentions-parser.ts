@@ -38,6 +38,8 @@ export interface ReingestMentionsResult {
   mentions: MentionWithProvenance[];
   /** Non-null ⇒ the existing block was hand-edited; caller preserves it verbatim and skips the union. */
   preserveRaw: string | null;
+  /** Character length of the block already on the page (0 when absent) — the floor for re-emitting it. */
+  existingLength: number;
 }
 
 export function computeReingestMentions(
@@ -47,8 +49,9 @@ export function computeReingestMentions(
   defaultSourcePath?: string,
 ): ReingestMentionsResult {
   const existing = parseMentionsSection(existingBody, sectionLabel);
+  const existingLength = existing.raw?.length ?? 0;
   if (existing.found && !existing.fullyParsed) {
-    return { mentions: [], preserveRaw: existing.raw ?? '' };
+    return { mentions: [], preserveRaw: existing.raw ?? '', existingLength };
   }
   const normalize = (m: MentionWithProvenance) => ({
     ...m,
@@ -60,6 +63,7 @@ export function computeReingestMentions(
       newMentions.map(normalize),
     ) ?? [],
     preserveRaw: null,
+    existingLength,
   };
 }
 

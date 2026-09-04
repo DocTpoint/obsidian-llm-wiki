@@ -20,6 +20,7 @@ import type { EntityInfo, ConceptInfo, MentionWithProvenance, LLMWikiSettings } 
 import { TFile } from 'obsidian';
 import { getSectionLabels } from '../system-prompts';
 import { injectMentionsSection } from '../../core/mentions-injector';
+import { DEFAULT_MENTIONS_MAX_CHARS } from '../../core/mentions-formatter';
 import { stripMentionsSection, computeReingestMentions } from '../../core/mentions-parser';
 import { isConversationSource } from './contextualize';
 
@@ -92,7 +93,7 @@ export async function assembleFinalContent(
         extracted_at: '',
       }));
 
-  const { mentions: unioned, preserveRaw } = computeReingestMentions(
+  const { mentions: unioned, preserveRaw, existingLength } = computeReingestMentions(
     existingBody,
     newMentions,
     labels.mentions_in_source,
@@ -111,10 +112,18 @@ export async function assembleFinalContent(
     return `${frontmatter}\n\n${preserved}`;
   }
 
+  // The formatter's budget is sized for a fresh page. Applied to the union it
+  // re-capped the accumulated block at that size on every rewrite: a source
+  // page written with the #496 budget (2000) came back at 500, an entity page
+  // that had grown past 500 across sources lost its oldest quotes — the
+  // "non-lossy" union of #267 was lossy exactly when it had something to keep.
+  // What the page already holds is the floor; the default budget is the
+  // headroom this source may add on top of it.
   const bodyWithMentions = injectMentionsSection(body, unioned, sourceFile.path, {
     sectionLabel: labels.mentions_in_source,
     conversationMode: false,
     conversationLabel: `Conversation: ${sourceFile.basename}`,
+    maxChars: existingLength + DEFAULT_MENTIONS_MAX_CHARS,
   });
   return `${frontmatter}\n\n${bodyWithMentions}`;
 }
