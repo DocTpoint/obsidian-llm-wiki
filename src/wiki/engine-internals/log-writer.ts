@@ -30,7 +30,7 @@ import type { SourceAnalysis } from '../../types';
 import { TEXTS } from '../../texts';
 import { dedupPages } from './dedup-pages';
 import { buildLogHeader } from '../../core/log-header';
-import { formatBytes } from '../../core/format';
+import { formatBytes, localDateStamp } from '../../core/format';
 
 /** Metrics suffix for ingest log H2 line. */
 export interface IngestMetrics {
@@ -164,7 +164,7 @@ export class LogWriter {
   private timestamp(): { date: string; time: string } {
     const now = new Date();
     return {
-      date: now.toISOString().split('T')[0],
+      date: localDateStamp(now),
       time: now.toTimeString().slice(0, 5), // HH:MM
     };
   }

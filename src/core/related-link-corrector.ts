@@ -44,30 +44,28 @@ export interface ExistingPageRef {
  * An alias claimed by two pages resolves to neither (the #446 lesson): the
  * ambiguity goes to the typed-list fallback rather than to a coin flip.
  */
-export function correctRelatedLinkPrefixes(
-  content: string,
-  relatedEntities: string[] | undefined,
-  relatedConcepts: string[] | undefined,
-  relatedEntitiesLabel: string,
-  relatedConceptsLabel: string,
+/**
+ * Full-vault name → path resolver. Titles outrank aliases: a title is the page's
+ * own claim to a name, an alias is someone's cross-reference to it. A name two
+ * pages claim resolves to neither. Returns the path relative to the wiki folder
+ * (`entities/X`), or undefined for a name the vault does not know.
+ *
+ * The index is keyed case-folded — `slugify(x, false)` — on both sides, per the
+ * contract stated at slug.ts: comparison callers must not pass `preserveCase`,
+ * so slugs stay comparable whatever the user's `slugCase` setting is. Under
+ * `slugCase: 'preserve'` a case-sensitive key would make this resolver stricter
+ * than `scanDeadLinks`, which judges over `knownTargetsLower`: a model writing
+ * "mediterrane Ernährung" for the page "Mediterrane-Ernährung" would miss the
+ * index here and be stamped into a dead link that the scanner would have
+ * accepted unchanged.
+ *
+ * Shared by the link corrector (where the index was born, #482 stage 2) and
+ * the candidate gate, which asks the same question — "does the vault have a
+ * page for this name?" — before pruning a dropped name from related lists.
+ */
+export function buildVaultResolver(
   vaultIndex?: { wikiFolder: string; pages: ExistingPageRef[] },
-): string {
-  // Full-vault name → path index. Titles outrank aliases: a title is the page's
-  // own claim to a name, an alias is someone's cross-reference to it.
-  //
-  // The index is keyed case-folded — `slugify(x, false)` — on both sides, per the
-  // contract stated at slug.ts: comparison callers must not pass `preserveCase`,
-  // so slugs stay comparable whatever the user's `slugCase` setting is. Under
-  // `slugCase: 'preserve'` a case-sensitive key would make this resolver stricter
-  // than `scanDeadLinks`, which judges over `knownTargetsLower`: a model writing
-  // "mediterrane Ernährung" for the page "Mediterrane-Ernährung" would miss the
-  // index here and be stamped into a dead link that the scanner would have
-  // accepted unchanged. The typed-list map (`folderBySlug` below) keys the same
-  // way: it used to take `preserveCase` from the caller, which kept both of its
-  // sides consistent with each other but let the lookup miss whenever the typed
-  // list and the link differed only in spelling — "Mediterrane Ernährung" in
-  // the list, `[[mediterrane ernährung]]` in the body — so the section won over
-  // the known type. No caller passes `preserveCase` any more.
+): (name: string) => string | undefined {
   const pathByTitle = new Map<string, string>();
   const pathByAlias = new Map<string, string>();
   const ambiguousTitles = new Set<string>();
@@ -98,7 +96,7 @@ export function correctRelatedLinkPrefixes(
       }
     }
   }
-  const resolveInVault = (name: string): string | undefined => {
+  return (name: string): string | undefined => {
     const s = slugify(name, false);
     if (!s) return undefined;
     if (!ambiguousTitles.has(s)) {
@@ -108,6 +106,23 @@ export function correctRelatedLinkPrefixes(
     if (!ambiguousAliases.has(s)) return pathByAlias.get(s);
     return undefined;
   };
+}
+
+export function correctRelatedLinkPrefixes(
+  content: string,
+  relatedEntities: string[] | undefined,
+  relatedConcepts: string[] | undefined,
+  relatedEntitiesLabel: string,
+  relatedConceptsLabel: string,
+  vaultIndex?: { wikiFolder: string; pages: ExistingPageRef[] },
+): string {
+  // The typed-list map (`folderBySlug` below) keys the same way as the vault
+  // resolver: it used to take `preserveCase` from the caller, which kept both
+  // of its sides consistent with each other but let the lookup miss whenever
+  // the typed list and the link differed only in spelling — "Mediterrane
+  // Ernährung" in the list, `[[mediterrane ernährung]]` in the body — so the
+  // section won over the known type. No caller passes `preserveCase` any more.
+  const resolveInVault = buildVaultResolver(vaultIndex);
 
   // Name→type map from the typed related lists. Catches links mis-sectioned by
   // the LLM (e.g. an entity listed under Related Concepts): the known type wins

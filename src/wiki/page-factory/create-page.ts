@@ -42,6 +42,7 @@ import { getExistingWikiPages } from '../lint/get-existing-pages';
 import { mergePage } from './merge-page';
 import { appendToReviewedPage } from './merge-page';
 import { isConversationSource, contextualizeError } from './contextualize';
+import { localDateStamp } from '../../core/format';
 
 /**
  * Minimal context contract required by createOrUpdatePage / createNewPage.
@@ -196,7 +197,7 @@ export async function createNewPage(
       related_concepts: info.related_concepts?.join(', ') || 'No related concepts',
       related_content: 'No existing content',
       merge_strategy: 'New page, no merge needed.',
-      date: new Date().toISOString().split('T')[0],
+      date: localDateStamp(),
       // Issue #155: entity/concept pages cite the canonical source PAGE
       // ([[sources/<slug>]]), not the raw note path — so a collision-
       // disambiguated source slug is honored and the normalizer passes it

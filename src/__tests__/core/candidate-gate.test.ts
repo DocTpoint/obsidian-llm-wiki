@@ -102,6 +102,29 @@ describe('gateCandidates', () => {
     expect(out.entities[0].related_concepts).toEqual(['Eisenmangel']);
     expect(out.concepts.map(x => x.name)).toEqual(['Eisenmangel']);
     expect(out.concepts[0].related_concepts).toEqual(['Ferritin']);
+    expect(out.linkedAnyway).toEqual([]);
+  });
+
+  it('keeps a dropped name in related_* lists when the vault already has a page for it', () => {
+    // Eisenstoffwechsel is absent from THIS note, so it earns no page here —
+    // but a page for it exists, and the edge to an existing page is not a
+    // dead link. CRP is not a candidate in this input, so it is never judged.
+    const known = (name: string) => name.toLowerCase() === 'eisenstoffwechsel';
+    const out = gate(
+      {
+        entities: [e('Ferritin', { related_entities: ['CRP', 'Transferrin'], related_concepts: ['Eisenstoffwechsel', 'Eisenmangel'] })],
+        concepts: [c('Eisenmangel', ['Eisenstoffwechsel', 'Ferritin']), c('Eisenstoffwechsel')],
+      },
+      TEXT,
+      'de',
+      known,
+    );
+    expect(out.concepts.map(x => x.name)).toEqual(['Eisenmangel']);
+    expect(out.dropped.map(d => d.name)).toEqual(['Eisenstoffwechsel']);
+    expect(out.entities[0].related_entities).toEqual(['CRP', 'Transferrin']);
+    expect(out.entities[0].related_concepts).toEqual(['Eisenstoffwechsel', 'Eisenmangel']);
+    expect(out.concepts[0].related_concepts).toEqual(['Eisenstoffwechsel', 'Ferritin']);
+    expect(out.linkedAnyway).toEqual(['Eisenstoffwechsel']);
   });
 
   it('is a no-op — input returned untouched — for a language without a profile, and resolves region codes', () => {

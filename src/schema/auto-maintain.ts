@@ -15,6 +15,7 @@ import { isLocalNoKeyProvider } from '../core/local-no-key-provider';
 import { resolveProviderApiKey } from '../llm-sdk/provider-api-key-resolver';
 import type { LLMClient } from '../types';
 import { isIngestableSource } from '../core/folder-scope';
+import { localDateStamp } from '../core/format';
 
 export class AutoMaintainManager {
   private app: App;
@@ -632,7 +633,7 @@ export class AutoMaintainManager {
         createWelcomeNote: this.settings.createWelcomeNote,
       },
       targetLanguage: this.settings.wikiLanguage || 'en',
-      createdAt: new Date().toISOString().slice(0, 10),
+      createdAt: localDateStamp(),
       // smokeTestProbe wraps the sync probe in a resolved Promise so
       // the ensure-welcome-note signature is satisfied.
       smokeTestProbe: async () => this.probeLlm(),

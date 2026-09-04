@@ -14,7 +14,14 @@
 
 import type { MentionWithProvenance } from '../types';
 
-const DEFAULT_MAX_CHARS = 500;
+/**
+ * Total character budget of one emitted section (header + bullets) when the
+ * caller passes no `maxChars`. Exported so a caller that re-emits a section
+ * already on the page can add this much headroom on top of what the page
+ * holds instead of re-capping the accumulated block at the fresh-page size.
+ */
+export const DEFAULT_MENTIONS_MAX_CHARS = 500;
+const DEFAULT_MAX_CHARS = DEFAULT_MENTIONS_MAX_CHARS;
 
 export interface FormatMentionsOptions {
   /** Override the 500-char total budget. Defaults to 500 (matches truncateMentions). */

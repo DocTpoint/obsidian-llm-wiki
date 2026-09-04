@@ -1,6 +1,7 @@
 import { VALID_ENTITY_TAGS, VALID_CONCEPT_TAGS, VALID_SOURCE_TAGS, LLMWikiSettings } from '../types';
 import { getActiveEntityTags, getActiveConceptTags, getActiveSourceTags } from './tag-vocab';
 import { filterRedundantAliases, resolveMinAliasLength } from './slug';
+import { localDateStamp } from './format';
 
 export interface FrontmatterData {
   reviewed?: boolean;
@@ -544,8 +545,8 @@ export function mergeFrontmatter(
   sourceSet.add(newSourcePath);
   const mergedSources = Array.from(sourceSet).map(s => `[[${s}]]`);
 
-  const created = fm.created || new Date().toISOString().split('T')[0];
-  const updated = new Date().toISOString().split('T')[0];
+  const created = fm.created || localDateStamp();
+  const updated = localDateStamp();
 
   // Always emit a `tags:` line (bare when empty) to preserve prior behavior.
   // Issue #356 follow-up: also pass through unknown top-level fields
@@ -635,7 +636,7 @@ export function enforceFrontmatterConstraints(
   const fmText = content.substring(3, fmEnd);
 
   if (/^reviewed:\s*true\s*$/m.test(fmText)) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStamp();
     const created = resolveCreated(options, today);
     return content
       .replace(/^created:\s*\d{4}-\d{2}-\d{2}\s*$/m, `created: ${created}`)
@@ -643,7 +644,7 @@ export function enforceFrontmatterConstraints(
   }
 
   let body = content.substring(fmEnd + 5);
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStamp();
 
   const lines = fmText.split('\n');
   let collectedTags: string[] = [];

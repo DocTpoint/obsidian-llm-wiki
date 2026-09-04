@@ -56,6 +56,7 @@ import { assembleFinalContent } from './mentions-integration';
 import { applyComplementaryAppends } from './complementary-appends';
 import { firstQuotesForPrompt, isConversationSource, mergeError } from './contextualize';
 import { buildNoteExcerpt, renderNoteExcerptBlock } from './note-window';
+import { localDateStamp } from '../../core/format';
 
 /**
  * Minimal context contract required by mergePage / appendToReviewedPage.
@@ -369,7 +370,7 @@ async function writeContradictionRecords(
     // folder already exists
   }
   const labels = getSectionLabels(ctx.settings);
-  const date = new Date().toISOString().split('T')[0];
+  const date = localDateStamp();
   const pageRelPath = wikiRelativePagePath(wikiFolder, pagePath);
   for (const item of items) {
     const record = buildContradictionRecord(
