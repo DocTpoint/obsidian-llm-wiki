@@ -44,6 +44,7 @@ import {
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
 import { mergeFrontmatter, parseFrontmatter, extractBody } from '../../core/frontmatter';
 import { incomingTypeTag } from '../../core/tag-vocab';
+import { collectActiveVocabulary } from '../../core/domain-axis';
 import { appendContradictedByMarker } from '../../core/contradicted-marker';
 import { buildContradictionRecord } from '../../core/contradiction-record';
 import { describeDemotion } from './contradiction-gates';
@@ -102,7 +103,8 @@ export async function mergePage(
     const { frontmatter, body: existingBody } = mergeFrontmatter(
       existingContent,
       sourceSlug ? `sources/${sourceSlug}` : sourceFile.path,
-      incomingTypeTag(ctx.settings, pageType, info.type),
+      incomingTypeTag(ctx.settings, pageType, info.type, collectActiveVocabulary(ctx.app as never, ctx.settings)),
+      info.domains, // domain axis stage 3 (#568): union the extraction's domain subset
     );
 
     // Issue #312 part 2 — deterministic, no LLM: is this source the page's own
@@ -424,7 +426,8 @@ export async function appendToReviewedPage(
     const { frontmatter, body: existingBody } = mergeFrontmatter(
       existingContent,
       sourceSlug ? `sources/${sourceSlug}` : sourceFile.path,
-      incomingTypeTag(ctx.settings, pageKind, info.type),
+      incomingTypeTag(ctx.settings, pageKind, info.type, collectActiveVocabulary(ctx.app as never, ctx.settings)),
+      info.domains, // domain axis stage 3 (#568): union the extraction's domain subset
     );
 
     // 2. Minimal LLM check for genuinely new content. Same note-excerpt

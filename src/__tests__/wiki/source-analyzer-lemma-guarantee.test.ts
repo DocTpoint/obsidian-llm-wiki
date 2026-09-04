@@ -115,6 +115,35 @@ describe('SourceAnalyzer — patch 16 lemma guarantee wiring', () => {
     expect((result?.entities ?? []).map(e => e.name)).not.toContain('Klotho');
     expect((result?.entities ?? []).length).toBe(2);
   });
+
+  // domain axis stage 3 (#568): extracted items get their `domains` subset
+  // from the model, but the lemma candidate is added after extraction and
+  // never passes through that prompt — without a proposal of its own, the
+  // note's own page is the one page class born domainless (field finding:
+  // entities/Atemmasken). The note's tags describe the note's subject, which
+  // is exactly what the lemma page is.
+  it('gives the added lemma the source note\'s tags as its domain proposal', async () => {
+    const tagged = BODY.replace('aliases:', 'tags:\n  - Thema/Alternsforschung\n  - Sorte/Protein\naliases:');
+    const { ctx } = createMockContext({
+      vaultFiles: { [NOTE]: tagged },
+      llmResponses: [EXTRACTION_WITHOUT_LEMMA, EMPTY_BATCH, TYPE_ENTITY],
+    } as Parameters<typeof createMockContext>[0]);
+    const result = await new SourceAnalyzer(ctx).analyzeSource(
+      // eslint-disable-next-line obsidianmd/no-tfile-tfolder-cast
+      createMockFile(NOTE) as unknown as TFile,
+    );
+    const added = (result?.entities ?? []).find(e => e.name === 'Klotho');
+    expect(added?.domains).toEqual(['Thema/Alternsforschung', 'Sorte/Protein']);
+  });
+
+  it('adds no domains field when the source note carries no tags', async () => {
+    const result = await run(analyzerWith([
+      EXTRACTION_WITHOUT_LEMMA, EMPTY_BATCH, TYPE_ENTITY,
+    ]));
+    const added = (result?.entities ?? []).find(e => e.name === 'Klotho');
+    expect(added).toBeDefined();
+    expect(added?.domains).toBeUndefined();
+  });
 });
 
 // === typed-output migration (v1.26.3 PATCH Issue #443 expanded scope) ===

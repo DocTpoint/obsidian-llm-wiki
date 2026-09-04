@@ -3,6 +3,7 @@
 // Zero side effects, fully unit-testable
 
 import { EntityInfo, ConceptInfo, ContradictionInfo, SourceAnalysis, MentionWithProvenance } from '../types';
+import { unionDomains } from './domain-axis';
 
 export interface BatchAccumulation {
   entities: EntityInfo[];
@@ -88,14 +89,25 @@ function mergeMentionsFields<
   T extends {
     mentions_in_source?: string[];
     mentions_with_provenance?: MentionWithProvenance[];
+    domains?: string[];
   },
 >(existing: T, incoming: T): T {
+  // domain axis stage 3 (#568): a later round that names the same item
+  // again may carry its own domain subset — union it; `coverage` stays with the
+  // first observation (the rounds see the same text).
+  // Fold-keyed, not raw: `dedupStrings` is the right tool for mentions (two
+  // spellings of a quote are two quotes) and the wrong one for the domain
+  // axis, whose notion of "same value" is `selectDomains`'.
+  const incomingDomains = incoming.domains?.length ? unionDomains(existing.domains, incoming.domains) : undefined;
+  const base: T = incomingDomains && incomingDomains.length !== (existing.domains?.length ?? 0)
+    ? { ...existing, domains: incomingDomains }
+    : existing;
   const hasProvenance = incoming.mentions_with_provenance?.length;
   const hasLegacy = incoming.mentions_in_source?.length;
-  if (!hasProvenance && !hasLegacy) return existing;
+  if (!hasProvenance && !hasLegacy) return base;
 
   return {
-    ...existing,
+    ...base,
     mentions_with_provenance: dedupMentionsByProvenanceKey(
       existing.mentions_with_provenance,
       incoming.mentions_with_provenance,

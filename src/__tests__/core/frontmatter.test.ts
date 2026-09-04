@@ -101,6 +101,20 @@ describe('parseFrontmatter', () => {
     expect(t?.reviewed).toBe(true);
     expect(f?.reviewed).toBe(false);
   });
+
+  it('reads a bare tags: key as empty, not as one empty entry (S140)', () => {
+    // The emitEmptyTags shape: enforceFrontmatterConstraints writes `tags:`
+    // bare after stripping every value. Coercing '' to [''] handed
+    // mergeFrontmatterArrayField a phantom entry it persisted as `- ""`.
+    const result = parseFrontmatter('---\ntype: concept\ntags:\n---\nBody');
+    expect(result?.tags).toEqual([]);
+  });
+
+  it('drops empty-string entries from array fields (S140)', () => {
+    const content = '---\ntags:\n  - ""\n  - "Thema/Pathophysiologie"\n---\nBody';
+    const result = parseFrontmatter(content);
+    expect(result?.tags).toEqual(['Thema/Pathophysiologie']);
+  });
 });
 
 describe('enforceFrontmatterConstraints', () => {
@@ -1091,5 +1105,59 @@ describe('enforceFrontmatterConstraints — aliases that repeat the page filenam
   it('leaves the list untouched when no pagePath is passed (legacy callers)', () => {
     const out = enforceFrontmatterConstraints(page('  - "CD44"\n'), 'entity');
     expect(out).toMatch(/aliases:\n  - "CD44"\n/);
+  });
+});
+
+describe('enforceFrontmatterConstraints: domainVocabulary strip (Tag-Achse S138)', () => {
+  const content = [
+    '---',
+    'type: entity',
+    'tags: [Sorte/Arzneimittel, Thema/Kardiologie, other]',
+    '---',
+    '',
+    '# X',
+  ].join('\n');
+
+  it('strips any tag the domain vocabulary does not carry, flat ones included', () => {
+    const out = enforceFrontmatterConstraints(content, 'entity', undefined, {
+      domainVocabulary: ['Sorte/Arzneimittel'],
+    });
+    expect(out).toContain('Sorte/Arzneimittel');
+    expect(out).not.toContain('Thema/Kardiologie');
+    // the flat type is the training taxonomy leaking through, not an abstention marker
+    expect(out).not.toContain('other');
+  });
+
+  it('keeps a flat tag the declared folders actually carry', () => {
+    const out = enforceFrontmatterConstraints(content, 'entity', undefined, {
+      domainVocabulary: ['Sorte/Arzneimittel', 'other'],
+    });
+    expect(out).toContain('Sorte/Arzneimittel');
+    expect(out).toContain('other');
+  });
+
+  it('keeps a carried nested tag under fold (case/NFC-insensitive)', () => {
+    const out = enforceFrontmatterConstraints(content, 'entity', undefined, {
+      domainVocabulary: ['sorte/arzneimittel', 'thema/kardiologie'],
+    });
+    expect(out).toContain('Sorte/Arzneimittel');
+    expect(out).toContain('Thema/Kardiologie');
+  });
+
+  it('changes nothing when the option is omitted (retain semantics)', () => {
+    const out = enforceFrontmatterConstraints(content, 'entity');
+    expect(out).toContain('Thema/Kardiologie');
+  });
+});
+
+describe('mergeFrontmatterArrayField after a full strip (S140)', () => {
+  it('appends domains to a bare tags: key without a phantom "" entry', () => {
+    // Regression: model wrote a flat non-harvest tag, the constraints pass
+    // stripped it (bare `tags:`), and the stage-4 domain append then wrote
+    // `- ""` above the belonging value on 21 live pages.
+    const content = '---\ntype: concept\ntags:\n---\n\nBody';
+    const result = mergeFrontmatterArrayField(content, 'tags', ['Thema/Pathophysiologie']);
+    expect(result).toContain('Thema/Pathophysiologie');
+    expect(result).not.toContain('- ""');
   });
 });

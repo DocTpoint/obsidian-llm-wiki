@@ -209,3 +209,19 @@ describe('foldToVocabulary (Issue #527)', () => {
     expect(foldToVocabulary('   ', vocab)).toBeNull();
   });
 });
+
+describe('incomingTypeTag with active domain vocabulary (S139)', () => {
+  const settings = { tagVocabularyMode: 'default' } as never;
+
+  it('rejects a settings-list type the harvest does not carry', () => {
+    expect(incomingTypeTag(settings, 'concept', 'phenomenon', ['Sorte/Erkrankung'])).toBeUndefined();
+  });
+
+  it('admits a type the harvest carries, in the harvest spelling', () => {
+    expect(incomingTypeTag(settings, 'concept', 'sorte/erkrankung', ['Sorte/Erkrankung'])).toEqual(['Sorte/Erkrankung']);
+  });
+
+  it('falls back to the settings lists when the harvest is empty', () => {
+    expect(incomingTypeTag(settings, 'concept', 'phenomenon', [])).toEqual(['phenomenon']);
+  });
+});

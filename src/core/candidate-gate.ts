@@ -16,7 +16,9 @@
 // a policy line that can move without a model noticing. Three prompt-side
 // formulations of the same question were stable within a formulation (91–100 %
 // self-agreement over three draws) and inconsistent between formulations
-// (0.9 % to 13.9 % filtered). The model keeps the remaining two thirds.
+// (0.9 % to 13.9 % filtered). The model keeps the remaining two thirds: its
+// `coverage` observation meets COVERAGE_BELOW_THRESHOLD below (stage 3 of the
+// design, #568) — same module, same contract, after this gate.
 //
 // Opt-in (`settings.skipMentionOnlyCandidates`, off by default): it changes
 // which pages an ingest writes, so it is the user's choice, not an upgrade's.
@@ -332,20 +334,41 @@ export function classifyCandidate(text: string, name: string, profile: GateLangu
   return sawAside ? 'aside' : 'absent';
 }
 
-export interface DroppedCandidate {
+/**
+ * domain axis stage 3 (#568): the coverage values that fall below the
+ * threshold — no page, no call. This is the policy line the design asked for:
+ * the model reports what the text does (`defined` / `discussed` / `named`),
+ * the code decides what is enough. Moving it (e.g. to `named` plus
+ * `discussed` with a single mention) is a change here, not in a prompt, and
+ * no model notices. A missing or unknown value keeps the candidate — absence
+ * is not a signal.
+ */
+export const COVERAGE_BELOW_THRESHOLD: ReadonlySet<string> = new Set(['named']);
+
+/** Why a candidate got no page: where the text put it, or what the model observed. */
+export type DropReason = Exclude<GateVerdict, 'prose'> | 'named';
+
+/**
+ * Parameterised on the reason so each gate's result says what that gate can
+ * actually emit: the position gate never reports `named`, the coverage
+ * threshold reports nothing else. The default keeps the shared shape for
+ * callers that handle both (the engine logs them through one line).
+ */
+export interface DroppedCandidate<R extends DropReason = DropReason> {
   name: string;
   kind: 'entity' | 'concept';
-  verdict: Exclude<GateVerdict, 'prose'>;
+  verdict: R;
 }
 
-export interface GateResult {
+export interface GateResult<R extends DropReason = DropReason> {
   entities: EntityInfo[];
   concepts: ConceptInfo[];
-  dropped: DroppedCandidate[];
+  dropped: DroppedCandidate<R>[];
   /**
    * Dropped names that stayed in the survivors' related_* lists because the
    * vault already has a page for them (`isKnownPage`). No page is written
    * for them in this ingest; the edge to the existing page is kept.
+   * Present on both gates so the caller can log it the same way (#620).
    */
   linkedAnyway: string[];
   /** False when no profile exists for `language` — the input came back untouched. */
@@ -362,20 +385,19 @@ export interface GateResult {
  * `isKnownPage` answers whether a name already resolves to a wiki page
  * (title or alias). The gate decides whether THIS note earns a page for a
  * name; it cannot decide that a link to a page another note already earned
- * is dead. Without the predicate every dropped name is pruned, which on a
- * measured vault emptied the related sections of pages whose named
- * neighbours existed — a passing mention of an existing page is exactly the
- * edge the graph is for.
+ * is dead (#620). Without the predicate every dropped name is pruned, which
+ * on a measured vault emptied the related sections of pages whose named
+ * neighbours existed.
  */
 export function gateCandidates(
   analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
   sourceText: string,
   language: string | undefined | null,
   isKnownPage?: (name: string) => boolean,
-): GateResult {
+): GateResult<Exclude<GateVerdict, 'prose'>> {
   const profile = gateProfileFor(language);
   if (!profile) return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], linkedAnyway: [], applied: false };
-  const dropped: DroppedCandidate[] = [];
+  const dropped: DroppedCandidate<Exclude<GateVerdict, 'prose'>>[] = [];
   const keep = <T extends { name: string }>(items: T[], kind: DroppedCandidate['kind']): T[] =>
     items.filter(item => {
       const verdict = classifyCandidate(sourceText, item.name, profile);
@@ -386,7 +408,23 @@ export function gateCandidates(
   const entities = keep(analysis.entities, 'entity');
   const concepts = keep(analysis.concepts, 'concept');
   if (dropped.length === 0) return { entities: analysis.entities, concepts: analysis.concepts, dropped, linkedAnyway: [], applied: true };
+  return { ...pruneDroppedNames(entities, concepts, dropped, isKnownPage), dropped, applied: true };
+}
 
+/**
+ * Remove the dropped names from the survivors' related_* lists, so that no
+ * gate ever manufactures a dead link (#514). Names the vault already has a
+ * page for (`isKnownPage`) are NOT pruned: the gate decides whether THIS
+ * note earns a page for a name, never that a link to a page another note
+ * already earned is dead (#620). Shared by the deterministic gate and the
+ * coverage threshold so both halves of the gate answer "known" the same way.
+ */
+function pruneDroppedNames<R extends DropReason>(
+  entities: EntityInfo[],
+  concepts: ConceptInfo[],
+  dropped: readonly DroppedCandidate<R>[],
+  isKnownPage?: (name: string) => boolean,
+): { entities: EntityInfo[]; concepts: ConceptInfo[]; linkedAnyway: string[] } {
   const key = (n: string) => nfc(n).trim().toLowerCase();
   const linkedAnyway = dropped.filter(d => isKnownPage?.(d.name) === true).map(d => d.name);
   const gone = new Set(dropped.filter(d => !linkedAnyway.includes(d.name)).map(d => key(d.name)));
@@ -403,8 +441,35 @@ export function gateCandidates(
       related_concepts: prune(c.related_concepts) ?? [],
       ...(c.related_entities ? { related_entities: prune(c.related_entities) } : {}),
     })),
-    dropped,
     linkedAnyway,
-    applied: true,
   };
+}
+
+/**
+ * domain axis stage 3 (#568): the semantic half of the gate. The
+ * extraction reports per candidate how the source treats it (`coverage`);
+ * this applies COVERAGE_BELOW_THRESHOLD. Language-independent — the
+ * observation is the model's, the threshold is ours — and therefore applied
+ * after the deterministic gate, to its survivors. Pure, same contract as
+ * gateCandidates; `applied` is always true.
+ *
+ * `isKnownPage` mirrors gateCandidates (#620): a dropped name the vault
+ * already has a page for keeps its edge in the survivors' related_* lists.
+ */
+export function applyCoverageThreshold(
+  analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
+  isKnownPage?: (name: string) => boolean,
+): GateResult<'named'> {
+  const dropped: DroppedCandidate<'named'>[] = [];
+  const keep = <T extends { name: string; coverage?: string }>(items: T[], kind: DroppedCandidate['kind']): T[] =>
+    items.filter(item => {
+      const cov = typeof item.coverage === 'string' ? item.coverage.trim().toLowerCase() : '';
+      if (!COVERAGE_BELOW_THRESHOLD.has(cov)) return true;
+      dropped.push({ name: item.name, kind, verdict: 'named' });
+      return false;
+    });
+  const entities = keep(analysis.entities, 'entity');
+  const concepts = keep(analysis.concepts, 'concept');
+  if (dropped.length === 0) return { entities: analysis.entities, concepts: analysis.concepts, dropped, linkedAnyway: [], applied: true };
+  return { ...pruneDroppedNames(entities, concepts, dropped, isKnownPage), dropped, applied: true };
 }

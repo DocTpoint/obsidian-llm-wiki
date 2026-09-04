@@ -715,3 +715,28 @@ describe('Batch Merger — Pure Functions', () => {
     });
   });
 });
+// domain axis stage 3 (#568): a later round that names the same item again
+// may carry its own domain subset — the union survives the duplicate merge.
+describe('mergeBatchResults — domains across rounds (domain axis stage 3, #568)', () => {
+  const e = (name: string, extra: Partial<EntityInfo>): EntityInfo =>
+    ({ name, type: 'other', summary: '', mentions_in_source: [], ...extra } as EntityInfo);
+  const round = (acc: ReturnType<typeof createEmptyAccumulation>, entities: EntityInfo[]) => {
+    const r = mergeBatchResults(acc, { entities, concepts: [] });
+    return { ...acc, entities: r.allEntities, concepts: r.allConcepts, extractedNames: r.extractedNames };
+  };
+
+  it('unions domains of a duplicate into the existing item and keeps the first coverage', () => {
+    let acc = round(createEmptyAccumulation(), [e('Zink', { domains: ['Sorte/Mineralstoff'], coverage: 'defined' })]);
+    acc = round(acc, [e('zink', { domains: ['Thema/Ernährung', 'Sorte/Mineralstoff'], coverage: 'named' })]);
+    expect(acc.entities).toHaveLength(1);
+    expect(acc.entities[0].domains).toEqual(['Sorte/Mineralstoff', 'Thema/Ernährung']);
+    expect(acc.entities[0].coverage).toBe('defined');
+  });
+
+  it('leaves the existing item untouched when the duplicate brings nothing new', () => {
+    let acc = round(createEmptyAccumulation(), [e('Zink', { domains: ['Sorte/Mineralstoff'] })]);
+    const before = acc.entities[0];
+    acc = round(acc, [e('Zink', { domains: ['Sorte/Mineralstoff'] })]);
+    expect(acc.entities[0]).toBe(before);
+  });
+});

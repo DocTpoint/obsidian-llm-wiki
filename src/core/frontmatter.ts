@@ -2,6 +2,7 @@ import { VALID_ENTITY_TAGS, VALID_CONCEPT_TAGS, VALID_SOURCE_TAGS, LLMWikiSettin
 import { getActiveEntityTags, getActiveConceptTags, getActiveSourceTags } from './tag-vocab';
 import { filterRedundantAliases, resolveMinAliasLength } from './slug';
 import { localDateStamp } from './format';
+import { unionDomains, fold } from './domain-axis';
 
 export interface FrontmatterData {
   reviewed?: boolean;
@@ -93,8 +94,15 @@ export function parseFrontmatter(content: string): FrontmatterData | null {
   for (const field of ARRAY_FIELDS) {
     const val = result[field];
     if (typeof val === 'string') {
-      result[field] = [val];
-    } else if (!Array.isArray(val)) {
+      // A bare `tags:` key (the emitEmptyTags shape) reads as the empty
+      // string; coercing it to [''] handed every downstream array writer a
+      // phantom entry that yamlStringify then persisted as `- ""`.
+      result[field] = val.trim() ? [val] : [];
+    } else if (Array.isArray(val)) {
+      result[field] = (val as unknown[]).filter(
+        v => !(typeof v === 'string' && v.trim() === '')
+      );
+    } else {
       delete result[field];
     }
   }
@@ -481,6 +489,9 @@ export function serializeFrontmatter(
     lines.push('tags:');
   }
 
+  // domain axis stage 2 (#568): block style only — the domain values are
+  // nested (`Gruppe/Wert`) and the inline-tag regex in fix-runners never reads them.
+
   if (fm.reviewed) lines.push('reviewed: true');
 
   if (Array.isArray(fm.aliases)) {
@@ -495,29 +506,12 @@ export function serializeFrontmatter(
   return lines.join('\n');
 }
 
-/**
- * Union the tags a page already carries with the ones the incoming source
- * proposes, first occurrence wins. `sources:` next to it is a union already;
- * `tags:` was not, so on every merge after the first the incoming term was
- * computed and dropped and the stored tag stayed a function of which source
- * arrived first. Omitting `incoming` keeps the previous behaviour byte for
- * byte, so a caller that has no incoming tags is unaffected.
- */
-function unionTags(existing: unknown, incoming?: string[]): string[] {
-  // The existing values are carried verbatim — the parser types them loosely,
-  // and filtering here would silently drop a tag shape this function is not
-  // the right place to judge.
-  const merged: string[] = Array.isArray(existing) ? [...(existing as string[])] : [];
-  for (const tag of incoming ?? []) {
-    if (tag && !merged.includes(tag)) merged.push(tag);
-  }
-  return merged;
-}
-
 export function mergeFrontmatter(
   existingContent: string,
   newSourcePath: string,
-  incomingTags?: string[]
+  incomingTags?: string[],
+  /** domain axis stage 3 (#568): the incoming page's domain subset, unioned after the existing values. */
+  incomingDomains?: readonly string[],
 ): { frontmatter: string; body: string; wasMerged: boolean } {
   const fm = parseFrontmatter(existingContent);
   const body = extractBody(existingContent);
@@ -548,6 +542,11 @@ export function mergeFrontmatter(
   const created = fm.created || localDateStamp();
   const updated = localDateStamp();
 
+  // Stage 4 (#568): one field — the validated belonging values merge into
+  // `tags:` next to the identity value. A user-authored `domains:` field, like
+  // any unknown key, rides the #356 passthrough untouched.
+  const mergedTagsIncoming = [...(incomingTags ?? []), ...(incomingDomains ?? [])];
+
   // Always emit a `tags:` line (bare when empty) to preserve prior behavior.
   // Issue #356 follow-up: also pass through unknown top-level fields
   // (`redirect_to:`, `parent_org:`, user-authored metadata) so the full-page
@@ -562,7 +561,10 @@ export function mergeFrontmatter(
       created,
       updated,
       sources: mergedSources,
-      tags: unionTags(fm.tags, incomingTags),
+      // Fold-keyed union (Stufe 4): the belonging values were folded by the
+      // validator, so the merge must compare the same way — raw equality
+      // re-admitted case variants (the `#569` review class, B1–B3).
+      tags: unionDomains(Array.isArray(fm.tags) ? fm.tags : undefined, mergedTagsIncoming),
       reviewed: fm.reviewed,
       aliases: Array.isArray(fm.aliases) ? fm.aliases : undefined,
     },
@@ -613,6 +615,21 @@ export interface EnforceFrontmatterOptions extends FrontmatterDateOptions {
    * that do not know the path; nothing changes for them.
    */
   pagePath?: string;
+  /**
+   * The active domain vocabulary (source-folder harvest ∪ wiki nested tags).
+   * When given, ANY tag the vocabulary does not carry is STRIPPED instead of
+   * retained — the retain path let values the validator had rejected survive
+   * onto pages (P2: `Thema/Kardiologie`; P4: 4 cases), and with the wiki
+   * harvest feeding the vocabulary such a leak would legitimize itself on the
+   * next collection. Flat tags briefly kept the retain semantics as an
+   * abstention fallback; measured against a live vault that fallback is not
+   * an abstention marker but the training taxonomy leaking through
+   * (`theory`/`method`/`term` on 52 of 128 pages, one page carrying two), so
+   * flat tags now face the same test — a flat value the declared folders
+   * actually carry stays offerable and stays on the page.
+   * Omitted by callers outside the domain axis; nothing changes for them.
+   */
+  domainVocabulary?: readonly string[];
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -734,6 +751,7 @@ export function enforceFrontmatterConstraints(
     ? rawSources.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
     : undefined;
 
+
   const hasTags = foundTags || collectedTags.length > 0;
   const dedupedTags: string[] = [];
   if (hasTags) {
@@ -744,12 +762,26 @@ export function enforceFrontmatterConstraints(
         : pageType === 'source'
           ? (settings ? getActiveSourceTags(settings) : VALID_SOURCE_TAGS)
           : [];
+    const domainAllowed = options?.domainVocabulary
+      ? new Set(options.domainVocabulary.map(fold))
+      : undefined;
     const outOfVocab: string[] = [];
+    const strippedTags: string[] = [];
     for (const tag of collectedTags) {
       if (!tag || tag === pageType) continue;
       if (dedupedTags.includes(tag)) continue;
+      if (domainAllowed && !domainAllowed.has(fold(tag))) {
+        strippedTags.push(tag);
+        continue;
+      }
       dedupedTags.push(tag);
-      if (!validSubtypes.includes(tag)) outOfVocab.push(tag);
+      if (!domainAllowed && !validSubtypes.includes(tag)) outOfVocab.push(tag);
+    }
+    if (strippedTags.length > 0) {
+      console.debug(
+        `[enforceFrontmatterConstraints] ${pageType} page stripped ${strippedTags.length} tag(s) the active vocabulary does not carry:`,
+        strippedTags
+      );
     }
     if (outOfVocab.length > 0) {
       console.debug(

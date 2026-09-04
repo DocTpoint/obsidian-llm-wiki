@@ -10,6 +10,7 @@ import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { retargetLinksToPage } from '../../core/link-retarget';
 import { localDateStamp } from '../../core/format';
+import { collectActiveVocabulary } from '../../core/domain-axis';
 
 export async function mergeDuplicatePages(
   ctx: EngineContext,
@@ -176,6 +177,7 @@ export async function mergeDuplicatePages(
   const enforced = enforceFrontmatterConstraints(newContent, pageType, ctx.settings, {
     preserveCreated: targetFm?.created,
     pagePath: targetPath,
+    domainVocabulary: collectActiveVocabulary(ctx.app, ctx.settings), // local patch (Tag-Achse S138)
   });
   await ctx.createOrUpdateFile(targetPath, enforced);
 

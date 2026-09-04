@@ -257,3 +257,78 @@ describe('classifyCandidate — link markup is not a parenthesis', () => {
     expect(classifyCandidate(t, 'ATS Statement: Guidelines 2002')).toBe('aside');
   });
 });
+
+// domain axis stage 3 (#568): the semantic half — the model's coverage
+// observation meets the threshold in code.
+import { applyCoverageThreshold, COVERAGE_BELOW_THRESHOLD } from '../../core/candidate-gate';
+
+describe('applyCoverageThreshold (domain axis stage 3, #568)', () => {
+  const mk = (name: string, coverage?: string, related: string[] = []): EntityInfo =>
+    ({ name, type: 'other', summary: '', mentions_in_source: [], related_entities: related, ...(coverage ? { coverage } : {}) } as unknown as EntityInfo);
+  const mkC = (name: string, coverage?: string, related: string[] = []): ConceptInfo =>
+    ({ name, type: 'term', summary: '', mentions_in_source: [], related_concepts: related, ...(coverage ? { coverage } : {}) } as unknown as ConceptInfo);
+
+  it('the threshold is `named` and nothing else', () => {
+    expect([...COVERAGE_BELOW_THRESHOLD]).toEqual(['named']);
+  });
+
+  it('drops `named`, keeps `defined`, `discussed`, a missing value and an unknown value', () => {
+    const r = applyCoverageThreshold({
+      entities: [mk('Ferritin', 'defined'), mk('CRP', 'named'), mk('Eisen')],
+      concepts: [mkC('Hepcidin', 'discussed'), mkC('Zink', 'NAMED '), mkC('Kupfer', 'somewhat')],
+    });
+    expect(r.applied).toBe(true);
+    expect(r.entities.map(e => e.name)).toEqual(['Ferritin', 'Eisen']);
+    expect(r.concepts.map(c => c.name)).toEqual(['Hepcidin', 'Kupfer']);
+    expect(r.dropped).toEqual([
+      { name: 'CRP', kind: 'entity', verdict: 'named' },
+      { name: 'Zink', kind: 'concept', verdict: 'named' },
+    ]);
+  });
+
+  it('prunes dropped names from the survivors\' related_* lists', () => {
+    const r = applyCoverageThreshold({
+      entities: [mk('Ferritin', 'defined', ['CRP', 'Eisen']), mk('CRP', 'named')],
+      concepts: [mkC('Hepcidin', 'discussed', ['Zink', 'Ferritin']), mkC('Zink', 'named')],
+    });
+    expect(r.entities[0].related_entities).toEqual(['Eisen']);
+    expect(r.concepts[0].related_concepts).toEqual(['Ferritin']);
+  });
+
+  it('returns the input untouched when nothing falls below the threshold', () => {
+    const entities = [mk('Ferritin', 'defined')];
+    const r = applyCoverageThreshold({ entities, concepts: [] });
+    expect(r.entities).toBe(entities);
+    expect(r.dropped).toEqual([]);
+  });
+});
+
+describe('applyCoverageThreshold with isKnownPage (#620 parity)', () => {
+  const mk = (name: string, coverage?: string, related: string[] = []): EntityInfo =>
+    ({ name, type: 'other', summary: '', mentions_in_source: [], related_entities: related, ...(coverage ? { coverage } : {}) } as unknown as EntityInfo);
+
+  it('keeps the edge of a dropped name the vault already has a page for', () => {
+    const r = applyCoverageThreshold(
+      {
+        entities: [mk('Ferritin', 'defined', ['CRP', 'Eisen']), mk('CRP', 'named')],
+        concepts: [],
+      },
+      name => name === 'CRP', // vault has a CRP page
+    );
+    expect(r.entities[0].related_entities).toEqual(['CRP', 'Eisen']);
+    expect(r.linkedAnyway).toEqual(['CRP']);
+    expect(r.dropped).toEqual([{ name: 'CRP', kind: 'entity', verdict: 'named' }]);
+  });
+
+  it('still prunes a dropped name the vault does not know', () => {
+    const r = applyCoverageThreshold(
+      {
+        entities: [mk('Ferritin', 'defined', ['CRP', 'Eisen']), mk('CRP', 'named')],
+        concepts: [],
+      },
+      () => false,
+    );
+    expect(r.entities[0].related_entities).toEqual(['Eisen']);
+    expect(r.linkedAnyway).toEqual([]);
+  });
+});
