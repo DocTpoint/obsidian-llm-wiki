@@ -302,3 +302,33 @@ describe('applyCoverageThreshold (domain axis stage 3, #568)', () => {
     expect(r.dropped).toEqual([]);
   });
 });
+
+describe('applyCoverageThreshold with isKnownPage (#620 parity)', () => {
+  const mk = (name: string, coverage?: string, related: string[] = []): EntityInfo =>
+    ({ name, type: 'other', summary: '', mentions_in_source: [], related_entities: related, ...(coverage ? { coverage } : {}) } as unknown as EntityInfo);
+
+  it('keeps the edge of a dropped name the vault already has a page for', () => {
+    const r = applyCoverageThreshold(
+      {
+        entities: [mk('Ferritin', 'defined', ['CRP', 'Eisen']), mk('CRP', 'named')],
+        concepts: [],
+      },
+      name => name === 'CRP', // vault has a CRP page
+    );
+    expect(r.entities[0].related_entities).toEqual(['CRP', 'Eisen']);
+    expect(r.linkedAnyway).toEqual(['CRP']);
+    expect(r.dropped).toEqual([{ name: 'CRP', kind: 'entity', verdict: 'named' }]);
+  });
+
+  it('still prunes a dropped name the vault does not know', () => {
+    const r = applyCoverageThreshold(
+      {
+        entities: [mk('Ferritin', 'defined', ['CRP', 'Eisen']), mk('CRP', 'named')],
+        concepts: [],
+      },
+      () => false,
+    );
+    expect(r.entities[0].related_entities).toEqual(['Eisen']);
+    expect(r.linkedAnyway).toEqual([]);
+  });
+});

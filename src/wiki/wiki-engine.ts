@@ -1063,7 +1063,7 @@ export class WikiEngine {
           const resolve = buildVaultResolver({ wikiFolder: this.settings.wikiFolder, pages: await this.getExistingWikiPages() });
           const gated = gateCandidates(
             analysis,
-            extractBody(opts?.contentOverride ?? await this.app.vault.read(file)),
+            extractBody(rawSource),
             wikiLang,
             name => resolve(name) !== undefined,
           );

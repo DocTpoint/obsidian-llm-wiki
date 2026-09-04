@@ -10,7 +10,7 @@ import { renderTemplate } from '../../core/template-renderer';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { retargetLinksToPage } from '../../core/link-retarget';
 import { localDateStamp } from '../../core/format';
-import { unionDomains, collectActiveVocabulary } from '../../core/domain-axis';
+import { collectActiveVocabulary } from '../../core/domain-axis';
 
 export async function mergeDuplicatePages(
   ctx: EngineContext,
