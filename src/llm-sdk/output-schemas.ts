@@ -73,10 +73,24 @@ export const MergeTriageSchema = z.object({
     content: z.string().optional(),
     target_section: z.string().optional(),
     reason: z.string().optional(),
+    // Contradiction gate 1: the page sentence a `contradictory` item
+    // conflicts with, quoted verbatim; checked against the page downstream.
+    existing_statement: z.string().optional(),
   })).optional(),
   reason: z.string().optional(),
 });
 export type MergeTriage = z.infer<typeof MergeTriageSchema>;
+
+/**
+ * contradiction-gates.ts — gate 2, the source-stance question: does the
+ * source hold the claim itself (`yes`) or only report it (`no`)? `evidence`
+ * is the excerpt sentence the answer rests on; the caller verifies it.
+ */
+export const SourceStanceSchema = z.object({
+  holds: z.enum(['yes', 'no']),
+  evidence: z.string().optional(),
+});
+export type SourceStance = z.infer<typeof SourceStanceSchema>;
 
 /**
  * link-orphan.ts — For an orphan page (no incoming wiki-links),

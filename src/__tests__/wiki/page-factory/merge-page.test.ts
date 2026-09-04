@@ -408,7 +408,7 @@ describe('mergePage — item-level contradiction lane stamps marker and writes a
       strategy: 'complementary',
       reason: 'one conflicting claim',
       items: [
-        { kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', reason: 'page states 5mg' },
+        { kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', reason: 'page states 5mg', existing_statement: 'Old text.' },
       ],
     });
     // Only ONE LLM response: the triage. A per-section append call for the
@@ -431,7 +431,9 @@ describe('mergePage — item-level contradiction lane stamps marker and writes a
     const record = ctx.written.get(recordPath!)!;
     expect(record).toContain('status: detected');
     expect(record).toContain('Dose is 10mg');
-    expect(record).toContain('page states 5mg');
+    // The existing view is the page sentence gate 1 verified, not the model's paraphrase.
+    expect(record).toContain('## Existing Knowledge\nOld text.');
+    expect(record).not.toContain('page states 5mg');
     expect(record).toContain('source_page: "[[entities/caching]]"');
     expect(record).toContain('source_note: "note.md"');
   });
@@ -443,7 +445,7 @@ describe('mergePage — the triage lane reports what it records (onContradiction
       strategy: 'complementary',
       reason: 'one conflicting claim',
       items: [
-        { kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', reason: 'page states 5mg' },
+        { kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', reason: 'page states 5mg', existing_statement: 'Old text.' },
         { kind: 'complementary', content: 'Sold since 1999', target_section: '## Description', reason: 'new fact' },
       ],
     });
@@ -453,7 +455,7 @@ describe('mergePage — the triage lane reports what it records (onContradiction
     ctx.onContradiction = c => seen.push(c);
     await mergePage(ctx, createMockEntity({ name: 'Caching' }), 'entity', { path: 'note.md', basename: 'note' }, EXISTING, [], 'wiki/entities/caching.md');
     expect(seen).toEqual([
-      { claim: 'Dose is 10mg', source_page: '[[entities/caching]]', contradicted_by: '## Description: page states 5mg', resolution: '' },
+      { claim: 'Dose is 10mg', source_page: '[[entities/caching]]', contradicted_by: 'Old text.', resolution: '' },
     ]);
   });
 
@@ -466,6 +468,34 @@ describe('mergePage — the triage lane reports what it records (onContradiction
     expect(seen).toHaveLength(1);
     expect(seen[0].source_page).toBe('[[entities/caching]]');
     expect(seen[0].contradicted_by).toBe('the whole page disagrees');
+  });
+
+  it('a conflict that quotes no page sentence is appended as a fact — no record, no marker, but a warning', async () => {
+    const triage = JSON.stringify({
+      strategy: 'complementary',
+      reason: 'one claim',
+      items: [
+        { kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', reason: 'conflicts with what I know', existing_statement: 'The page says the dose is 5mg' },
+      ],
+    });
+    // Two responses: triage, then the per-section append for the demoted item.
+    const ctx = makeCtx(makeClient([triage, '## Description\nOld text. Dose is 10mg.']));
+    const seen: unknown[] = [];
+    ctx.onContradiction = c => seen.push(c);
+    const warns: string[] = [];
+    const orig = console.warn;
+    console.warn = (m: unknown) => { warns.push(String(m)); };
+    try {
+      await mergePage(ctx, createMockEntity({ name: 'Caching' }), 'entity', { path: 'note.md', basename: 'note' }, EXISTING, [], 'wiki/entities/caching.md');
+    } finally {
+      console.warn = orig;
+    }
+    expect(seen).toEqual([]);
+    const written = ctx.written.get('wiki/entities/caching.md')!;
+    expect(written).toContain('Dose is 10mg');
+    expect(written).not.toContain('contradictions:');
+    expect([...ctx.written.keys()].some(p => p.startsWith('wiki/contradictions/'))).toBe(false);
+    expect(warns.some(w => w.includes('demoted by gate "existing-statement"') && w.includes('The page says the dose is 5mg'))).toBe(true);
   });
 
   it('is silent for skip and complementary-only triage', async () => {

@@ -635,7 +635,7 @@ export const KO_TEXTS = {
     disableThinkingDesc: '모델 응답의 사고 연쇄/추론 텍스트 출력을 끕니다. 기본값은 꺼져 있으며, 모델이 추론 표시 여부를 스스로 결정하는데, 이 경우가 보통 가장 좋은 답을 줍니다. 공급자가 응답에 원본 추론 텍스트를 섞어 넣고 깔끔한 답을 원할 때만 켜세요.',
     taskPoliciesPlaceholder: '예: extract=text:off',
     taskPoliciesName: '단계별 출력 모드와 사고',
-    taskPoliciesDesc: '파이프라인 단계마다 한 항목, `step=mode:thinking` 형식을 쉼표로 구분 — 예: `extract=text:off`. 모드: `-`(유지), `schema`, `json`, `text`; 사고: `-`, `off`, `on`, `low`, `medium`, `high`. 단계 이름에는 extract, extract-retry, lemma-classify, merge-triage, dedup, page-generate, related-page, lint-dedup 등이 있습니다(잘못 입력한 이름은 아무것과도 일치하지 않음). 비워 두면 기본 설정(추출은 텍스트 모드). 해석할 수 없는 항목은 저장되지 않습니다.',
+    taskPoliciesDesc: '파이프라인 단계마다 한 항목, `step=mode:thinking` 형식을 쉼표로 구분 — 예: `extract=text:off`. 모드: `-`(유지), `schema`, `json`, `text`; 사고: `-`, `off`, `on`, `low`, `medium`, `high`. 단계 이름에는 extract, extract-retry, lemma-classify, merge-triage, source-stance, dedup, page-generate, related-page, lint-dedup 등이 있습니다(잘못 입력한 이름은 아무것과도 일치하지 않음). 비워 두면 기본 설정(추출은 텍스트 모드). 해석할 수 없는 항목은 저장되지 않습니다.',
     // Issue #137: 호환성 안내 (간결하게; 공급자 목록 생략)
     extractionTemperatureName: '추출 온도',
     extractionTemperatureDesc: '모델이 entity/concept 페이지를 작성할 때 엄격함을 우선할지 창의성을 우선할지 제어합니다. 값이 낮을수록 결정적이고 원본에 충실하며, 값이 높을수록 변화가 많아집니다. 대부분의 사용자는 비워 둡니다.',

@@ -274,6 +274,13 @@ export const CANDIDATE_WINDOW_DF_CAP = 0.5;
 export const TOKENS_MERGE_TRIAGE = 3000;
 
 /**
+ * Contradiction gate 2 (source stance): one yes/no plus one quoted sentence.
+ * Measured 48/48 complete under 400 with reasoning off (S151); 600 leaves
+ * room for a long evidence sentence.
+ */
+export const TOKENS_SOURCE_STANCE = 600;
+
+/**
  * v1.24.0 #216 Tier-2 — max tokens for a single per-section append call.
  * The complementary path appends one paragraph per target section; the
  * LLM is given (existingSectionContent + 1-N new facts) and must return

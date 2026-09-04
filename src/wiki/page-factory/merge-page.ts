@@ -46,6 +46,7 @@ import { mergeFrontmatter, parseFrontmatter, extractBody } from '../../core/fron
 import { incomingTypeTag } from '../../core/tag-vocab';
 import { appendContradictedByMarker } from '../../core/contradicted-marker';
 import { buildContradictionRecord } from '../../core/contradiction-record';
+import { describeDemotion } from './contradiction-gates';
 import { injectMentionsSection } from '../../core/mentions-injector';
 import { renderTemplate } from '../../core/template-renderer';
 import { applySectionLabels, getSectionLabels } from '../system-prompts';
@@ -177,6 +178,11 @@ export async function mergePage(
         // carrier, stripUnknownSections removes it on the next rewrite.
         const appendItems = triage.items.filter(i => i.kind !== 'contradictory');
         const conflictItems = triage.items.filter(i => i.kind === 'contradictory');
+        for (const d of triage.demoted) {
+          // Reported, never silent: the item is still appended as a fact,
+          // only the record and the marker are withheld.
+          console.warn(`[mergePage] ${describeDemotion(d)} for ${path}`);
+        }
         console.debug(
           `[mergePage] triage=complementary items=${appendItems.length} conflicts=${conflictItems.length} — appending to existing sections for ${path}`,
         );
@@ -339,6 +345,10 @@ export async function mergePage(
 
 /** What the record and the report say the claim conflicts with: section, plus the triage's reason when it gave one. */
 function existingViewOf(item: ComplementaryItem): string {
+  // Gate 1 verified the quoted page sentence exactly — that IS the existing
+  // view. A partial match arrives without the quote and, like an ungated
+  // item, is described by section and reason.
+  if (item.existing_statement?.trim()) return item.existing_statement.trim();
   return item.reason?.trim() ? `${item.target_section}: ${item.reason.trim()}` : item.target_section;
 }
 
