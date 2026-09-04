@@ -143,6 +143,8 @@ export class WikiEngine {
   private getLLMClient: () => LLMClient | null;
   private schemaManager: SchemaManager;
   private onFileWrite: ((path: string) => void) | null;
+  /** Sink for the merge triage's contradictions during one ingestSource run; null outside of one. */
+  private triageContradictions: ContradictionInfo[] | null = null;
   private onProgress: ((message: string) => void) | null;
   private onDone: ((report: IngestReport) => void) | null;
   /**
@@ -219,6 +221,7 @@ export class WikiEngine {
       getSchemaContext: t => this.schemaManager.getSchemaContext(t as SchemaTask),
       ...(this.subtle ? { subtle: this.subtle } : {}),
       onFileWrite: path => this.onFileWrite?.(path),
+      onContradiction: c => this.triageContradictions?.push(c),
       onProgress: msg => this.notifyProgress(msg),
       onDone: report => this.onDone?.(report),
     };
@@ -998,6 +1001,12 @@ export class WikiEngine {
 
     const failedItems: Array<{ type: 'entity' | 'concept'; name: string; reason: string }> = [];
     let analysis: SourceAnalysis | null = null;
+    // The merge triage records contradictions of its own (item-level and
+    // page-level) that never appear in `analysis.contradictions` — the
+    // extraction lane's list. Collect them here so the log entry and the
+    // report count what was actually recorded, not only what extraction saw.
+    const triageContradictions: ContradictionInfo[] = [];
+    this.triageContradictions = triageContradictions;
     // Path of the summary page written in Stage 2, tracked outside the try so
     // the cancellation path can remove it — see the AbortError branch below.
     let summaryPagePath: string | null = null;
@@ -1296,7 +1305,9 @@ export class WikiEngine {
       // log entry can record both (issue #122 v3.1: ingest history needs timing).
       const totalTime = Date.now() - totalStartTime;
       const sourceSize = fileContent?.length ?? 0;
-      await this.updateLog('ingest', analysis, {
+      // Both lanes, one count: extraction (Stage 5 above) and merge triage.
+      const contradictionsRecorded = [...analysis.contradictions, ...triageContradictions];
+      await this.updateLog('ingest', { ...analysis, contradictions: contradictionsRecorded }, {
         durationSec: Math.round(totalTime / 1000),
         model: this.settings.model,
         sourceBytes: sourceSize,
@@ -1340,7 +1351,7 @@ export class WikiEngine {
         entitiesCreated,
         conceptsCreated,
         failedItems,
-        contradictionsFound: analysis.contradictions.length,
+        contradictionsFound: contradictionsRecorded.length,
         success: true,
         elapsedSeconds: Math.round(totalTime / 1000),
         // v1.22.6 #204: Propagate trigger so completion can route UI.
@@ -1378,7 +1389,7 @@ export class WikiEngine {
           entitiesCreated: reportedCreated.filter(p => p.includes('/entities/')).length,
           conceptsCreated: reportedCreated.filter(p => p.includes('/concepts/')).length,
           failedItems,
-          contradictionsFound: analysis?.contradictions?.length || 0,
+          contradictionsFound: (analysis?.contradictions?.length || 0) + triageContradictions.length,
           success: false,
           cancelled: true,
           errorMessage: 'Cancelled by user',
@@ -1400,7 +1411,7 @@ export class WikiEngine {
         entitiesCreated: createdPages.filter(p => p.includes('/entities/')).length,
         conceptsCreated: createdPages.filter(p => p.includes('/concepts/')).length,
         failedItems,
-        contradictionsFound: analysis?.contradictions?.length || 0,
+        contradictionsFound: (analysis?.contradictions?.length || 0) + triageContradictions.length,
         success: false,
         errorMessage: errorMsg,
         elapsedSeconds: Math.round((Date.now() - totalStartTime) / 1000),
@@ -1409,6 +1420,7 @@ export class WikiEngine {
       });
       throw error;
     } finally {
+      this.triageContradictions = null;
       this.abortController = null;
       this.onIngestionEnd?.();
     }

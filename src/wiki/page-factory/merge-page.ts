@@ -27,7 +27,7 @@
 //     Mentions section (pageIsReviewed: true).
 
 import { TFile } from 'obsidian';
-import type { EntityInfo, ConceptInfo, LLMWikiSettings, LLMClient, SourceContext } from '../../types';
+import type { EntityInfo, ConceptInfo, LLMWikiSettings, LLMClient, SourceContext, ContradictionInfo } from '../../types';
 import {
   TOKENS_PAGE_GENERATION,
   TOKENS_APPEND_REVIEWED,
@@ -69,6 +69,8 @@ export interface MergeContext {
   buildSystemPrompt(mode: 'full' | 'compact' | 'merge'): Promise<string>;
   createOrUpdateFile(path: string, content: string): Promise<void>;
   tryReadFile(path: string): Promise<string | null>;
+  /** Optional: receives each contradiction the triage lane records (see EngineContext). */
+  onContradiction?(contradiction: ContradictionInfo): void;
 }
 
 /**
@@ -190,6 +192,14 @@ export async function mergePage(
         if (conflictItems.length > 0) {
           contradictedSourcePath = sourceFile.path;
           await writeContradictionRecords(ctx, conflictItems, path, sourceFile.path);
+          for (const item of conflictItems) {
+            ctx.onContradiction?.({
+              claim: item.content,
+              source_page: `[[${wikiRelativePagePath(ctx.settings.wikiFolder, path)}]]`,
+              contradicted_by: existingViewOf(item),
+              resolution: '',
+            });
+          }
         }
         if (complementaryBody === existingBody) {
           if (contradictedSourcePath) {
@@ -213,6 +223,12 @@ export async function mergePage(
         console.debug(
           `[mergePage] triage=contradictory — will stamp frontmatter marker for ${path} (source=${sourceFile.path})`,
         );
+        ctx.onContradiction?.({
+          claim: info.summary,
+          source_page: `[[${wikiRelativePagePath(ctx.settings.wikiFolder, path)}]]`,
+          contradicted_by: triage.reason,
+          resolution: '',
+        });
       }
       // strategy === 'merge' | 'contradictory': fall through to body rewrite.
     } catch (triageError) {
@@ -321,6 +337,18 @@ export async function mergePage(
   }
 }
 
+/** What the record and the report say the claim conflicts with: section, plus the triage's reason when it gave one. */
+function existingViewOf(item: ComplementaryItem): string {
+  return item.reason?.trim() ? `${item.target_section}: ${item.reason.trim()}` : item.target_section;
+}
+
+/** `wiki/entities/X.md` → `entities/X` — the form `source_page` links carry. */
+function wikiRelativePagePath(wikiFolder: string, pagePath: string): string {
+  return pagePath.startsWith(`${wikiFolder}/`)
+    ? pagePath.slice(wikiFolder.length + 1).replace(/\.md$/i, '')
+    : pagePath.replace(/\.md$/i, '');
+}
+
 /**
  * Write one contradiction record per item-level conflict. The record file
  * under `<wikiFolder>/contradictions/` is the durable prose carrier; the
@@ -343,16 +371,12 @@ async function writeContradictionRecords(
   }
   const labels = getSectionLabels(ctx.settings);
   const date = localDateStamp();
-  const pageRelPath = pagePath.startsWith(`${wikiFolder}/`)
-    ? pagePath.slice(wikiFolder.length + 1).replace(/\.md$/i, '')
-    : pagePath.replace(/\.md$/i, '');
+  const pageRelPath = wikiRelativePagePath(wikiFolder, pagePath);
   for (const item of items) {
     const record = buildContradictionRecord(
       {
         claim: item.content,
-        existingView: item.reason?.trim()
-          ? `${item.target_section}: ${item.reason.trim()}`
-          : item.target_section,
+        existingView: existingViewOf(item),
         resolution: '',
         pageRelPath,
         sourceNotePath,

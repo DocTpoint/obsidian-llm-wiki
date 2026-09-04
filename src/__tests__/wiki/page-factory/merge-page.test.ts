@@ -436,3 +436,44 @@ describe('mergePage — item-level contradiction lane stamps marker and writes a
     expect(record).toContain('source_note: "note.md"');
   });
 });
+
+describe('mergePage — the triage lane reports what it records (onContradiction)', () => {
+  it('emits one ContradictionInfo per kind=contradictory item, pointing at the page', async () => {
+    const triage = JSON.stringify({
+      strategy: 'complementary',
+      reason: 'one conflicting claim',
+      items: [
+        { kind: 'contradictory', content: 'Dose is 10mg', target_section: '## Description', reason: 'page states 5mg' },
+        { kind: 'complementary', content: 'Sold since 1999', target_section: '## Description', reason: 'new fact' },
+      ],
+    });
+    // Responses: triage, then the per-section append for the complementary item.
+    const ctx = makeCtx(makeClient([triage, '## Description\nOld text. Sold since 1999.']));
+    const seen: Array<{ claim: string; source_page: string; contradicted_by: string }> = [];
+    ctx.onContradiction = c => seen.push(c);
+    await mergePage(ctx, createMockEntity({ name: 'Caching' }), 'entity', { path: 'note.md', basename: 'note' }, EXISTING, [], 'wiki/entities/caching.md');
+    expect(seen).toEqual([
+      { claim: 'Dose is 10mg', source_page: '[[entities/caching]]', contradicted_by: '## Description: page states 5mg', resolution: '' },
+    ]);
+  });
+
+  it('emits once for the page-level strategy=contradictory (marker-only path)', async () => {
+    const triage = JSON.stringify({ strategy: 'contradictory', reason: 'the whole page disagrees', items: [] });
+    const ctx = makeCtx(makeClient([triage, '## Description\nRewritten with both views.']));
+    const seen: Array<{ claim: string; source_page: string; contradicted_by: string }> = [];
+    ctx.onContradiction = c => seen.push(c);
+    await mergePage(ctx, createMockEntity({ name: 'Caching', summary: 'Caching is harmful' }), 'entity', { path: 'note.md', basename: 'note' }, EXISTING, [], 'wiki/entities/caching.md');
+    expect(seen).toHaveLength(1);
+    expect(seen[0].source_page).toBe('[[entities/caching]]');
+    expect(seen[0].contradicted_by).toBe('the whole page disagrees');
+  });
+
+  it('is silent for skip and complementary-only triage', async () => {
+    const triage = JSON.stringify({ strategy: 'skip', reason: 'nothing new', items: [] });
+    const ctx = makeCtx(makeClient([triage]));
+    const seen: unknown[] = [];
+    ctx.onContradiction = c => seen.push(c);
+    await mergePage(ctx, createMockEntity({ name: 'Caching' }), 'entity', { path: 'note.md', basename: 'note' }, EXISTING, [], 'wiki/entities/caching.md');
+    expect(seen).toEqual([]);
+  });
+});
