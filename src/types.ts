@@ -502,6 +502,18 @@ export interface LLMWikiSettings {
   skipMentionOnlyCandidates?: boolean;
 
   /**
+   * S135 outcome table: when the candidate gate is on, a candidate the two
+   * gate halves disagree on (prose+named / aside+covered) becomes a stub
+   * page built from the extraction's own summary — no LLM call — instead of
+   * being dropped. Off by default: more pages is a behaviour change. Takes
+   * effect only with `skipMentionOnlyCandidates` on, because the table needs
+   * the position verdict that setting opts into; the full-page set is
+   * unchanged either way (the table is a pure extension of the two serial
+   * gates, measured over 1,153 items across three runs).
+   */
+  gateDissentStubs?: boolean;
+
+  /**
    * Issue #485: whether Fix Dead Links writes an empty placeholder page when
    * a link resolves to nothing (both branches — the model's create_stub
    * answer and the deterministic fallback). On by default: that is the
@@ -1293,6 +1305,8 @@ export const DEFAULT_SETTINGS: LLMWikiSettings = {
   lintDedupIncludeSources: undefined,
   // Issue #514: off by default — fewer pages is a behaviour change, opt in.
   skipMentionOnlyCandidates: false,
+  // S135: off by default — stubs from gate dissent are a behaviour change, opt in.
+  gateDissentStubs: false,
   // Issue #485: on by default — stub creation is the existing outcome;
   // turning it off is the user's choice. The use site also treats a
   // missing key as on (`!== false`), matching lintDedupIncludeSources.

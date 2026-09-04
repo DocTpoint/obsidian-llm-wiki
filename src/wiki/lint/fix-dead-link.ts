@@ -87,7 +87,12 @@ export function buildStubContent(params: StubContentParams): string {
   // which makes Obsidian's Properties panel drop the property type and
   // the value becomes literal text (no link chip, no backlink, no graph
   // edge). Match `yamlStringify()` in src/core/frontmatter.ts (line 104).
-  return `---\ntype: ${stubType}\ncreated: ${today}\nsources:\n  - "[[${referringPageRel}]]"\ntags: [${defaultTag}]\ngeneration_complete: false\n---\n# ${title}\n\n> Stub created by Fix Dead Links — referenced by [[${referringPageRel}]]. Will be filled by next ingest of an actual source that defines this entity.\n`;
+  // S135: `stub: true` is the marker that actually carries "this is a stub" —
+  // `generation_complete: false` cannot (createOrUpdateFile flips it to `true`
+  // right after the write, and unflipped it would hand the page to the startup
+  // Phase-3 cleaner). merge-page.ts reads it to keep a stub from being
+  // skip-frozen, and strips it when a treating source fills the page.
+  return `---\ntype: ${stubType}\ncreated: ${today}\nsources:\n  - "[[${referringPageRel}]]"\ntags: [${defaultTag}]\nstub: true\ngeneration_complete: false\n---\n# ${title}\n\n> Stub created by Fix Dead Links — referenced by [[${referringPageRel}]]. Will be filled by next ingest of an actual source that defines this entity.\n`;
 }
 
 /**

@@ -244,17 +244,64 @@ describe('classifyCandidate — link markup is not a parenthesis', () => {
     expect(classifyCandidate(t, 'Mitochondrium')).toBe('prose');
   });
 
-  // The rule cuts both ways: markup changes nothing, so a parenthesis that
-  // merely CONTAINS a link is still a parenthesis.
-  it('leaves a real parenthesis an aside even when it holds a link', () => {
-    const t = 'Hormonelle Dysregulation (z. B. Leptin-Resistenz, [[Insulinresistenz]]) ist typisch.';
-    expect(classifyCandidate(t, 'Insulinresistenz')).toBe('aside');
+  // S135 inverts the S132 half-rule: the author's link outranks the bracket
+  // around it. The UNLINKED neighbour in the same parenthesis stays an aside.
+  it('reads a linked name as prose even inside a real parenthesis', () => {
+    const t = 'Hormonelle Dysregulation (Leptin-Resistenz und auch [[Insulinresistenz]]) ist typisch.';
+    expect(classifyCandidate(t, 'Insulinresistenz')).toBe('prose');
+    expect(classifyCandidate(t, 'Leptin-Resistenz')).toBe('aside');
   });
 
   // A citation in square brackets carries no `(url)` and stays an aside.
   it('leaves a bare bracketed citation an aside', () => {
     const t = 'Die Methodik folgt dem Standard [ATS Statement: Guidelines 2002].';
     expect(classifyCandidate(t, 'ATS Statement: Guidelines 2002')).toBe('aside');
+  });
+});
+
+// S135: three parenthesis rescues, measured together on 20 German notes and
+// two independent draws — 159 aside verdicts, 68 move to prose (32 exemplar,
+// 19 linked occurrence, 19 gloss), none the other way, every case reviewed.
+describe('classifyCandidate — exemplar lists, glosses and linked occurrences (S135)', () => {
+  it('exemplar marker: members of the group named before the parenthesis are prose', () => {
+    const t = 'Medikamentös sind Stimulanzien (Methylphenidat als First-Line in Deutschland, alternativ Amphetamine wie Lisdexamfetamin) die Therapie der Wahl.';
+    expect(classifyCandidate(t, 'Methylphenidat')).toBe('prose');
+    expect(classifyCandidate(t, 'Lisdexamfetamin')).toBe('prose');
+  });
+
+  it('exemplar marker: `z. B.` and `etc.`', () => {
+    const t1 = 'Für Patienten auf Antikoagulanzien (z. B. Warfarin) ist Vorsicht geboten.';
+    expect(classifyCandidate(t1, 'Warfarin')).toBe('prose');
+    const t2 = 'Non-Stimulanzien (Atomoxetin, Guanfacin etc.) kommen bei Kontraindikationen zum Einsatz.';
+    expect(classifyCandidate(t2, 'Atomoxetin')).toBe('prose');
+    expect(classifyCandidate(t2, 'Guanfacin')).toBe('prose');
+  });
+
+  it('a parenthesis without a marker stays an aside', () => {
+    const t = 'Es steigt bei Entzündung (CRP erhöht) deutlich an.';
+    expect(classifyCandidate(t, 'CRP')).toBe('aside');
+  });
+
+  it('gloss: a parenthesis holding nothing but the name introduces the term', () => {
+    const t1 = 'Die Glykolyse führt zur Übersäuerung (Azidose) des Gewebes.';
+    expect(classifyCandidate(t1, 'Azidose')).toBe('prose');
+    const t2 = 'Häufig genannt wird **Maca** (*Lepidium meyenii*) in Studien.';
+    expect(classifyCandidate(t2, 'Lepidium meyenii')).toBe('prose');
+  });
+
+  it('gloss needs full cover: a compound around the name is no gloss', () => {
+    const t = 'Die Entfernung geschädigter Zellen (p53-abhängig) verhindert Tumoren.';
+    expect(classifyCandidate(t, 'p53')).toBe('aside');
+  });
+
+  it('the gloss rule decides pages, not identity: a member gloss is prose too', () => {
+    const t = 'Grüntee-Polyphenole (EGCG) aktivieren Caspasen und modulieren die Bcl-2-Familie.';
+    expect(classifyCandidate(t, 'EGCG')).toBe('prose');
+  });
+
+  it('a profile without exemplar markers keeps the strict reading', () => {
+    const t = 'Pour les anticoagulants (Warfarin notamment) la prudence est requise.';
+    expect(classify(t, 'Warfarin', GATE_LANGUAGE_PROFILES.fr)).toBe('aside');
   });
 });
 
@@ -301,6 +348,39 @@ describe('applyCoverageThreshold (domain axis stage 3, #568)', () => {
     expect(r.entities).toBe(entities);
     expect(r.dropped).toEqual([]);
   });
+
+  // S135: the author's link outranks the model's `named` — measured twice in
+  // one day ([[Reis]] in Arsen, [[Blei]] in Reis, both hand-linked, both
+  // dropped by the threshold before this rule).
+  describe('linked names survive the threshold', () => {
+    const text = [
+      'Hauptquellen sind Nahrungsmittel ([[Reis]] nimmt Arsen stark auf).',
+      'Spuren von [[Blei|Bleibelastung]] und die [[Notizen/HPA-Axis|Stressachse]] spielen mit.',
+      'Details im [ATS Statement](https://example.org/ats).',
+    ].join('\n');
+
+    it('keeps a `named` candidate whose name is a wikilink target, pipe alias, or markdown link text', () => {
+      const r = applyCoverageThreshold({
+        entities: [mk('Reis', 'named'), mk('Bleibelastung', 'named'), mk('ATS Statement', 'named')],
+        concepts: [mkC('HPA-Axis', 'named')],
+      }, text);
+      expect(r.entities.map(e => e.name)).toEqual(['Reis', 'Bleibelastung', 'ATS Statement']);
+      expect(r.concepts.map(c => c.name)).toEqual(['HPA-Axis']);
+      expect(r.dropped).toEqual([]);
+    });
+
+    it('still drops a `named` candidate the note never linked — and everything without sourceText', () => {
+      const r = applyCoverageThreshold({ entities: [mk('Arsen', 'named')], concepts: [] }, text);
+      expect(r.dropped.map(d => d.name)).toEqual(['Arsen']);
+      const r2 = applyCoverageThreshold({ entities: [mk('Reis', 'named')], concepts: [] });
+      expect(r2.dropped.map(d => d.name)).toEqual(['Reis']);
+    });
+
+    it('the link is an exact claim: a compound or inflected form does not inherit it', () => {
+      const r = applyCoverageThreshold({ entities: [mk('Reisprodukte', 'named')], concepts: [] }, text);
+      expect(r.dropped.map(d => d.name)).toEqual(['Reisprodukte']);
+    });
+  });
 });
 
 describe('applyCoverageThreshold with isKnownPage (#620 parity)', () => {
@@ -313,6 +393,7 @@ describe('applyCoverageThreshold with isKnownPage (#620 parity)', () => {
         entities: [mk('Ferritin', 'defined', ['CRP', 'Eisen']), mk('CRP', 'named')],
         concepts: [],
       },
+      undefined,
       name => name === 'CRP', // vault has a CRP page
     );
     expect(r.entities[0].related_entities).toEqual(['CRP', 'Eisen']);
@@ -326,9 +407,105 @@ describe('applyCoverageThreshold with isKnownPage (#620 parity)', () => {
         entities: [mk('Ferritin', 'defined', ['CRP', 'Eisen']), mk('CRP', 'named')],
         concepts: [],
       },
+      undefined,
       () => false,
     );
     expect(r.entities[0].related_entities).toEqual(['Eisen']);
     expect(r.linkedAnyway).toEqual([]);
+  });
+});
+
+// S135: the three-outcome table. Measured over 1,153 items across three runs:
+// its full-page set equals exactly the serial gates' keep set; dissent
+// (prose+named / aside+covered) births stubs instead of drops.
+import { applyOutcomeTable, type StubIdentity } from '../../core/candidate-gate';
+
+describe('applyOutcomeTable (S135)', () => {
+  const mk = (name: string, coverage?: string, related: string[] = []): EntityInfo =>
+    ({ name, type: 'other', summary: 's', mentions_in_source: [], related_entities: related, ...(coverage ? { coverage } : {}) } as unknown as EntityInfo);
+  const mkC = (name: string, coverage?: string, related: string[] = []): ConceptInfo =>
+    ({ name, type: 'term', summary: 's', mentions_in_source: [], related_concepts: related, ...(coverage ? { coverage } : {}) } as unknown as ConceptInfo);
+  const none = (): StubIdentity => 'none';
+
+  // TEXT (top of file): Ferritin/Entzündung prose · CRP/Malabsorption aside ·
+  // Eisenstoffwechsel absent.
+
+  it('agreement cells: prose+covered keeps, aside+named and absent drop', () => {
+    const r = applyOutcomeTable({
+      entities: [mk('Ferritin', 'discussed'), mk('CRP', 'named')],
+      concepts: [mkC('Eisenstoffwechsel', 'discussed')],
+    }, TEXT, 'de', none);
+    expect(r.applied).toBe(true);
+    expect(r.entities.map(e => e.name)).toEqual(['Ferritin']);
+    expect(r.concepts).toEqual([]);
+    expect(r.stubs).toEqual([]);
+    expect(r.dropped).toEqual([
+      { name: 'CRP', kind: 'entity', verdict: 'aside+named' },
+      { name: 'Eisenstoffwechsel', kind: 'concept', verdict: 'absent' },
+    ]);
+  });
+
+  it('dissent cells birth stubs: prose+named and aside+covered', () => {
+    const r = applyOutcomeTable({
+      entities: [mk('Ferritin', 'named'), mk('CRP', 'discussed')],
+      concepts: [],
+    }, TEXT, 'de', none);
+    expect(r.entities).toEqual([]);
+    expect(r.stubs.map(s => ({ name: s.item.name, cell: s.cell }))).toEqual([
+      { name: 'Ferritin', cell: 'prose+named' },
+      { name: 'CRP', cell: 'aside+covered' },
+    ]);
+    expect(r.dropped).toEqual([]);
+  });
+
+  it('a missing coverage value counts as covered (same contract as the threshold)', () => {
+    const r = applyOutcomeTable({ entities: [mk('Ferritin'), mk('CRP')], concepts: [] }, TEXT, 'de', none);
+    expect(r.entities.map(e => e.name)).toEqual(['Ferritin']);
+    expect(r.stubs.map(s => s.item.name)).toEqual(['CRP']);
+  });
+
+  it("the author's link outranks both gates", () => {
+    const text = 'Es steigt bei Entzündung ([[CRP]] erhöht) an.';
+    const r = applyOutcomeTable({ entities: [mk('CRP', 'named')], concepts: [] }, text, 'de', none);
+    expect(r.entities.map(e => e.name)).toEqual(['CRP']);
+    expect(r.stubs).toEqual([]);
+  });
+
+  it('a dissent name an existing page answers gets no stub and stays linkable', () => {
+    const r = applyOutcomeTable({
+      entities: [mk('Ferritin', 'discussed', ['CRP'])],
+      concepts: [mkC('CRP', 'discussed')],
+    }, TEXT, 'de', () => 'match');
+    expect(r.stubs).toEqual([]);
+    expect(r.existing).toEqual([{ name: 'CRP', kind: 'concept', cell: 'aside+covered' }]);
+    // NOT pruned: the existing page takes the edge.
+    expect(r.entities[0].related_entities).toEqual(['CRP']);
+  });
+
+  it('an ambiguous dissent name gets no stub and IS pruned', () => {
+    const r = applyOutcomeTable({
+      entities: [mk('Ferritin', 'discussed', ['CRP'])],
+      concepts: [mkC('CRP', 'discussed')],
+    }, TEXT, 'de', () => 'ambiguous');
+    expect(r.stubs).toEqual([]);
+    expect(r.dropped).toEqual([{ name: 'CRP', kind: 'concept', verdict: 'ambiguous' }]);
+    expect(r.entities[0].related_entities).toEqual([]);
+  });
+
+  it('stub names are not pruned from the survivors\' related_* lists', () => {
+    const r = applyOutcomeTable({
+      entities: [mk('Ferritin', 'discussed', ['CRP']), mk('CRP', 'discussed')],
+      concepts: [],
+    }, TEXT, 'de', none);
+    expect(r.stubs.map(s => s.item.name)).toEqual(['CRP']);
+    expect(r.entities[0].related_entities).toEqual(['CRP']);
+  });
+
+  it('no language profile: input untouched, applied false', () => {
+    const input = { entities: [mk('Ferritin', 'named')], concepts: [] };
+    const r = applyOutcomeTable(input, TEXT, 'sv', none);
+    expect(r.applied).toBe(false);
+    expect(r.entities).toBe(input.entities);
+    expect(r.stubs).toEqual([]);
   });
 });

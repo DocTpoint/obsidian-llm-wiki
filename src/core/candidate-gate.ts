@@ -3,9 +3,11 @@
 // The extraction names candidates; this decides the clear cases before any
 // further call is spent on them. A candidate whose name never appears in the
 // source text, or appears only inside parentheses, enumerations or short list
-// items, gets no page — the brackets of link markup do not count as
-// parentheses, so a name the author wikilinked or hyperlinked is not an
-// aside — and is removed from the other candidates' related_*
+// items, gets no page — link markup does not count against a name (neither
+// its brackets as parentheses nor a parenthesis around the link: a name the
+// author linked is prose wherever it stands), and neither does a parenthesis
+// that is an exemplar list (profile markers) or a gloss of the name itself
+// — and is removed from the other candidates' related_*
 // lists so the gate never manufactures a dead link. Measured on a German
 // sample (10 notes, 115 candidates): 9.6 % absent, 19.1 % aside, 71.3 % prose
 // with the rules below (a first rule — plain substring, any sentence with two
@@ -89,6 +91,15 @@ export interface GateLanguageProfile {
    * bounded by one of them is an enumeration entry regardless of length.
    */
   enumerationMarks?: readonly string[];
+  /**
+   * Regex alternatives (no anchors) that mark a round parenthesis as an
+   * exemplar list rather than an aside: `Antikoagulanzien (z. B. Warfarin)`
+   * names members of the group it follows, with real predication —
+   * `(Methylphenidat als First-Line in Deutschland)` — and the members are
+   * exactly what a reader would look up. A profile without markers keeps the
+   * strict reading: every parenthesis stays an aside.
+   */
+  exemplarMarkers?: readonly string[];
 }
 
 /**
@@ -103,11 +114,13 @@ export const GATE_LANGUAGE_PROFILES: Readonly<Record<string, GateLanguageProfile
   de: {
     inflection: ['e', 's', 'n', 'en', 'es', 'er', 'em', 'ern', 'nen'],
     connectives: new Set(['und', 'oder', 'sowie', 'bzw.']),
+    exemplarMarkers: ['\\bz\\.\\s?B\\.', '\\bwie\\b', '\\betwa\\b', '\\balternativ\\b', '\\bals\\b', '\\betc\\b', '\\bu\\.\\s?a\\.', '\\binkl\\b'],
   },
-  // estimated — plural -s/-es, possessive
+  // estimated — plural -s/-es, possessive; exemplar markers unmeasured
   en: {
     inflection: ['s', 'es', "'s"],
     connectives: new Set(['and', 'or']),
+    exemplarMarkers: ['\\be\\.\\s?g\\.', '\\bsuch as\\b', '\\blike\\b', '\\bincluding\\b', '\\bincl\\b', '\\betc\\b'],
   },
   // estimated — plural -s/-x, feminine -e/-es; under-matches -al → -aux
   fr: {
@@ -191,6 +204,31 @@ function needleOf(name: string, profile: GateLanguageProfile): RegExp | null {
 /** Link markup, whose brackets are syntax: `[[wikilink]]`, `![[embed]]`, `[text](url)`. */
 const LINK_RE = /!?\[\[[^\]\n]*\]\]|!?\[[^[\]\n]*\]\([^)\n]*\)/g;
 
+/**
+ * Every name the note's own link markup asserts: wikilink targets (folder
+ * prefix and `#anchor` stripped), pipe aliases, and markdown link texts —
+ * case-folded, NFC. Exact names, no inflection: a link is an exact claim.
+ */
+function linkedNames(text: string): ReadonlySet<string> {
+  const names = new Set<string>();
+  const add = (s: string) => { const n = nfc(s).trim().toLowerCase(); if (n) names.add(n); };
+  const t = nfc(text);
+  const re = new RegExp(LINK_RE.source, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t)) !== null) {
+    const wiki = /^!?\[\[([^\]]*)\]\]$/.exec(m[0]);
+    if (wiki) {
+      const [target, alias] = wiki[1].split('|');
+      add((target ?? '').split('#')[0].split('/').pop() ?? '');
+      if (alias) add(alias);
+      continue;
+    }
+    const md = /^!?\[([^\]]*)\]/.exec(m[0]);
+    if (md) add(md[1]);
+  }
+  return names;
+}
+
 function linkSpans(text: string): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
   const re = new RegExp(LINK_RE.source, 'g');
@@ -215,25 +253,59 @@ function linkSpans(text: string): Array<[number, number]> {
  * candidate may carry either. Collapsing a link to its display text instead
  * turned 7 of 87 measured `aside` verdicts into `absent`.
  *
- * A parenthesis that merely CONTAINS a link stays an aside: `(e.g. [[X]])`
- * reads as an aside without the brackets of the link too. Markup changes
- * nothing in either direction. A bare bracketed citation carries no `(url)`
- * and stays an aside as well.
+ * A parenthesis that merely CONTAINS a link is still an aside as a span —
+ * but the linked name itself is rescued one level up: an occurrence inside
+ * link markup is never an aside (see classifyCandidate). A bare bracketed
+ * citation carries no `(url)` and stays an aside as well.
  *
  * Measured on a German vault, 16 notes and 321 candidates: 32 verdicts move
  * `aside` → `prose`, none the other way.
+ *
+ * A round parenthesis whose content carries one of the profile's exemplar
+ * markers (`z. B.`, `wie`, `als`, …) is no aside either: `Antikoagulanzien
+ * (z. B. Warfarin)` and `Stimulanzien (Methylphenidat als First-Line)` name
+ * the members of the group they follow — dropping them cost a medical vault
+ * exactly its pharmacology. Measured on 20 German notes, two independent
+ * draws, 159 `aside` verdicts: the marker rule moves 32 `aside` → `prose`,
+ * the link-occurrence rule 19, the gloss rule (isGlossSpan) 19 — 68 combined,
+ * no verdict moves toward `aside`, and every rescued case was reviewed.
  */
-function parenSpans(text: string): Array<[number, number]> {
+function parenSpans(text: string, profile?: GateLanguageProfile): Array<[number, number]> {
   const links = linkSpans(text);
+  const markers = profile?.exemplarMarkers?.length
+    ? new RegExp(profile.exemplarMarkers.join('|'), 'iu')
+    : null;
   const spans: Array<[number, number]> = [];
   const re = new RegExp(PAREN_RE.source, 'g');
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const start = m.index, end = start + m[0].length;
     if (links.some(([a, b]) => start >= a && end <= b)) continue;
+    if (markers && (text[start] === '(' || text[start] === '（') && markers.test(m[0].slice(1, -1))) continue;
     spans.push([start, end]);
   }
   return spans;
+}
+
+/**
+ * A parenthesis whose content is nothing but the name is a gloss, not an
+ * aside — the text introduces the term there: a synonym (`Übersäuerung
+ * (Azidose)`), a translation or botanical name (`Maca (Lepidium meyenii)`),
+ * an expanded acronym (`TWI (tolerierbare wöchentliche Aufnahmemenge)`).
+ * Emphasis markup around the name does not count; partial cover does not
+ * qualify (`(p53-abhängig)` glosses nothing). The rule decides only whether
+ * the name earns a page — it asserts no identity between the name and what
+ * precedes the parenthesis: `Grüntee-Polyphenole (EGCG)` glosses a member,
+ * not a synonym, and telling those apart is a typed-relation question, not
+ * a bracket question. Round parentheses only — a square-bracketed citation
+ * that consists of the name is still a citation.
+ */
+function isGlossSpan(text: string, span: [number, number], needle: RegExp): boolean {
+  if (text[span[0]] !== '(' && text[span[0]] !== '（') return false;
+  const inner = text.slice(span[0] + 1, span[1] - 1).replace(/[*_`]/g, ' ').trim();
+  const re = new RegExp(needle.source, needle.flags);
+  const m = re.exec(inner);
+  return m !== null && m.index <= 1 && m.index + m[0].length >= inner.length - 1;
 }
 
 function lineAt(text: string, pos: number): string {
@@ -313,15 +385,23 @@ export function classifyCandidate(text: string, name: string, profile: GateLangu
   const t = nfc(text);
   const needle = needleOf(name, profile);
   if (!needle) return 'absent';
-  const spans = parenSpans(t);
+  const links = linkSpans(t);
+  const spans = parenSpans(t, profile);
   let sawAside = false;
   let m: RegExpExecArray | null;
   while ((m = needle.exec(t)) !== null) {
-    const pos = m.index;
+    const pos = m.index, end = pos + m[0].length;
     if (m[0].length === 0) { needle.lastIndex++; continue; }
+    // A name inside link markup was linked by the author — the most explicit
+    // relevance statement a note makes, prose wherever the link stands.
+    if (links.some(([a, b]) => pos >= a && end <= b)) return 'prose';
     const line = lineAt(t, pos);
     if (/^\s*#{1,6}\s/.test(line)) return 'prose';
-    if (spans.some(([a, b]) => a <= pos && pos < b)) { sawAside = true; continue; }
+    const covering = spans.find(([a, b]) => a <= pos && pos < b);
+    if (covering) {
+      if (isGlossSpan(t, covering, needle)) return 'prose';
+      sawAside = true; continue;
+    }
     const item = /^\s*[-*•]\s+/.exec(line);
     if (item) {
       if (chunkLength(line.slice(item[0].length), profile) <= listItemMax(profile)) { sawAside = true; continue; }
@@ -346,7 +426,13 @@ export function classifyCandidate(text: string, name: string, profile: GateLangu
 export const COVERAGE_BELOW_THRESHOLD: ReadonlySet<string> = new Set(['named']);
 
 /** Why a candidate got no page: where the text put it, or what the model observed. */
-export type DropReason = Exclude<GateVerdict, 'prose'> | 'named';
+export type DropReason =
+  | Exclude<GateVerdict, 'prose'>
+  | 'named'
+  // Outcome-table drops (S135): both gates below threshold, or a dissent name
+  // whose identity is ambiguous in the vault (an alias two pages claim).
+  | 'aside+named'
+  | 'ambiguous';
 
 /**
  * Parameterised on the reason so each gate's result says what that gate can
@@ -455,16 +541,30 @@ function pruneDroppedNames<R extends DropReason>(
  *
  * `isKnownPage` mirrors gateCandidates (#620): a dropped name the vault
  * already has a page for keeps its edge in the survivors' related_* lists.
+ *
+ * With `sourceText` given (the raw note body), a candidate whose exact name
+ * the note's own link markup carries — wikilink target, pipe alias, or
+ * markdown link text — survives a `named` verdict (#607): the author linking
+ * a name is a stronger statement about relevance than the model's reading of
+ * how the text treats it.
  */
 export function applyCoverageThreshold(
   analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
+  sourceText?: string,
   isKnownPage?: (name: string) => boolean,
 ): GateResult<'named'> {
+  const linked = sourceText === undefined ? null : linkedNames(sourceText);
   const dropped: DroppedCandidate<'named'>[] = [];
   const keep = <T extends { name: string; coverage?: string }>(items: T[], kind: DroppedCandidate['kind']): T[] =>
     items.filter(item => {
       const cov = typeof item.coverage === 'string' ? item.coverage.trim().toLowerCase() : '';
       if (!COVERAGE_BELOW_THRESHOLD.has(cov)) return true;
+      // Author's link outranks coverage (#607): `[[Reis]]` in Arsen, `[[Blei]]`
+      // in Reis were both hand-linked and both dropped as `named` without this.
+      if (linked?.has(nfc(item.name).trim().toLowerCase())) return true;
+      // #620 parity is in pruneDroppedNames below, NOT here: a known page
+      // name still belongs in `dropped` so the caller can log it, but its
+      // edge stays in the survivors' related_* lists.
       dropped.push({ name: item.name, kind, verdict: 'named' });
       return false;
     });
@@ -472,4 +572,107 @@ export function applyCoverageThreshold(
   const concepts = keep(analysis.concepts, 'concept');
   if (dropped.length === 0) return { entities: analysis.entities, concepts: analysis.concepts, dropped, linkedAnyway: [], applied: true };
   return { ...pruneDroppedNames(entities, concepts, dropped, isKnownPage), dropped, applied: true };
+}
+
+// ---------------------------------------------------------------------------
+// S135: the three-outcome table. The position gate (deterministic: where the
+// text puts the name) and the coverage observation (the model: how the text
+// treats it) measure different things, and their dissent is mixed content —
+// neither may hold a veto alone. Measured over 1,153 items across three
+// ingest runs: the full-page set of this table equals exactly the keep set of
+// the two serial gates above, so the table is a pure extension — it converts
+// about half of today's drops into stubs and demotes nothing.
+
+/** The two dissent cells. Agreement cells need no name: full page or nothing. */
+export type StubCell = 'prose+named' | 'aside+covered';
+
+export interface StubCandidate {
+  kind: 'entity' | 'concept';
+  cell: StubCell;
+  item: EntityInfo | ConceptInfo;
+}
+
+/**
+ * What the vault already says about a dissent name. Supplied by the caller
+ * (the gate is pure and has no vault): 'match' = exactly one page carries the
+ * name as title or curated alias — no stub, the name stays linkable and the
+ * existing page takes the edge; 'ambiguous' = two pages claim it — no stub
+ * and the name is pruned (a stub born onto a contested name would buy back
+ * the dedup cost this gate exists to save); 'none' = a stub is born.
+ */
+export type StubIdentity = 'none' | 'match' | 'ambiguous';
+
+export interface OutcomeTableResult extends GateResult {
+  /** Dissent names with no page yet: stub births, in analysis order. */
+  stubs: StubCandidate[];
+  /** Dissent names an existing page already answers: no page work, name kept. */
+  existing: Array<{ name: string; kind: 'entity' | 'concept'; cell: StubCell }>;
+}
+
+/**
+ * Route every candidate through the decision table instead of the two serial
+ * gates above:
+ *
+ *   hand-linked name            → full page   (the author's link outranks both gates)
+ *   prose  + covered            → full page
+ *   prose  + named              → stub        (dissent: the model under-read the text)
+ *   aside  + covered            → stub        (dissent: the position rule over-read it)
+ *   aside  + named              → nothing
+ *   absent                      → nothing
+ *
+ * A missing/unknown `coverage` value counts as covered, exactly as in
+ * applyCoverageThreshold. Stub and existing-match names are NOT pruned from
+ * the survivors' related_* lists — their pages exist (or will), so the links
+ * resolve; only the nothing-cells are pruned. Pure, same no-profile contract
+ * as gateCandidates (`applied: false`, input untouched).
+ */
+export function applyOutcomeTable(
+  analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
+  sourceText: string,
+  language: string | undefined | null,
+  resolveIdentity: (name: string) => StubIdentity,
+  isKnownPage?: (name: string) => boolean,
+): OutcomeTableResult {
+  const profile = gateProfileFor(language);
+  if (!profile) {
+    return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], stubs: [], existing: [], linkedAnyway: [], applied: false };
+  }
+  const linked = linkedNames(sourceText);
+  const dropped: DroppedCandidate[] = [];
+  const stubs: StubCandidate[] = [];
+  const existing: OutcomeTableResult['existing'] = [];
+  const route = <T extends EntityInfo | ConceptInfo>(items: T[], kind: StubCandidate['kind']): T[] =>
+    items.filter(item => {
+      if (linked.has(nfc(item.name).trim().toLowerCase())) return true;
+      const position = classifyCandidate(sourceText, item.name, profile);
+      const cov = typeof item.coverage === 'string' ? item.coverage.trim().toLowerCase() : '';
+      const covered = !COVERAGE_BELOW_THRESHOLD.has(cov);
+      if (position === 'prose' && covered) return true;
+      if (position === 'absent') {
+        dropped.push({ name: item.name, kind, verdict: 'absent' });
+        return false;
+      }
+      if (position === 'aside' && !covered) {
+        dropped.push({ name: item.name, kind, verdict: 'aside+named' });
+        return false;
+      }
+      const cell: StubCell = position === 'prose' ? 'prose+named' : 'aside+covered';
+      const identity = resolveIdentity(item.name);
+      if (identity === 'match') {
+        existing.push({ name: item.name, kind, cell });
+        return false;
+      }
+      if (identity === 'ambiguous') {
+        dropped.push({ name: item.name, kind, verdict: 'ambiguous' });
+        return false;
+      }
+      stubs.push({ kind, cell, item });
+      return false;
+    });
+  const entities = route(analysis.entities, 'entity');
+  const concepts = route(analysis.concepts, 'concept');
+  if (dropped.length === 0) {
+    return { entities, concepts, dropped, stubs, existing, linkedAnyway: [], applied: true };
+  }
+  return { ...pruneDroppedNames(entities, concepts, dropped, isKnownPage), dropped, stubs, existing, applied: true };
 }
