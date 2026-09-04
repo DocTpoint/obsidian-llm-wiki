@@ -1150,8 +1150,8 @@ export class WikiEngine {
           const coverageResolve = buildVaultResolver({ wikiFolder: this.settings.wikiFolder, pages: await this.getExistingWikiPages() });
           const covered = applyCoverageThreshold(
             analysis,
-            name => coverageResolve(name) !== undefined,
             extractBody(rawSource),
+            name => coverageResolve(name) !== undefined,
           );
           if (covered.dropped.length > 0) {
             const list = covered.dropped.map(d => `${d.name} (${d.kind}, ${d.verdict})`).join('; ');

@@ -550,8 +550,8 @@ function pruneDroppedNames<R extends DropReason>(
  */
 export function applyCoverageThreshold(
   analysis: Pick<SourceAnalysis, 'entities' | 'concepts'>,
-  isKnownPage?: (name: string) => boolean,
   sourceText?: string,
+  isKnownPage?: (name: string) => boolean,
 ): GateResult<'named'> {
   const linked = sourceText === undefined ? null : linkedNames(sourceText);
   const dropped: DroppedCandidate<'named'>[] = [];
@@ -562,9 +562,9 @@ export function applyCoverageThreshold(
       // Author's link outranks coverage (#607): `[[Reis]]` in Arsen, `[[Blei]]`
       // in Reis were both hand-linked and both dropped as `named` without this.
       if (linked?.has(nfc(item.name).trim().toLowerCase())) return true;
-      // Vault-page parity (#620): a dropped name the vault already has a page
-      // for keeps its edge in the survivors' related_* lists.
-      if (isKnownPage?.(item.name) === true) return true;
+      // #620 parity is in pruneDroppedNames below, NOT here: a known page
+      // name still belongs in `dropped` so the caller can log it, but its
+      // edge stays in the survivors' related_* lists.
       dropped.push({ name: item.name, kind, verdict: 'named' });
       return false;
     });
@@ -635,7 +635,7 @@ export function applyOutcomeTable(
 ): OutcomeTableResult {
   const profile = gateProfileFor(language);
   if (!profile) {
-    return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], stubs: [], existing: [], applied: false };
+    return { entities: analysis.entities, concepts: analysis.concepts, dropped: [], stubs: [], existing: [], linkedAnyway: [], applied: false };
   }
   const linked = linkedNames(sourceText);
   const dropped: DroppedCandidate[] = [];
@@ -672,7 +672,7 @@ export function applyOutcomeTable(
   const entities = route(analysis.entities, 'entity');
   const concepts = route(analysis.concepts, 'concept');
   if (dropped.length === 0) {
-    return { entities, concepts, dropped, stubs, existing, applied: true };
+    return { entities, concepts, dropped, stubs, existing, linkedAnyway: [], applied: true };
   }
   return { ...pruneDroppedNames(entities, concepts, dropped, isKnownPage), dropped, stubs, existing, applied: true };
 }

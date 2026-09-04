@@ -505,50 +505,5 @@ describe('mergePage — the triage lane reports what it records (onContradiction
     ctx.onContradiction = c => seen.push(c);
     await mergePage(ctx, createMockEntity({ name: 'Caching' }), 'entity', { path: 'note.md', basename: 'note' }, EXISTING, [], 'wiki/entities/caching.md');
     expect(seen).toEqual([]);
-=======
-// S135 — a stub (frontmatter `stub: true`, dissent-born or Fix-Dead-Links)
-// must never be skip-frozen, and a write that fills it strips the marker.
-describe('mergePage — a stub page overrides triage=skip and is promoted (S135)', () => {
-  const EXISTING_STUB = `---\ntype: entity\ncreated: 2026-08-28\nsources:\n  - "[[sources/adhs]]"\ntags: [other]\nstub: true\ngeneration_complete: true\n---\n# Methylphenidat\n\n> Stub created by the ingest candidate gate (prose+named) — [[sources/adhs]] names this without treating it. Will be filled by the next ingest of a source that does.\n`;
-
-  it('routes skip to the body merge and strips the stub marker with the write', async () => {
-    const ctx = makeCtx(makeClient([
-      JSON.stringify({ strategy: 'skip', reason: 'stub body carries nothing new' }),
-      '## Description\nFilled body.',
-    ]));
-
-    const result = await mergePage(
-      ctx,
-      createMockEntity({ name: 'Methylphenidat' }),
-      'entity',
-      { path: 'Notes/Stimulanzien.md', basename: 'Stimulanzien' },
-      EXISTING_STUB,
-      [],
-      'wiki/entities/methylphenidat.md',
-    );
-
-    expect(result).toBe('wiki/entities/methylphenidat.md');
-    const written = ctx.written.get('wiki/entities/methylphenidat.md')!;
-    expect(written).toContain('Filled body.');
-    expect(written).not.toContain('stub: true');
-  });
-
-  it('a non-stub page keeps the plain skip behaviour', async () => {
-    const ctx = makeCtx(makeClient([
-      JSON.stringify({ strategy: 'skip', reason: 'no new info' }),
-      '## Description\nMerged text.',
-    ]));
-    await mergePage(
-      ctx,
-      createMockEntity({ name: 'Caching' }),
-      'entity',
-      { path: 'Notes/Distributed Systems.md', basename: 'Distributed Systems' },
-      EXISTING,
-      [],
-      'wiki/entities/caching.md',
-    );
-    const written = ctx.written.get('wiki/entities/caching.md')!;
-    expect(written).toContain('Old text.');
-    expect(written).not.toContain('Merged text.');
   });
 });

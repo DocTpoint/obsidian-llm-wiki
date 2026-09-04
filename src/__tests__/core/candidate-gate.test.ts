@@ -393,6 +393,7 @@ describe('applyCoverageThreshold with isKnownPage (#620 parity)', () => {
         entities: [mk('Ferritin', 'defined', ['CRP', 'Eisen']), mk('CRP', 'named')],
         concepts: [],
       },
+      undefined,
       name => name === 'CRP', // vault has a CRP page
     );
     expect(r.entities[0].related_entities).toEqual(['CRP', 'Eisen']);
@@ -406,6 +407,7 @@ describe('applyCoverageThreshold with isKnownPage (#620 parity)', () => {
         entities: [mk('Ferritin', 'defined', ['CRP', 'Eisen']), mk('CRP', 'named')],
         concepts: [],
       },
+      undefined,
       () => false,
     );
     expect(r.entities[0].related_entities).toEqual(['Eisen']);
