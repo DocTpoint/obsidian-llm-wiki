@@ -67,6 +67,29 @@ describe('extractSummaryFromPage — English baseline', () => {
     })).toBe('A formal definition.');
   });
 
+  it('prefers ## Description on a concept page that carries both sections', () => {
+    // The concept template writes a one-sentence Definition above the
+    // Description that holds the page's substance; the query prompt used to
+    // take the sentence and drop the substance (measured 2026-09-04: 183 of
+    // 241 concept pages with both sections).
+    const body = [
+      '## Description',
+      'Osteoporosis is multifactorial: vitamin deficiency, inactivity and dysbiosis. Therapy combines D3 + K2 with resistance training.',
+      '',
+      '## Definition',
+      'A disease of reduced bone density.',
+      '',
+      '## More',
+      'bar',
+    ].join('\n');
+    expect(extractSummaryFromPage(body, {
+      descriptionLabel: EN_DESC,
+      definitionLabel: EN_DEF,
+      pageType: 'concept',
+      maxChars: 1000,
+    })).toBe('Osteoporosis is multifactorial: vitamin deficiency, inactivity and dysbiosis. Therapy combines D3 + K2 with resistance training.');
+  });
+
   it('returns content up to the next ## header', () => {
     const body = [
       '## Description',
@@ -233,12 +256,13 @@ describe('extractSummaryFromPage — user-customized label', () => {
   });
 });
 
-describe('extractSummaryFromPage — pageType determines primary label', () => {
+describe('extractSummaryFromPage — the description is primary for both page types', () => {
   it('entity page with both ## Description and ## Definition uses Description', () => {
-    // Concept pages declare a domain via ## Definition. Entity pages declare
-    // via ## Description. The caller (query-engine) knows the page type
-    // and picks the right label. The extractor trusts the caller's choice
-    // when only one label exists; if both exist, pageType wins.
+    // The generation template gives a concept only a Definition; the merge
+    // template writes a Description ("core definition and significance")
+    // above it on every multi-source page. The description is where the
+    // substance accumulates, so it is primary for both types; the
+    // definition is the fallback for a page that has nothing else.
     const body = [
       '## Description',
       'entity desc',
@@ -256,7 +280,7 @@ describe('extractSummaryFromPage — pageType determines primary label', () => {
     })).toBe('entity desc');
   });
 
-  it('concept page with both ## Description and ## Definition uses Definition', () => {
+  it('concept page with both ## Description and ## Definition uses Description too', () => {
     const body = [
       '## Description',
       'entity desc',
@@ -271,7 +295,7 @@ describe('extractSummaryFromPage — pageType determines primary label', () => {
       definitionLabel: 'Definition',
       pageType: 'concept',
       maxChars: 1000,
-    })).toBe('concept def');
+    })).toBe('entity desc');
   });
 
   it('falls back to other label when pageType label is missing', () => {
