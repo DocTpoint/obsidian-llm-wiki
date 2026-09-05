@@ -157,9 +157,12 @@ describe('pprCascade — sparse-but-not-empty (lex-seeded PPR arm)', () => {
     const result = pprCascade('page 0', pages, {
       graph: g, minPages: 30, minEdges: 30, rng: makeRng(1),
     });
-    // First hit: P0 (lex match). Arm: lex-seeded-ppr (graph too sparse
-    // for graph-first, but seed has degree ≥ 1).
-    expect(result[0].page.path).toBe('P0');
+    // "page" matches all 50 titles ("0" is a single char and dropped),
+    // so the three lex seeds P0/P1/P2 carry equal PPR mass and the top
+    // hit is whichever of them the walk favoured. The old assertion
+    // `toBe('P0')` held only because max(lexRankHint, ppr) let index
+    // order override PPR — the defect mergeWithPPR no longer has.
+    expect(['P0', 'P1', 'P2']).toContain(result[0].page.path);
     expect(result[0].arm).toBe('lex-seeded-ppr');
   });
 });
