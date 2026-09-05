@@ -16,6 +16,16 @@
 // `[[sources/<sourceSlug>]]` citations in "Mentions in Source" — whose names often
 // coincide with a related concept (e.g. the source "Gedächtnis" is also a related
 // concept) — are never rewritten. No false-merge risk.
+//
+// Outside those sections a narrower pass runs, with the vault index only: a link
+// the model already typed as `entities/X` or `concepts/X` whose page the vault
+// holds under the other folder is re-pointed there. Measured on a 3,025-page
+// vault, 279 of 314 folder-wrong links stood in prose (Description, Core
+// Content, the source page's Key Entities/Concepts) — the section-scoped pass
+// never saw them, and every one of them was a dead link in the reader and a
+// missing edge in the query graph. Bare `[[X]]` links stay untouched there (no
+// section to type them), `sources/` links are never re-typed, and a name the
+// vault does not know is left alone.
 
 import { slugify } from './slug';
 
@@ -108,13 +118,59 @@ export function buildVaultResolver(
   };
 }
 
+export interface VaultIndex { wikiFolder: string; pages: ExistingPageRef[] }
+
+/** Folder-typed entity/concept link, singular prefixes included; never `sources/`. */
+const FOLDER_TYPED_LINK_RE = /\[\[(entities|entity|concepts|concept)\/([^\]|]+)(\|[^\]]*)?\]\]/g;
+
+/**
+ * Re-point every folder-typed link on one line to the page the vault holds
+ * under that name (title first, then curated alias). A link whose target is
+ * already the vault's path, a name the vault does not know, a bare `[[X]]`
+ * and any `sources/` link are left byte-identical. Returns the line and how
+ * many links moved.
+ */
+function repointLine(line: string, resolve: (name: string) => string | undefined): { line: string; moved: number } {
+  let moved = 0;
+  const out = line.replace(FOLDER_TYPED_LINK_RE, (full, folder: string, target: string, display?: string) => {
+    const inVault = resolve(target);
+    // Obsidian resolves links case-insensitively: a link that differs from
+    // the vault path only in case already points at the page, and rewriting
+    // it would cost a write and count as a move that never happened.
+    if (!inVault || inVault.toLowerCase() === `${folder}/${target}`.toLowerCase()) return full;
+    moved++;
+    return `[[${inVault}|${display ? display.slice(1) : target}]]`;
+  });
+  return { line: out, moved };
+}
+
+/**
+ * End-of-run pass over a page (see WikiEngine.repointLinksAfterRun): the
+ * same vault resolution as the prose pass in correctRelatedLinkPrefixes,
+ * applied to every line, Related sections included. No typed lists, no
+ * section fallback — only what the vault can answer for. Pure function.
+ */
+export function repointFolderTypedLinks(
+  content: string,
+  vaultIndex: VaultIndex,
+): { content: string; moved: number } {
+  const resolve = buildVaultResolver(vaultIndex);
+  let moved = 0;
+  const out = content.split('\n').map(line => {
+    const r = repointLine(line, resolve);
+    moved += r.moved;
+    return r.line;
+  }).join('\n');
+  return { content: out, moved };
+}
+
 export function correctRelatedLinkPrefixes(
   content: string,
   relatedEntities: string[] | undefined,
   relatedConcepts: string[] | undefined,
   relatedEntitiesLabel: string,
   relatedConceptsLabel: string,
-  vaultIndex?: { wikiFolder: string; pages: ExistingPageRef[] },
+  vaultIndex?: VaultIndex,
 ): string {
   // The typed-list map (`folderBySlug` below) keys the same way as the vault
   // resolver: it used to take `preserveCase` from the caller, which kept both
@@ -165,6 +221,11 @@ export function correctRelatedLinkPrefixes(
   // the same treatment: resolved against the vault, or folder-stamped from the
   // typed lists so the stub path can pick it up.
   const bareLinkRe = /\[\[(?!entities\/|entity\/|concepts\/|concept\/|sources\/)([^\]|/]+)(\|[^\]]*)?\]\]/g;
+  // Prose pass: only folder-typed entity/concept links, only re-pointed to a
+  // page the vault actually holds. Everything else on the line is left as is.
+  const repointInProse = (line: string): string =>
+    vaultIndex ? repointLine(line, resolveInVault).line : line;
+
   let current: 'entities' | 'concepts' | undefined;
   return content.split('\n').map(line => {
     const header = /^#{1,6}\s+(.*?)\s*$/.exec(line);
@@ -172,7 +233,7 @@ export function correctRelatedLinkPrefixes(
       current = sectionFolder.get(header[1].trim());
       return line;
     }
-    if (!current) return line;
+    if (!current) return repointInProse(line);
     const rewrite = (target: string, folder: string | undefined, display: string | undefined): string => {
       // The vault's own answer wins: it knows the real path, including the case
       // where `target` is an alias of a page with a different title.

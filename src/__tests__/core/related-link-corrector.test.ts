@@ -307,3 +307,56 @@ describe('correctRelatedLinkPrefixes — full-vault resolution (#482)', () => {
     expect(r).toBe(c);
   });
 });
+
+describe('correctRelatedLinkPrefixes — folder-typed links outside the Related sections', () => {
+  // Measured 2026-09-03 on a 3,025-page vault: 314 links pointed at
+  // `concepts/X` or `entities/X` while the page lived in the other folder;
+  // 279 of them stood outside the two Related sections and were never seen.
+  const ENT = 'Related Entities';
+  const CON = 'Related Concepts';
+  const vault = (pages: Array<{ path: string; title: string; aliases?: string[] }>) =>
+    ({ wikiFolder: 'wiki', pages });
+  const creatinVault = vault([
+    { path: 'wiki/entities/Phosphocreatin.md', title: 'Phosphocreatin' },
+    { path: 'wiki/entities/Skelettmuskeln.md', title: 'Skelettmuskeln', aliases: ['Skelettmuskulatur'] },
+    { path: 'wiki/concepts/ATP.md', title: 'ATP' },
+  ]);
+
+  it('re-points a folder-wrong link in prose to the page the vault holds', () => {
+    const c = '## Description\nRegeneration von [[concepts/ATP|ATP]] über [[concepts/Phosphocreatin|Phosphocreatin]].';
+    const r = correctRelatedLinkPrefixes(c, [], [], ENT, CON, creatinVault);
+    expect(r).toBe('## Description\nRegeneration von [[concepts/ATP|ATP]] über [[entities/Phosphocreatin|Phosphocreatin]].');
+  });
+
+  it('re-points on a source page section the corrector was never scoped to', () => {
+    const c = ['## Core Content', 'Stored in [[concepts/Skelettmuskeln]].'].join('\n');
+    const r = correctRelatedLinkPrefixes(c, [], [], ENT, CON, creatinVault);
+    expect(r).toContain('[[entities/Skelettmuskeln|Skelettmuskeln]]');
+  });
+
+  it('follows an alias in prose too', () => {
+    const c = '## Description\nSee [[concepts/Skelettmuskulatur|Muskeln]].';
+    const r = correctRelatedLinkPrefixes(c, [], [], ENT, CON, creatinVault);
+    expect(r).toContain('[[entities/Skelettmuskeln|Muskeln]]');
+  });
+
+  it('leaves a correct folder-typed prose link byte-identical', () => {
+    const c = '## Description\nSee [[entities/Phosphocreatin|Phosphocreatin]] and [[concepts/ATP]].';
+    expect(correctRelatedLinkPrefixes(c, [], [], ENT, CON, creatinVault)).toBe(c);
+  });
+
+  it('leaves a bare link and a sources/ citation in prose alone', () => {
+    const c = '## Description\n[[Phosphocreatin]] per [[sources/Phosphocreatin|Quelle]].';
+    expect(correctRelatedLinkPrefixes(c, [], [], ENT, CON, creatinVault)).toBe(c);
+  });
+
+  it('leaves a name the vault does not know alone — no section, no typed-list fallback in prose', () => {
+    const c = '## Description\nAbout [[concepts/Unbekannt|Unbekannt]].';
+    expect(correctRelatedLinkPrefixes(c, ['Unbekannt'], [], ENT, CON, creatinVault)).toBe(c);
+  });
+
+  it('does nothing in prose without a vault index', () => {
+    const c = '## Description\nAbout [[concepts/Phosphocreatin|Phosphocreatin]].';
+    expect(correctRelatedLinkPrefixes(c, ['Phosphocreatin'], [], ENT, CON)).toBe(c);
+  });
+});
