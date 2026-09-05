@@ -150,6 +150,36 @@ describe('wrapWithAdvancedSettings — per-step accounting', () => {
       expect(new Map(taskUsageSince(before)).get('untagged')?.calls).toBe(1);
     });
 
+    it('applies the thinking policy on the stream path — the answer the user waits for', async () => {
+      // Measured 2026-09-04: with `*=default:off` the keyword call sent
+      // reasoning_effort none and the streamed answer sent nothing, so the
+      // model thought for 43 of its 55 seconds.
+      const { client, calls } = streamClientSpy();
+      await wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 0,
+        taskPolicies: { '*': { outputMode: 'default', thinking: 'off' } },
+      }).createMessageStream!({ ...CALL, task: 'query-wiki', onChunk: () => {} });
+      expect(calls[0]?.enableThinking).toBe(false);
+      expect(calls[0]).not.toHaveProperty('outputModeOverride');
+      expect(calls[0]).not.toHaveProperty('reasoningEffort');
+    });
+
+    it('the policy overrides disableThinking from the call site on the stream too', async () => {
+      const { client, calls } = streamClientSpy();
+      await wrapWithAdvancedSettings(client, {
+        maxTokensPerCall: 0,
+        taskPolicies: { 'query-wiki': { outputMode: 'default', thinking: 'on' } },
+      }).createMessageStream!({ ...CALL, task: 'query-wiki', enableThinking: false, onChunk: () => {} });
+      expect(calls[0]?.enableThinking).toBe(true);
+    });
+
+    it('leaves the stream untouched when no policy names its step', async () => {
+      const { client, calls } = streamClientSpy();
+      await wrapWithAdvancedSettings(client, streamSettings)
+        .createMessageStream!({ ...CALL, task: 'query-wiki', onChunk: () => {} });
+      expect(calls[0]).not.toHaveProperty('enableThinking');
+    });
+
     it('forwards a caller-provided temperature with no silent drop on the stream path', async () => {
       // QueryView passes chatTemperature itself; the wrapper must not
       // overwrite it (mirrors the createMessage caller-wins contract).
