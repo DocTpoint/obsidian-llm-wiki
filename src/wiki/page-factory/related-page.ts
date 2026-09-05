@@ -23,11 +23,10 @@ import { mergeFrontmatter, parseFrontmatter } from '../../core/frontmatter';
 import { incomingTypeTag } from '../../core/tag-vocab';
 import { collectActiveVocabulary } from '../../core/domain-axis';
 import { stripMentionsSection } from '../../core/mentions-parser';
+import { guardBodyRewrite } from '../../core/paragraph-provenance';
 import { renderTemplate } from '../../core/template-renderer';
 import {
   canonicalizeSectionHeaders,
-  preserveExistingSections,
-  reassertH1,
   stripUnknownSections,
 } from '../../core/section-header-canonicalizer';
 import { correctRelatedLinkPrefixes } from '../../core/related-link-corrector';
@@ -175,20 +174,17 @@ export async function updateRelatedPage(
     { wikiFolder: ctx.settings.wikiFolder, pages: await getExistingWikiPages(ctx.app as never, ctx.settings.wikiFolder) },
   );
 
-  // Completeness is the schema's call, not the model's: restore any canonical
-  // section that carried content before the rewrite and is wholly absent from
-  // it. The Mentions section is re-attached by assembleFinalContent below.
-  const guardedBody = preserveExistingSections(
+  // Completeness is the schema's call, not the model's: sections the rewrite
+  // dropped or collapsed come back (#618), footnoted paragraphs another source
+  // owns come back, the H1 comes back (#419). The Mentions section is
+  // re-attached by assembleFinalContent below.
+  const titledBody = guardBodyRewrite(
     promptBody,
     correctedBody,
+    sourceFile.basename,
     Object.values(labels),
     labels.mentions_in_source,
   );
-
-  // #419: the guard above owns `##` blocks only, so the title line falls
-  // between the layers — the model is asked for the whole body and the reply
-  // routinely starts at the first `##`. Restore the page's own H1.
-  const titledBody = reassertH1(promptBody, guardedBody);
 
   // 2. Assemble: programmatic frontmatter + LLM body + Mentions section.
   // Issue #267 established a non-lossy re-ingest on the merge path, but this
