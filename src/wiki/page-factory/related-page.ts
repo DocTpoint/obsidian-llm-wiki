@@ -19,6 +19,7 @@ import { PROMPTS } from '../../prompts';
 import { TOKENS_PAGE_GENERATION, WIKI_SUBFOLDERS } from '../../constants';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
+import { captureFinish } from '../../llm-sdk/finish-reason';
 import { mergeFrontmatter, parseFrontmatter } from '../../core/frontmatter';
 import { incomingTypeTag } from '../../core/tag-vocab';
 import { collectActiveVocabulary } from '../../core/domain-axis';
@@ -144,6 +145,7 @@ export async function updateRelatedPage(
   const client = ctx.getClient();
   if (!client) throw new Error('LLM client not initialized');
 
+  const finish = captureFinish();
   const updatedBody = await client.createMessage({
     task: 'related-page',
     model: resolveModelForTask(ctx.settings, 'ingest'),
@@ -151,7 +153,17 @@ export async function updateRelatedPage(
     system: await ctx.buildSystemPrompt('related'),
     messages: [{ role: 'user', content: prompt }],
     ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
+    onFinish: finish.onFinish,
   });
+
+  // A rewrite cut off at the token limit is not adopted (see captureFinish
+  // in llm-sdk/finish-reason.ts): same exit as the #131 path — the new source is
+  // recorded in frontmatter, the body stays what it was.
+  if (finish.truncated) {
+    console.warn('Related page rewrite hit the token limit, keeping existing body:', page.path);
+    await ctx.createOrUpdateFile(page.path, `${frontmatter}\n\n${existingBody}`);
+    return true;
+  }
 
   const cleanedBody = cleanMarkdownResponse(updatedBody);
 

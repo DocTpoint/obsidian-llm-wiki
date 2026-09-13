@@ -154,3 +154,27 @@ export function assertNotReasoningOnly(
     + `model, or raise the token limit (max_tokens) so the answer fits after it.`,
   );
 }
+
+/**
+ * Sink for `onFinish` that answers one question afterwards: did the provider
+ * stop at its token limit?
+ *
+ * A body rewrite that hit `max_tokens` is not a rewrite, it is the first N
+ * tokens of one. The clients above already report the reason; the
+ * page-factory paths never asked, so a truncated body was written over the
+ * page it was meant to rewrite. Measured on a 413-note rebuild: 13 body
+ * rewrites grew a page by more than 8 KB, 10 of them next to a
+ * `finish_reason: length` in the provider log — the model had looped on a
+ * provenance footnote (`^[Quelle: [[X]]]` 650 times in one line) until the
+ * budget ran out, and the loop became the page.
+ *
+ * Only `'length'` counts. A client that reports nothing leaves the reason
+ * `'unknown'`, so legacy and mock clients keep the pre-#305 behaviour.
+ */
+export function captureFinish(): { onFinish: (meta: LLMFinishMeta) => void; readonly truncated: boolean } {
+  let reason: LLMFinishReason = 'unknown';
+  return {
+    onFinish: (meta) => { reason = meta.finishReason; },
+    get truncated() { return reason === 'length'; },
+  };
+}

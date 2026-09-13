@@ -35,6 +35,7 @@ import {
 import { PROMPTS } from '../../prompts';
 import { resolveModelForTask } from '../../core/model-resolver';
 import { cleanMarkdownResponse } from '../../core/markdown';
+import { captureFinish } from '../../llm-sdk/finish-reason';
 import {
   canonicalizeSectionHeaders,
   stripUnknownSections,
@@ -319,6 +320,7 @@ export async function mergePage(
     // #328 Phase 1 follow-up: user-layer tag-vocab removed — system layer injects once.
     const finalPrompt = applySectionLabels(prompt, ctx.settings);
 
+    const finish = captureFinish();
     const mergedBody = await client.createMessage({
       task: 'merge-body',
       model: resolveModelForTask(ctx.settings, 'ingest'),
@@ -326,7 +328,15 @@ export async function mergePage(
       system: await ctx.buildSystemPrompt('merge'),
       messages: [{ role: 'user', content: finalPrompt }],
       ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
+      onFinish: finish.onFinish,
     });
+
+    // A rewrite cut off at the token limit is not adopted: the page keeps
+    // the body it had (see captureFinish in llm-sdk/finish-reason.ts).
+    if (finish.truncated) {
+      console.warn(`${pageType} page merge hit the token limit, keeping existing:`, path);
+      return path;
+    }
 
     const cleanedBody = cleanMarkdownResponse(mergedBody);
 
@@ -493,6 +503,7 @@ export async function appendToReviewedPage(
     // #328 Phase 1 follow-up: user-layer tag-vocab removed — system layer injects once.
     const finalPrompt = applySectionLabels(prompt, ctx.settings);
 
+    const finish = captureFinish();
     const newContent = await client.createMessage({
       task: 'reviewed-append',
       model: resolveModelForTask(ctx.settings, 'ingest'),
@@ -500,7 +511,13 @@ export async function appendToReviewedPage(
       system: await ctx.buildSystemPrompt('merge'),
       messages: [{ role: 'user', content: finalPrompt }],
       ...(ctx.settings.disableThinking ? { enableThinking: false } : {}),
+      onFinish: finish.onFinish,
     });
+
+    if (finish.truncated) {
+      console.warn('Reviewed page append hit the token limit, preserving existing:', path);
+      return path;
+    }
 
     const cleanedContent = cleanMarkdownResponse(newContent);
 
