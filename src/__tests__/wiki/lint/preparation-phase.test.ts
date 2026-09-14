@@ -114,6 +114,9 @@ describe('runPreparationPhase', () => {
 
     expect(result.doubleNestFixes).toBe(1);
     expect(result.pageMap.get('wiki/entities/Foo.md')?.content).toBe('See [[Nested]] link.');
+    // The page map is the in-memory half; assert the file too, or a fix that
+    // never reaches the vault still passes.
+    expect(files['wiki/entities/Foo.md']).toBe('See [[Nested]] link.');
   });
 
   it('normalizes polluted sources fields', async () => {

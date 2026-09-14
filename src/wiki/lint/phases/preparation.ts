@@ -72,7 +72,7 @@ export async function runPreparationPhase(
           info.content = content;
           console.debug(`lintWiki: fixed ${fixed} double-nested link(s) in ${path}`);
         }
-        return data;
+        return fixed > 0 ? content : data;
       });
     }
   }
