@@ -56,8 +56,9 @@ export interface RelatedPageContext extends MergeContext {
 
 /**
  * Update an existing wiki page that's topically related to a newly-ingested
- * source. Returns false when the related page doesn't exist (or isn't a
- * regular TFile); returns true on any successful write.
+ * source. Returns the page path on any successful write and null when the
+ * related page doesn't exist (or isn't a regular TFile) — #714: the caller
+ * needs the path so the link re-point pass sees every page this run wrote.
  */
 export async function updateRelatedPage(
   ctx: RelatedPageContext,
@@ -162,7 +163,7 @@ export async function updateRelatedPage(
   if (finish.truncated) {
     console.warn('Related page rewrite hit the token limit, keeping existing body:', page.path);
     await ctx.createOrUpdateFile(page.path, `${frontmatter}\n\n${existingBody}`);
-    return true;
+    return page.path;
   }
 
   const cleanedBody = cleanMarkdownResponse(updatedBody);
