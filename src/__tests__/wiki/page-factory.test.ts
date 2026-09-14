@@ -161,7 +161,7 @@ describe('PageFactory — updateRelatedPage no-op skip (Issue #131)', () => {
     const result = await factory.updateRelatedPage('Dysbiose', analysis, sourceFile);
 
     expect(spy).not.toHaveBeenCalled();  // LLM never invoked
-    expect(result).toBe(true);        // page still counts as updated
+    expect(result).toBe('wiki/concepts/Dysbiose.md'); // page still counts as updated, by path
     const content = vault.read('wiki/concepts/Dysbiose.md')!;
     expect(content).toContain('Original body, must stay verbatim.');  // body untouched
     expect(content).toContain('[[Notizen/New-Source.md]]');           // source recorded in frontmatter
@@ -186,7 +186,7 @@ describe('PageFactory — updateRelatedPage no-op skip (Issue #131)', () => {
     const result = await factory.updateRelatedPage('Butyrat', analysis, sourceFile);
 
     expect(spy).toHaveBeenCalledTimes(1);  // LLM invoked because there is new info
-    expect(result).toBe(true);
+    expect(result).toBe('wiki/entities/Butyrat.md');
     expect(vault.read('wiki/entities/Butyrat.md')!).toContain('New merged body.');
   });
 });
@@ -212,7 +212,7 @@ describe('PageFactory — updateRelatedPage reviewed guard (Stage 4)', () => {
 
     const result = await factory.updateRelatedPage('Butyrat', analysis, sourceFile);
 
-    expect(result).toBe(true);
+    expect(result).toBe('wiki/entities/Butyrat.md');
     const content = vault.read('wiki/entities/Butyrat.md')!;
     expect(content).toContain('Curated body, must stay verbatim.');  // curated body survives
     expect(content).not.toContain('NO_NEW_CONTENT');                 // not the buggy full rewrite

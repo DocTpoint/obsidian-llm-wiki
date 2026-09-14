@@ -84,10 +84,8 @@ export class LogWriter {
 
     const h2Suffix = metrics ? this.formatIngestMetricsSuffix(metrics) : '';
     let entry = `\n\n## [${date} ${time}] ${operation} | ${analysis.source_title}${h2Suffix}\n\n`;
-    entry += `**${labels.createdPages}**：${dedupPages(analysis.created_pages)
-      .map(p => `[[${p.replace(this.wikiFolder + '/', '')}]]`)
-      .join(', ')}\n\n`;
-    entry += `**${labels.updatedPages}**：${analysis.updated_pages.map(p => `[[${p}]]`).join(', ')}\n\n`;
+    entry += `**${labels.createdPages}**：${this.pageLinks(analysis.created_pages)}\n\n`;
+    entry += `**${labels.updatedPages}**：${this.pageLinks(analysis.updated_pages)}\n\n`;
 
     if (contradictions.length > 0) {
       entry += `**${labels.contradictionsFound}**：\n`;
@@ -146,6 +144,15 @@ export class LogWriter {
       console.error(`[logLintFix] failed to write ${logPath}:`, e);
       throw e; // re-throw so callers (e.g. runLintWiki) can surface the failure
     }
+  }
+
+  /** One page per entry, linked as Obsidian resolves it: the wikiFolder prefix
+   *  does not belong in link text — `[[wiki/concepts/X.md]]` renders as a dead
+   *  link, `[[concepts/X.md]]` resolves. */
+  private pageLinks(paths: string[]): string {
+    return dedupPages(paths)
+      .map(p => `[[${p.replace(this.wikiFolder + '/', '')}]]`)
+      .join(', ');
   }
 
   /** Format an ingest metrics suffix: ` · 28s · claude-sonnet-4-5 · 4.2KB`. */

@@ -64,7 +64,7 @@ export async function updateRelatedPage(
   analysis: SourceAnalysis,
   sourceFile: TFile | { path: string; basename: string },
   sourceSlug?: string,
-): Promise<boolean> {
+): Promise<string | null> {
   const existingPages = await getExistingWikiPages(
     ctx.app as never,
     ctx.settings.wikiFolder,
@@ -86,13 +86,13 @@ export async function updateRelatedPage(
 
   if (!page) {
     console.debug('Related page not found:', pageName);
-    return false;
+    return null;
   }
 
   const abstractFile = ctx.app.vault.getAbstractFileByPath(page.path);
   if (!(abstractFile instanceof TFile)) {
     console.debug('Related page is not a file:', pageName);
-    return false;
+    return null;
   }
 
   const existingContent = await ctx.app.vault.read(abstractFile);
@@ -116,14 +116,14 @@ export async function updateRelatedPage(
   // untouched (a no-op rewrite corrupts verbatim text).
   if (!newInfo) {
     await ctx.createOrUpdateFile(page.path, `${frontmatter}\n\n${existingBody}`);
-    return true;
+    return page.path;
   }
 
   // Parity with createOrUpdatePage: a `reviewed: true` page must never have its
   // body LLM-rewritten — even when a different source extracts it here.
   if (parseFrontmatter(existingContent)?.reviewed === true) {
     await appendToReviewedPage(ctx, newInfo, sourceFile, existingContent, page.path);
-    return true;
+    return page.path;
   }
 
   const labels = getSectionLabels(ctx.settings);
@@ -190,5 +190,5 @@ export async function updateRelatedPage(
     page.path,
     await assembleFinalContent(ctx, frontmatter, titledBody, newInfo, sourceFile, existingBody),
   );
-  return true;
+  return page.path;
 }

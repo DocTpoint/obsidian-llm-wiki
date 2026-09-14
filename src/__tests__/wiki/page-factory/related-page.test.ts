@@ -102,7 +102,7 @@ function makeAnalysis(matchingName?: string): SourceAnalysis {
 }
 
 describe('updateRelatedPage — page not found', () => {
-  it('returns false when no existing page matches the name', async () => {
+  it('returns null when no existing page matches the name', async () => {
     const ctx = makeCtx(); // empty pages
     const result = await updateRelatedPage(
       ctx,
@@ -110,7 +110,7 @@ describe('updateRelatedPage — page not found', () => {
       makeAnalysis('Karpathy'),
       { path: 'p.md', basename: 'p.md' },
     );
-    expect(result).toBe(false);
+    expect(result).toBeNull();
     expect(ctx.written.size).toBe(0);
   });
 });
@@ -124,7 +124,7 @@ describe('updateRelatedPage — no matching entity (#131 fast path)', () => {
       makeAnalysis('SomeOtherName'), // no entity named 'X'
       { path: 'src.md', basename: 'src.md' },
     );
-    expect(result).toBe(true);
+    expect(result).toBe(PAGE_PATH);
     const written = ctx.written.get(PAGE_PATH)!;
     // Body preserved verbatim.
     expect(written).toContain('## Description');
@@ -156,7 +156,7 @@ describe('updateRelatedPage — reviewed: true guards the routing (Issue #158)',
       makeAnalysis(PAGE_TITLE),
       { path: 'src.md', basename: 'src.md' },
     );
-    expect(result).toBe(true);
+    expect(result).toBe(PAGE_PATH);
     const written = ctx.written.get(PAGE_PATH)!;
     // The `reviewed: true` marker survived the frontmatter rewrite.
     expect(written).toMatch(/reviewed:\s*true/);
@@ -177,7 +177,7 @@ describe('updateRelatedPage — normal path rewrites via LLM', () => {
       makeAnalysis(PAGE_TITLE),
       { path: 'src.md', basename: 'src.md' },
     );
-    expect(result).toBe(true);
+    expect(result).toBe(PAGE_PATH);
     const written = ctx.written.get(PAGE_PATH)!;
     expect(written).toContain('New body.');
   });
@@ -243,7 +243,7 @@ describe('updateRelatedPage — Mentions are never LLM-owned (#267 parity)', () 
       { path: 'sources/new.md', basename: 'new' },
     );
 
-    expect(result).toBe(true);
+    expect(result).toBe(PAGE_PATH);
     const written = ctx.written.get(PAGE_PATH)!;
     expect(written).toContain('a curated quote from an earlier source');
     expect(written).toContain('[[sources/old|old]]');
@@ -334,7 +334,7 @@ describe('updateRelatedPage — output order contract (#312)', () => {
       { path: 'src.md', basename: 'src' },
     );
 
-    expect(result).toBe(true);
+    expect(result).toBe(PAGE_PATH);
     expect(seenPrompt).toContain('**Output Format:**');
     expect(seenPrompt).toContain('NEVER place new information above the existing content.');
   });
@@ -410,7 +410,7 @@ describe('updateRelatedPage — H1 survives a rewrite that omits it', () => {
       { path: 'src.md', basename: 'src' },
     );
 
-    expect(result).toBe(true);
+    expect(result).toBe(PAGE_PATH);
     const written = ctx.written.get(PAGE_PATH) ?? '';
     expect(written).toContain('# X — a title the file name cannot reproduce');
     expect(written).toContain('New body.');
@@ -442,15 +442,15 @@ describe('updateRelatedPage — only entity and concept pages are related target
       { path: PAGE_PATH, basename: PAGE_TITLE },
     ]);
     const result = await updateRelatedPage(ctx, PAGE_TITLE, makeAnalysis(PAGE_TITLE), { path: 'p.md', basename: 'p' });
-    expect(result).toBe(true);
+    expect(result).toBe(PAGE_PATH);
     expect(ctx.written.get(PAGE_PATH)).toContain('new body');
     expect(ctx.written.get(SOURCE_PATH)).toBe(EXISTING_FM);
   });
 
-  it('returns false and writes nothing when only a source page carries the name', async () => {
+  it('returns null and writes nothing when only a source page carries the name', async () => {
     const ctx = makeTwinCtx([{ path: SOURCE_PATH, basename: PAGE_TITLE }]);
     const result = await updateRelatedPage(ctx, PAGE_TITLE, makeAnalysis(PAGE_TITLE), { path: 'p.md', basename: 'p' });
-    expect(result).toBe(false);
+    expect(result).toBeNull();
     expect(ctx.written.get(SOURCE_PATH)).toBe(EXISTING_FM);
   });
 });

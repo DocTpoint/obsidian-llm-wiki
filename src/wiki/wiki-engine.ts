@@ -73,7 +73,7 @@ import { runBatchedWithRetry } from './engine-internals/page-batch-runner';
 import { GraphCache, type GraphPageLoader } from './engine-internals/graph-cache';
 import { IndexGenerator } from './engine-internals/index-generator';
 import { LogWriter } from './engine-internals/log-writer';
-import { dedupPages } from './engine-internals/dedup-pages';
+import { dedupPages, recordUpdatedPage } from './engine-internals/dedup-pages';
 import { localDateStamp } from '../core/format';
 
 /**
@@ -1359,8 +1359,8 @@ export class WikiEngine {
             try {
               const entityResult = await this.pageFactory.createOrUpdateEntityPage(entity, analysis!, file, [], sourceSlug);
               if (entityResult.path) {
-                (entityResult.created ? analysis!.created_pages : analysis!.updated_pages)
-                  .push(entityResult.path);
+                if (entityResult.created) analysis!.created_pages.push(entityResult.path);
+                else recordUpdatedPage(analysis!, entityResult.path);
               }
               return { success: true as const };
             } catch (error) {
@@ -1373,8 +1373,8 @@ export class WikiEngine {
           try {
             const conceptResult = await this.pageFactory.createOrUpdateConceptPage(concept, analysis!, file, [], sourceSlug);
             if (conceptResult.path) {
-              (conceptResult.created ? analysis!.created_pages : analysis!.updated_pages)
-                .push(conceptResult.path);
+              if (conceptResult.created) analysis!.created_pages.push(conceptResult.path);
+              else recordUpdatedPage(analysis!, conceptResult.path);
             }
             return { success: true as const };
           } catch (error) {
@@ -1438,9 +1438,9 @@ export class WikiEngine {
         },
         execute: async (task) => {
           try {
-            const updated = await this.pageFactory.updateRelatedPage(task.name, analysis!, file, sourceSlug);
-            if (updated) {
-              analysis!.updated_pages.push(task.name);
+            const updatedPath = await this.pageFactory.updateRelatedPage(task.name, analysis!, file, sourceSlug);
+            if (updatedPath) {
+              recordUpdatedPage(analysis!, updatedPath);
             }
             return { success: true as const };
           } catch (error) {

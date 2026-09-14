@@ -24,3 +24,15 @@ export function dedupPages(paths: string[]): string[] {
   }
   return out;
 }
+
+/**
+ * Record a page as updated by this run, once. `updated_pages` is filled from
+ * three places — the entity branch, the concept branch and the related-page
+ * branch — and one page legitimately passes two of them in the same run: it is
+ * extracted as an entity or concept *and* listed as a related page. Holding the
+ * list distinct where it is filled keeps every reader correct, including the
+ * cancelled and failed paths that hand `updated_pages` straight to `onDone`.
+ */
+export function recordUpdatedPage(analysis: { updated_pages: string[] }, path: string): void {
+  if (!analysis.updated_pages.includes(path)) analysis.updated_pages.push(path);
+}

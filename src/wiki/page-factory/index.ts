@@ -147,7 +147,7 @@ export class PageFactory {
     analysis: SourceAnalysis,
     sourceFile: PageFactorySourceFile,
     sourceSlug?: string,
-  ): Promise<boolean> {
+  ): Promise<string | null> {
     return updateRelatedPage(
       this.relatedCtx,
       pageName,

@@ -157,6 +157,27 @@ describe('LogWriter', () => {
     expect(content).toContain('ingest | Test Source');
   });
 
+  // A page updated both as an entity/concept and as a related page reached
+  // this list twice, in two shapes — `wiki/concepts/X.md` and `X`. The list
+  // carries vault paths now, so the two are the same string and dedup catches
+  // them; the wikiFolder prefix is stripped so the link resolves in Obsidian.
+  it('appendIngest renders an updated page once, as a resolvable link', async () => {
+    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const writer = new LogWriter({
+      wikiFolder: 'wiki', wikiLanguage: 'en',
+      readFile: vi.fn().mockResolvedValue('# Wiki Operation Log\n'), writeFile,
+    });
+
+    await writer.appendIngest('ingest', makeAnalysis({
+      updated_pages: ['wiki/concepts/Warburg-Effekt.md', 'wiki/concepts/Warburg-Effekt.md', 'wiki/entities/LTBR.md'],
+    }), []);
+
+    const [, content] = writeFile.mock.calls[0] as [string, string];
+    const line = content.split('\n').find(l => l.startsWith('**Updated pages**'))!;
+    expect(line).toBe('**Updated pages**：[[concepts/Warburg-Effekt.md]], [[entities/LTBR.md]]');
+    expect(line).not.toContain('[[wiki/');
+  });
+
   it('appendLintFix writes H2 entry with details', async () => {
     const writeFile = vi.fn().mockResolvedValue(undefined);
     const readFile = vi.fn().mockResolvedValue('# Header\n');
